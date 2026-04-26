@@ -1,0 +1,1282 @@
+/* ===== Global ===== */
+QMainWindow {
+    background-color: #0a0e17;
+}
+
+QWidget {
+    color: #c8d6e5;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+/* ===== Menu Bar ===== */
+QMenuBar {
+    background-color: #0d111f;
+    color: #8b9dc3;
+    border-bottom: 1px solid #1a2340;
+    padding: 2px 0;
+    font-size: 12px;
+}
+
+QMenuBar::item {
+    padding: 6px 14px;
+    border-radius: 4px;
+}
+
+QMenuBar::item:selected {
+    background-color: #1a2340;
+    color: #e8edf5;
+}
+
+QMenu {
+    background-color: #0d111f;
+    color: #c8d6e5;
+    border: 1px solid #1a2340;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QMenu::item {
+    padding: 8px 32px 8px 16px;
+    border-radius: 4px;
+}
+
+QMenu::item:selected {
+    background-color: #1a3a6b;
+    color: #ffffff;
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: #1a2340;
+    margin: 4px 8px;
+}
+
+/* ===== Status Bar ===== */
+QStatusBar {
+    background-color: #0d111f;
+    color: #5a6a8a;
+    border-top: 1px solid #1a2340;
+    font-size: 11px;
+    padding: 2px 8px;
+}
+
+/* ===== Nav Sidebar ===== */
+#navSidebar {
+    background-color: #0d111f;
+    border-right: 1px solid #1a2340;
+}
+
+#navHeader {
+    background-color: #0a0e17;
+    border-bottom: 1px solid #1a2340;
+}
+
+#navLogo {
+    color: #4fc3f7;
+    font-size: 22px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+
+#navSubtitle {
+    color: #3a4a6a;
+    font-size: 10px;
+    letter-spacing: 1px;
+    margin-top: 2px;
+}
+
+#navMenuContainer {
+    background-color: transparent;
+}
+
+#navVersion {
+    color: #2a3a5a;
+    font-size: 10px;
+    background-color: #0a0e17;
+    border-top: 1px solid #1a2340;
+}
+
+/* ===== Nav Buttons ===== */
+#navButton {
+    background-color: transparent;
+    color: #6a7a9a;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+#navButton:hover {
+    background-color: #141c30;
+    color: #8b9dc3;
+}
+
+#navButton[active="true"] {
+    background-color: #0d1f3c;
+    color: #4fc3f7;
+    border-left: 3px solid #4fc3f7;
+    font-weight: 600;
+}
+
+/* ===== Content Area ===== */
+#contentArea {
+    background-color: #0a0e17;
+}
+
+#placeholderPage {
+    background-color: transparent;
+}
+
+#placeholderIcon {
+    color: #1a3a6b;
+    font-size: 48px;
+    margin-bottom: 8px;
+}
+
+#placeholderTitle {
+    color: #4fc3f7;
+    font-size: 24px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+#placeholderDesc {
+    color: #4a5a7a;
+    font-size: 13px;
+    max-width: 400px;
+}
+
+/* ===== Scroll Bars ===== */
+QScrollBar:vertical {
+    background-color: #0a0e17;
+    width: 8px;
+    border: none;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #1a2340;
+    min-height: 30px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #2a3a5a;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background-color: #0a0e17;
+    height: 8px;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #1a2340;
+    min-width: 30px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #2a3a5a;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+
+/* ===== Tooltips ===== */
+QToolTip {
+    background-color: #0d111f;
+    color: #c8d6e5;
+    border: 1px solid #1a3a6b;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+/* ===== Settings Page ===== */
+#settingsHeader {
+    color: #f1f5f9;
+    font-size: 22px;
+    font-weight: bold;
+    padding-bottom: 4px;
+    letter-spacing: 1px;
+}
+
+#settingsScrollContent {
+    background-color: transparent;
+}
+
+QScrollArea#settingsScrollArea {
+    background-color: transparent;
+}
+
+QScrollArea#settingsScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
+QScrollArea#settingsScrollArea QWidget {
+    background-color: transparent;
+}
+
+QGroupBox {
+    background-color: #0c1322;
+    color: #cbd5e1;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    margin-top: 16px;
+    padding: 20px 0 16px 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 18px;
+    padding: 0 10px;
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+QGroupBox#draftGroup {
+    margin-top: 16px;
+}
+
+#draftDesc {
+    color: #64748b;
+    font-size: 12px;
+    padding: 0 4px 4px 4px;
+}
+
+QFormLayout {
+    spacing: 14px;
+}
+
+QFormLayout > QLabel {
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 100px;
+    letter-spacing: 0.3px;
+}
+
+QLineEdit {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 20px;
+    selection-background-color: #4f46e5;
+    selection-color: #ffffff;
+}
+
+QLineEdit:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+QLineEdit::placeholder {
+    color: #334155;
+}
+
+#testConnectionBtn {
+    background-color: #1e293b;
+    color: #a5b4fc;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 22px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 20px;
+    letter-spacing: 0.3px;
+}
+
+#testConnectionBtn:hover {
+    background-color: #312e81;
+    color: #e0e7ff;
+    border-color: #6366f1;
+}
+
+#testConnectionBtn:pressed {
+    background-color: #4338ca;
+}
+
+#testConnectionBtn:disabled {
+    background-color: #0c1322;
+    color: #334155;
+    border-color: #1e293b;
+}
+
+#testStatus {
+    font-size: 12px;
+    font-weight: 600;
+    padding-left: 10px;
+    letter-spacing: 0.3px;
+}
+
+#browseBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 12px;
+    font-weight: 500;
+    min-height: 20px;
+}
+
+#browseBtn:hover {
+    background-color: #1e3a5f;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#browseBtn:pressed {
+    background-color: #1e40af;
+}
+
+#saveSettingsBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 36px;
+    font-size: 13px;
+    font-weight: 700;
+    min-height: 24px;
+    letter-spacing: 0.5px;
+}
+
+#saveSettingsBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#saveSettingsBtn:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4338ca, stop:1 #4f46e5);
+}
+
+/* ===== Toast ===== */
+#toastSuccess, #toastError {
+    background-color: #0d111f;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+
+#toastSuccess {
+    border-color: #065f46;
+    border-left: 3px solid #34d399;
+}
+
+#toastError {
+    border-color: #7f1d1d;
+    border-left: 3px solid #f87171;
+}
+
+/* ===== New Project Dialog ===== */
+#newProjectDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#dialogTitle {
+    color: #f1f5f9;
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+#dialogFieldLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#dialogNameInput {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 20px;
+}
+
+#dialogNameInput:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+#dialogNameInput::placeholder {
+    color: #334155;
+}
+
+#dialogCoverPreview {
+    background-color: #060a12;
+    border: 1px solid #1a2340;
+    border-radius: 6px;
+    color: #2a3a5a;
+    font-size: 12px;
+}
+
+#dialogUploadCoverBtn {
+    background-color: #1e293b;
+    color: #a5b4fc;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#dialogUploadCoverBtn:hover {
+    background-color: #312e81;
+    color: #e0e7ff;
+    border-color: #6366f1;
+}
+
+#dialogClearCoverBtn {
+    background-color: #2d1b1b;
+    color: #fca5a5;
+    border: 1px solid #5c1a1a;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#dialogClearCoverBtn:hover {
+    background-color: #4a1a1a;
+    color: #f87171;
+    border-color: #dc2626;
+}
+
+#dialogCancelBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#dialogCancelBtn:hover {
+    background-color: #1e3a5f;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#dialogConfirmBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 13px;
+    font-weight: 700;
+    min-height: 20px;
+}
+
+#dialogConfirmBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#dialogConfirmBtn:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4338ca, stop:1 #4f46e5);
+}
+
+/* ===== Short Drama Mix Page ===== */
+#shortDramaMixPage {
+    background-color: #0a0e17;
+}
+
+#mixToolbar {
+    background-color: #0d111f;
+    border-bottom: 1px solid #1a2340;
+    min-height: 56px;
+}
+
+#mixTitle {
+    color: #f1f5f9;
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+#mixNewProjectBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 13px;
+    font-weight: 700;
+    min-height: 20px;
+    letter-spacing: 0.5px;
+}
+
+#mixNewProjectBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#mixNewProjectBtn:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4338ca, stop:1 #4f46e5);
+}
+
+#mixSelectAllBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#mixSelectAllBtn:hover {
+    background-color: #1e3a5f;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#mixDeleteBtn {
+    background-color: #2d1b1b;
+    color: #fca5a5;
+    border: 1px solid #5c1a1a;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#mixDeleteBtn:hover {
+    background-color: #4a1a1a;
+    color: #f87171;
+    border-color: #dc2626;
+}
+
+#mixScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+#mixScrollContent {
+    background-color: transparent;
+}
+
+#mixEmptyLabel {
+    color: #4a5a7a;
+    font-size: 14px;
+    padding: 60px 0;
+}
+
+/* ===== Project Card ===== */
+#projectCard {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+#projectCard:hover {
+    background-color: #111827;
+    border-color: #2a3a5a;
+}
+
+#projectCard[selected="true"] {
+    background-color: #0d1f3c;
+    border-color: #4fc3f7;
+}
+
+#cardThumbnail {
+    background-color: #060a12;
+    border-radius: 8px;
+}
+
+#cardThumbnailImage {
+    color: #2a3a5a;
+    font-size: 12px;
+    border-radius: 8px;
+}
+
+#cardName {
+    color: #c8d6e5;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0 4px;
+}
+
+#cardCheckBox {
+    spacing: 0px;
+    background-color: rgba(15, 23, 42, 0.7);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+#cardCheckBox::indicator {
+    width: 26px;
+    height: 26px;
+    border: 2px solid #475569;
+    border-radius: 6px;
+    background-color: rgba(15, 23, 42, 0.85);
+}
+
+#cardCheckBox::indicator:checked {
+    background-color: #4f46e5;
+    border-color: #4f46e5;
+}
+
+#cardCheckBox::indicator:hover {
+    border-color: #818cf8;
+    background-color: rgba(79, 70, 229, 0.3);
+}
+
+#cardCheckBox::indicator:checked:hover {
+    background-color: #6366f1;
+    border-color: #6366f1;
+}
+
+/* ===== Project Wizard Page ===== */
+#projectWizardPage {
+    background-color: #0a0e17;
+}
+
+#wizardHeader {
+    background-color: #0d111f;
+    border-bottom: 1px solid #1a2340;
+}
+
+#wizardTitle {
+    color: #f1f5f9;
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+#wizardDesc {
+    color: #64748b;
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+#wizardContent {
+    background-color: transparent;
+}
+
+#wizardPlaceholder {
+    color: #4a5a7a;
+    font-size: 14px;
+    padding: 60px 0;
+}
+
+/* ===== Smart Clipping Wizard ===== */
+#smartClippingWizard {
+    background-color: #0a0e17;
+}
+
+#stepSeparator {
+    color: #3a4a6a;
+    font-size: 14px;
+    padding: 0 8px;
+}
+
+#stepNumber {
+    color: #4a5a7a;
+    font-size: 12px;
+    font-weight: bold;
+    background-color: #1a2340;
+    border-radius: 12px;
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    qproperty-alignment: AlignCenter;
+}
+
+#stepNumber[active="true"] {
+    color: #ffffff;
+    background-color: #4f46e5;
+}
+
+#stepText {
+    color: #4a5a7a;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+#stepText[active="true"] {
+    color: #e2e8f0;
+    font-weight: 600;
+}
+
+#wizardFooter {
+    background-color: #0d111f;
+    border-top: 1px solid #1a2340;
+    min-height: 56px;
+}
+
+#wizardPrevBtn, #wizardCancelBtn, #wizardNextBtn, #wizardFinishBtn {
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#wizardPrevBtn, #wizardCancelBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+}
+
+#wizardPrevBtn:hover, #wizardCancelBtn:hover {
+    background-color: #1e3a5f;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#wizardNextBtn, #wizardFinishBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+}
+
+#wizardNextBtn:hover, #wizardFinishBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#wizardNextBtn:pressed, #wizardFinishBtn:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4338ca, stop:1 #4f46e5);
+}
+
+/* ===== Upload Subtitle Page ===== */
+#uploadSubtitlePage {
+    background-color: #0a0e17;
+}
+
+#uploadPageHeader {
+    background-color: transparent;
+}
+
+#uploadPageTitle {
+    color: #e2e8f0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+#uploadPageDesc {
+    color: #64748b;
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+#uploadListScroll {
+    background-color: transparent;
+    border: none;
+}
+
+#uploadListContent {
+    background-color: transparent;
+}
+
+#videoSubtitleItem {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+}
+
+#videoSubtitleItem:hover {
+    background-color: #111827;
+    border-color: #2a3a5a;
+}
+
+#videoName {
+    color: #cbd5e1;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+#subtitleStatus {
+    color: #64748b;
+    font-size: 12px;
+    padding: 0 12px;
+}
+
+#subtitleStatus[uploaded="true"] {
+    color: #4ade80;
+}
+
+#uploadSubtitleBtn {
+    background-color: #1e293b;
+    color: #a5b4fc;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#uploadSubtitleBtn:hover {
+    background-color: #312e81;
+    color: #e0e7ff;
+    border-color: #6366f1;
+}
+
+/* ===== AI Analysis Page ===== */
+#aiAnalysisPage {
+    background-color: #0a0e17;
+}
+
+#leftPanel {
+    background-color: #0d111f;
+    border-right: 1px solid #1a2340;
+}
+
+#videoListHeader {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#videoListScroll {
+    background-color: transparent;
+    border: none;
+}
+
+#videoListContent {
+    background-color: transparent;
+}
+
+#videoListItem {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+}
+
+#videoListItem:hover {
+    background-color: #111827;
+    border-color: #2a3a5a;
+}
+
+#videoListItem[active="true"] {
+    background-color: #0d1f3c;
+    border-color: #4fc3f7;
+}
+
+#videoNumLabel {
+    color: #4f46e5;
+    font-size: 12px;
+    font-weight: bold;
+    background-color: #1a2340;
+    border-radius: 10px;
+    min-width: 20px;
+    max-width: 20px;
+    min-height: 20px;
+    max-height: 20px;
+    qproperty-alignment: AlignCenter;
+}
+
+#videoNameLabel {
+    color: #cbd5e1;
+    font-size: 12px;
+}
+
+#rightPanel {
+    background-color: transparent;
+}
+
+#loadingWidget {
+    background-color: #1e293b;
+}
+
+#loadingLabel {
+    color: #e2e8f0;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+#loadingDesc {
+    color: #94a3b8;
+    font-size: 14px;
+    padding: 0 40px;
+}
+
+#modeSelectorRow {
+    background-color: transparent;
+}
+
+#modeSelectorLabel {
+    color: #94a3b8;
+    font-size: 14px;
+}
+
+#modeSelectorCombo {
+    background-color: #1e293b;
+    color: #e2e8f0;
+    font-size: 14px;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 4px 12px;
+}
+
+#modeSelectorCombo:hover {
+    border-color: #3b82f6;
+}
+
+#modeSelectorCombo::drop-down {
+    border: none;
+    width: 28px;
+}
+
+#modeSelectorCombo::down-arrow {
+    image: none;
+    border: none;
+}
+
+#modeSelectorCombo QAbstractItemView {
+    background-color: #1e293b;
+    color: #e2e8f0;
+    font-size: 14px;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    selection-background-color: #3b82f6;
+    selection-color: #ffffff;
+    outline: none;
+}
+
+#startAnalysisBtn {
+    background-color: #3b82f6;
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 32px;
+}
+
+#startAnalysisBtn:hover {
+    background-color: #2563eb;
+}
+
+#startAnalysisBtn:pressed {
+    background-color: #1d4ed8;
+}
+
+#startAnalysisBtn:disabled {
+    background-color: #475569;
+    color: #94a3b8;
+}
+
+#analysisProgressContainer {
+    background-color: transparent;
+}
+
+#analysisProgressBg {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 3px;
+}
+
+#analysisProgressFill {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #3b82f6, stop:1 #8b5cf6);
+    border-radius: 3px;
+}
+
+#analysisProgressLabel {
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+#reAnalyzeBtn {
+    background-color: transparent;
+    color: #3b82f6;
+    font-size: 14px;
+    border: 1px solid #3b82f6;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+
+#reAnalyzeBtn:hover {
+    background-color: rgba(59, 130, 246, 0.1);
+}
+
+#reAnalyzeBtn:pressed {
+    background-color: rgba(59, 130, 246, 0.2);
+}
+
+#playerContainerPanel {
+    background-color: transparent;
+}
+
+#videoPlayerWidget {
+    background-color: transparent;
+}
+
+#playerContainer {
+    background-color: #060a12;
+    border-radius: 8px;
+}
+
+#playerPlaceholder {
+    color: #2a3a5a;
+    font-size: 14px;
+}
+
+#playerControls {
+    background-color: #0d111f;
+    border-top: 1px solid #1a2340;
+}
+
+#playerPlayBtn {
+    background-color: #4f46e5;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#playerPlayBtn:hover {
+    background-color: #6366f1;
+}
+
+#playerTimeLabel {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+#playerProgressSlider {
+    background-color: transparent;
+    height: 4px;
+}
+
+#playerProgressSlider::groove:horizontal {
+    background-color: #1a2340;
+    height: 4px;
+    border-radius: 2px;
+}
+
+#playerProgressSlider::handle:horizontal {
+    background-color: #6366f1;
+    width: 12px;
+    height: 12px;
+    margin: -4px 0;
+    border-radius: 6px;
+}
+
+#playerProgressSlider::sub-page:horizontal {
+    background-color: #4f46e5;
+    height: 4px;
+    border-radius: 2px;
+}
+
+#analysisContentWidget {
+    background-color: #0a0e17;
+}
+
+#videoPlayerContainer {
+    background-color: #0a0e17;
+}
+
+#resultsContainer {
+    background-color: #0d111f;
+    border-left: 1px solid #1a2340;
+}
+
+#resultsHeader {
+    background-color: #0d111f;
+    border-bottom: 1px solid #1a2340;
+}
+
+#analysisTypeBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 8px 0;
+}
+
+#analysisTypeBtn:hover {
+    background-color: #1e3a5f;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#resultsScroll {
+    background-color: transparent;
+    border: none;
+}
+
+#resultsContent {
+    background-color: transparent;
+}
+
+#analysisResultItem {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+}
+
+#analysisResultItem:hover {
+    background-color: #111827;
+    border-color: #2a3a5a;
+}
+
+#resultTypeLabel {
+    color: #4fc3f7;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#resultTimeLabel {
+    color: #64748b;
+    font-size: 12px;
+}
+
+#resultDescLabel {
+    color: #cbd5e1;
+    font-size: 13px;
+}
+
+/* ===== Segment Group ===== */
+#segmentGroup {
+    background-color: transparent;
+}
+
+#segmentGroupHeader {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+    text-align: left;
+    padding: 0;
+}
+
+#segmentGroupHeader:hover {
+    background-color: #111827;
+    border-color: #2a3a5a;
+}
+
+#toggleIcon {
+    color: #6366f1;
+    font-size: 12px;
+    min-width: 20px;
+}
+
+#groupTypeLabel {
+    color: #e0e7ff;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#groupCountLabel {
+    color: #64748b;
+    font-size: 12px;
+}
+
+#groupSelectedLabel {
+    color: #4fc3f7;
+    font-size: 12px;
+}
+
+#segmentGroupContent {
+    background-color: transparent;
+    padding: 8px 0 0 16px;
+}
+
+#segmentItem {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+#segmentItem:hover {
+    background-color: #111827;
+    border-color: #2a3a5a;
+}
+
+#segmentCheckbox {
+    background-color: #1a2340;
+    border: 2px solid #334155;
+    border-radius: 4px;
+    min-width: 20px;
+    max-width: 20px;
+    min-height: 20px;
+    max-height: 20px;
+}
+
+#segmentCheckbox:checked {
+    background-color: #4f46e5;
+    border-color: #6366f1;
+}
+
+#segmentTypeLabel {
+    color: #4fc3f7;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#segmentTimeLabel {
+    color: #64748b;
+    font-size: 11px;
+}
+
+#segmentDescLabel {
+    color: #cbd5e1;
+    font-size: 12px;
+}
+
+/* ===== Clipping Method Page ===== */
+#clippingMethodPage {
+    background-color: #0a0e17;
+}
+
+#clippingPlaceholderLabel {
+    color: #4a5a7a;
+    font-size: 14px;
+    padding: 60px 0;
+}
+
+/* ===== Export Page ===== */
+#exportPage {
+    background-color: #0a0e17;
+}
+
+#exportPlaceholderLabel {
+    color: #4a5a7a;
+    font-size: 14px;
+    padding: 60px 0;
+}

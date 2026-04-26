@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cache & data (runtime generated)
+cache/
+data/
+
+# Testing
+.pytest_cache/
+.ruff_cache/
+
+# Environment
+.python-version
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Project specific
+*.exe
+*.dll
+*.so
+1.77.0
