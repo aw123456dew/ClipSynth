@@ -1,5 +1,5 @@
 [project]
-name = "frame-cut"
+name = "clip-synth"
 version = "0.1.0"
 description = "AI-powered video clipping desktop application"
 readme = "README.md"
@@ -31,10 +31,10 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["frame_cut*"]
+include = ["clip_synth*"]
 
 [tool.setuptools.package-data]
-"frame_cut.resources" = ["icons/*", "styles/*"]
+"clip_synth.resources" = ["icons/*", "styles/*"]
 
 [tool.black]
 line-length = 100

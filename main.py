@@ -1,6 +1,6 @@
 import sys
 
-from frame_cut.core.application import Application
+from clip_synth.core.application import Application
 
 
 def main():

@@ -2,11 +2,11 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from frame_cut.core.database import Base
-from frame_cut.models.clip import Clip
-from frame_cut.models.media import MediaFile
-from frame_cut.models.project import Project
-from frame_cut.models.timeline import TimelineSegment, TimelineTrack
+from clip_synth.core.database import Base
+from clip_synth.models.clip import Clip
+from clip_synth.models.media import MediaFile
+from clip_synth.models.project import Project
+from clip_synth.models.timeline import TimelineSegment, TimelineTrack
 
 
 @pytest.fixture

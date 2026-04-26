@@ -1,4 +1,4 @@
-from frame_cut.utils.time import format_time, parse_time
+from clip_synth.utils.time import format_time, parse_time
 
 
 class TestTimeUtils:

@@ -3,9 +3,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from frame_cut.core.database import Base
-from frame_cut.services.media_service import MediaService
-from frame_cut.services.project_service import ProjectService
+from clip_synth.core.database import Base
+from clip_synth.services.media_service import MediaService
+from clip_synth.services.project_service import ProjectService
 
 
 @pytest.fixture
