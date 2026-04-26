@@ -1,4 +1,5 @@
 from clip_synth.services.ai_service import AIModelConfig, AIService
+from clip_synth.services.clipping_analysis_service import ClippingAnalysisService
 from clip_synth.services.export_service import ExportService
 from clip_synth.services.media_service import MediaService
 from clip_synth.services.project_service import ProjectService
@@ -13,4 +14,5 @@ __all__ = [
     "AIModelConfig",
     "SettingsService",
     "ProjectStateService",
+    "ClippingAnalysisService",
 ]

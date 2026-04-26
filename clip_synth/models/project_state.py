@@ -79,6 +79,48 @@ class VideoProjectState:
         return True
 
 
+class ClippingMode(Enum):
+    """剪辑模式"""
+    MANUAL = "manual"
+    AI = "ai"
+
+    @property
+    def display_name(self) -> str:
+        return {"manual": "手动选择", "ai": "AI智能识别"}[self.value]
+
+
+class ClippingStyle(Enum):
+    """AI剪辑手法"""
+    HIGH_ENERGY = "high_energy"
+    HOT_PRELUDE = "hot_prelude"
+    GOLDEN_THREE = "golden_three"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            "high_energy": "高燃混剪",
+            "hot_prelude": "热点前置",
+            "golden_three": "黄金三段",
+        }[self.value]
+
+    @property
+    def description(self) -> str:
+        return {
+            "high_energy": (
+                "AI智能识别视频高能瞬间，自动提取精彩片段，"
+                "一键生成节奏紧凑、情绪炸裂的高燃混剪，瞬间点燃观众热情"
+            ),
+            "hot_prelude": (
+                "用悬念、冲突或反转打造「黄金前3秒」，"
+                "强势抓住注意力，迅速激发观看兴趣，再自然衔接原片完整剧情"
+            ),
+            "golden_three": (
+                "高能开场 → 完整叙事 → 引流转化收尾，层层递进，"
+                "兼顾吸引力与传播目标，提升完播与转化效率"
+            ),
+        }[self.value]
+
+
 @dataclass
 class SmartClippingProjectState:
     """智能剪辑项目状态"""
@@ -87,6 +129,9 @@ class SmartClippingProjectState:
     cover_path: Optional[str] = None
     videos: List[VideoProjectState] = field(default_factory=list)
     current_step: int = 0
+    clipping_mode: str = "manual"
+    clipping_style: str = "high_energy"
+    ai_analysis_results: List[dict] = field(default_factory=list)
     created_at: float = field(default_factory=lambda: 0.0)
     updated_at: float = field(default_factory=lambda: 0.0)
 

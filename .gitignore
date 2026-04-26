@@ -21,6 +21,7 @@ env/
 # Cache & data (runtime generated)
 cache/
 data/
+exports/
 
 # Testing
 .pytest_cache/

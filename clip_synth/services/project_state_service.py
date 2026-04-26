@@ -74,6 +74,9 @@ class ProjectStateService:
             "cover_path": project.cover_path,
             "videos": [],
             "current_step": project.current_step,
+            "clipping_mode": project.clipping_mode,
+            "clipping_style": project.clipping_style,
+            "ai_analysis_results": project.ai_analysis_results,
             "created_at": project.created_at,
             "updated_at": project.updated_at,
         }
@@ -146,6 +149,9 @@ class ProjectStateService:
                 cover_path=data.get("cover_path"),
                 videos=videos,
                 current_step=data.get("current_step", 0),
+                clipping_mode=data.get("clipping_mode", "manual"),
+                clipping_style=data.get("clipping_style", "high_energy"),
+                ai_analysis_results=data.get("ai_analysis_results", []),
                 created_at=data.get("created_at", time.time()),
                 updated_at=data.get("updated_at", time.time()),
             )

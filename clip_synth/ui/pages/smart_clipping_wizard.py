@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
 from clip_synth.models import SmartClippingProjectState
 from clip_synth.services import ProjectStateService
 from clip_synth.services.ai_service import AIService
+from clip_synth.services.clipping_analysis_service import ClippingAnalysisService
+from clip_synth.services.export_service import ExportService
 from clip_synth.services.video_analysis_service import VideoAnalysisService
 
 
@@ -24,12 +26,15 @@ class SmartClippingWizard(QFrame):
         project: SmartClippingProjectState,
         project_state_service: ProjectStateService,
         ai_service: AIService,
+        text_ai_service: AIService | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self._project = project
         self._project_state_service = project_state_service
         self._analysis_service = VideoAnalysisService(ai_service)
+        self._text_ai_service = text_ai_service or ai_service
+        self._export_service = ExportService()
         self._current_step = self._project.current_step
         self._total_steps = 4
         self.setObjectName("smartClippingWizard")
@@ -102,12 +107,18 @@ class SmartClippingWizard(QFrame):
 
         from clip_synth.ui.pages.clipping_method_page import ClippingMethodPage
 
-        self._method_page = ClippingMethodPage()
+        clipping_service = ClippingAnalysisService(self._text_ai_service)
+        self._method_page = ClippingMethodPage(
+            self._project, clipping_service,
+            project_state_service=self._project_state_service,
+        )
+        self._method_page.ready_for_next.connect(self._on_method_ready)
         self._stack.addWidget(self._method_page)
 
         from clip_synth.ui.pages.export_page import ExportPage
 
         self._export_page = ExportPage()
+        self._export_page.set_project(self._project, self._export_service)
         self._stack.addWidget(self._export_page)
 
         layout.addWidget(self._stack, stretch=1)
@@ -193,6 +204,9 @@ class SmartClippingWizard(QFrame):
                 if not self._project.is_all_videos_ready():
                     return
                 self._save_project()
+            elif self._current_step == 2:
+                self._method_page.save_state()
+                self._save_project()
 
             self._current_step += 1
             self._project.current_step = self._current_step
@@ -206,6 +220,10 @@ class SmartClippingWizard(QFrame):
 
     def _on_ai_ready(self, ready):
         if self._current_step == 1:
+            self._next_btn.setEnabled(ready)
+
+    def _on_method_ready(self, ready):
+        if self._current_step == 2:
             self._next_btn.setEnabled(ready)
 
     def _on_finish(self):

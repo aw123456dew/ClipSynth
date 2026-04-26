@@ -2,6 +2,8 @@ from clip_synth.models.clip import Clip
 from clip_synth.models.media import MediaFile
 from clip_synth.models.project import Project
 from clip_synth.models.project_state import (
+    ClippingMode,
+    ClippingStyle,
     SmartClippingProjectState,
     VideoProjectState,
     VideoSegment,
@@ -18,6 +20,8 @@ __all__ = [
     "AppSettings",
     "AIModelSettings",
     "SettingsModel",
+    "ClippingMode",
+    "ClippingStyle",
     "SmartClippingProjectState",
     "VideoProjectState",
     "VideoSegment",

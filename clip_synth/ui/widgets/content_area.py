@@ -98,8 +98,11 @@ class ContentArea(QFrame):
         project = self._project_state_service.create_project(
             video_paths, {}, name=project_name, cover_path=cover_path,
         )
-        ai_service = self._create_vision_ai_service()
-        wizard_page = SmartClippingWizard(project, self._project_state_service, ai_service)
+        vision_ai = self._create_vision_ai_service()
+        text_ai = self._create_ai_service()
+        wizard_page = SmartClippingWizard(
+            project, self._project_state_service, vision_ai, text_ai_service=text_ai,
+        )
         wizard_page.finished.connect(self._on_wizard_finished)
         wizard_page.cancelled.connect(self._on_wizard_cancelled)
         self._stack.addWidget(wizard_page)
@@ -140,8 +143,11 @@ class ContentArea(QFrame):
     def open_smart_project(self, project_id: str) -> None:
         project = self._project_state_service.load_project(project_id)
         if project:
-            ai_service = self._create_vision_ai_service()
-            wizard_page = SmartClippingWizard(project, self._project_state_service, ai_service)
+            vision_ai = self._create_vision_ai_service()
+            text_ai = self._create_ai_service()
+            wizard_page = SmartClippingWizard(
+                project, self._project_state_service, vision_ai, text_ai_service=text_ai,
+            )
             wizard_page.finished.connect(self._on_wizard_finished)
             wizard_page.cancelled.connect(self._on_wizard_cancelled)
             self._stack.addWidget(wizard_page)
