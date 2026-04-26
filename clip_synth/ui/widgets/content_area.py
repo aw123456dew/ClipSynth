@@ -18,6 +18,7 @@ from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.pages.settings_page import SettingsPage
 from clip_synth.ui.pages.short_drama_mix_page import ShortDramaMixPage
 from clip_synth.ui.pages.smart_clipping_wizard import SmartClippingWizard
+from clip_synth.ui.pages.video_dedup_page import VideoDedupPage
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,10 @@ class ContentArea(QFrame):
         narrate_page = PlaceholderPage("短剧解说", "AI 自动生成解说文案并配音")
         self._stack.addWidget(narrate_page)
         self._pages["short_drama_narrate"] = self._stack.count() - 1
+
+        dedup_page = VideoDedupPage()
+        self._stack.addWidget(dedup_page)
+        self._pages["video_dedup"] = self._stack.count() - 1
 
         self._settings_page = SettingsPage(self._settings_service)
         self._stack.addWidget(self._settings_page)

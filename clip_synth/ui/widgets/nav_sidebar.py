@@ -70,6 +70,7 @@ class NavSidebar(QFrame):
         nav_items = [
             ("short_drama_mix", "短剧混剪", "\u25b6"),
             ("short_drama_narrate", "短剧解说", "\u25b6"),
+            ("video_dedup", "视频去重", "\u25b6"),
             ("settings", "系统配置", "\u25b6"),
         ]
 

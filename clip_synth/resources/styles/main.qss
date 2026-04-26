@@ -1761,3 +1761,322 @@ QLineEdit::placeholder {
     color: #e2e8f0;
     border: 1px solid #334155;
 }
+
+/* ===== Video Dedup Page ===== */
+#videoDedupPage {
+    background-color: #0a0e17;
+}
+
+#dedupToolbar {
+    background-color: #0d111f;
+    border-bottom: 1px solid #1a2340;
+    min-height: 56px;
+}
+
+#dedupTitle {
+    color: #f1f5f9;
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+#dedupAddVideoBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 13px;
+    font-weight: 700;
+    min-height: 20px;
+    letter-spacing: 0.5px;
+}
+
+#dedupAddVideoBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#dedupAddVideoBtn:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4338ca, stop:1 #4f46e5);
+}
+
+#dedupLeftPanel {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 10px;
+}
+
+#dedupVideoScroll {
+    background-color: transparent;
+    border: none;
+}
+
+#dedupVideoListContent {
+    background-color: transparent;
+}
+
+#dedupVideoItem {
+    background-color: transparent;
+    border: 1px solid #1a2340;
+    border-radius: 6px;
+    margin: 0 8px;
+}
+
+#dedupVideoItem:hover {
+    background-color: #111827;
+    border-color: #2a3a5a;
+}
+
+#dedupVideoItemLabel {
+    color: #cbd5e1;
+    font-size: 13px;
+}
+
+#dedupRightPanel {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 10px;
+}
+
+#dedupOptionsHeader {
+    color: #e2e8f0;
+    font-size: 15px;
+    font-weight: 600;
+    padding-bottom: 4px;
+}
+
+#dedupOptionGroup {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+}
+
+#dedupGroupCheckBox {
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 600;
+    spacing: 8px;
+}
+
+#dedupGroupCheckBox::indicator {
+    background-color: #1a2340;
+    border: 2px solid #334155;
+    border-radius: 4px;
+    min-width: 18px;
+    min-height: 18px;
+}
+
+#dedupGroupCheckBox::indicator:checked {
+    background-color: #4f46e5;
+    border-color: #6366f1;
+}
+
+#dedupGroupCheckBox::indicator:hover {
+    border-color: #6366f1;
+}
+
+#dedupGroupSep {
+    background-color: #1e293b;
+    margin: 2px 0;
+}
+
+#dedupParamLabel {
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+#dedupParamSep {
+    color: #64748b;
+    font-size: 13px;
+}
+
+#dedupParamHint {
+    color: #64748b;
+    font-size: 12px;
+}
+
+#dedupSpinBox {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 13px;
+    min-width: 60px;
+    max-width: 80px;
+    min-height: 28px;
+}
+
+#dedupSpinBox:focus {
+    border-color: #6366f1;
+}
+
+#dedupSpinBox::up-button {
+    background-color: #1e293b;
+    border: none;
+    border-left: 1px solid #1e293b;
+    border-radius: 0;
+    min-width: 22px;
+    min-height: 15px;
+    subcontrol-position: top right;
+    subcontrol-origin: margin;
+}
+
+#dedupSpinBox::up-button:hover {
+    background-color: #334155;
+}
+
+#dedupSpinBox::down-button {
+    background-color: #1e293b;
+    border: none;
+    border-left: 1px solid #1e293b;
+    border-radius: 0;
+    min-width: 22px;
+    min-height: 15px;
+    subcontrol-position: bottom right;
+    subcontrol-origin: margin;
+}
+
+#dedupSpinBox::down-button:hover {
+    background-color: #334155;
+}
+
+#dedupDoubleSpinBox {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 13px;
+    min-width: 80px;
+    max-width: 100px;
+    min-height: 28px;
+}
+
+#dedupDoubleSpinBox:focus {
+    border-color: #6366f1;
+}
+
+#dedupDoubleSpinBox::up-button {
+    background-color: #1e293b;
+    border: none;
+    border-left: 1px solid #1e293b;
+    border-radius: 0;
+    min-width: 22px;
+    min-height: 15px;
+    subcontrol-position: top right;
+    subcontrol-origin: margin;
+}
+
+#dedupDoubleSpinBox::up-button:hover {
+    background-color: #334155;
+}
+
+#dedupDoubleSpinBox::down-button {
+    background-color: #1e293b;
+    border: none;
+    border-left: 1px solid #1e293b;
+    border-radius: 0;
+    min-width: 22px;
+    min-height: 15px;
+    subcontrol-position: bottom right;
+    subcontrol-origin: margin;
+}
+
+#dedupDoubleSpinBox::down-button:hover {
+    background-color: #334155;
+}
+
+#dedupAdvancedCheckBox {
+    color: #cbd5e1;
+    font-size: 13px;
+    spacing: 6px;
+}
+
+#dedupAdvancedCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #475569;
+    border-radius: 4px;
+    background-color: #0f172a;
+}
+
+#dedupAdvancedCheckBox::indicator:checked {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+}
+
+#dedupAdvancedCheckBox::indicator:hover {
+    border-color: #64748b;
+}
+
+#dedupCropLabel {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+#dedupCropSpinBox {
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    color: #e2e8f0;
+    font-size: 13px;
+    padding: 4px 6px;
+}
+
+#dedupCropSpinBox:focus {
+    border-color: #3b82f6;
+}
+
+#dedupCropSpinBox::up-button {
+    background-color: #1e293b;
+    border: none;
+    border-left: 1px solid #334155;
+    border-radius: 0;
+    min-width: 18px;
+    min-height: 12px;
+    subcontrol-position: top right;
+    subcontrol-origin: margin;
+}
+
+#dedupCropSpinBox::up-button:hover {
+    background-color: #334155;
+}
+
+#dedupCropSpinBox::down-button {
+    background-color: #1e293b;
+    border: none;
+    border-left: 1px solid #334155;
+    border-radius: 0;
+    min-width: 18px;
+    min-height: 12px;
+    subcontrol-position: bottom right;
+    subcontrol-origin: margin;
+}
+
+#dedupCropSpinBox::down-button:hover {
+    background-color: #334155;
+}
+
+#dedupCropInputs {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 8px;
+}
+
+#dedupRightScroll {
+    border: none;
+    background: transparent;
+}
+
+#dedupRightScroll > QWidget {
+    background: transparent;
+}
+
+#dedupRightScrollContent {
+    background: transparent;
+}
