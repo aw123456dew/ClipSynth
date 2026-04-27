@@ -1,8 +1,10 @@
+import logging
 import os
 import tempfile
+from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPainter, QPixmap
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
@@ -10,12 +12,18 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
+    QProgressDialog,
     QPushButton,
     QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
+
+from clip_synth.tools.video_dedup_tool import DedupWorker
+
+logger = logging.getLogger(__name__)
 
 _ARROW_DIR: str | None = None
 
@@ -63,6 +71,15 @@ class VideoDedupPage(QFrame):
         super().__init__(parent)
         self.setObjectName("videoDedupPage")
         self._video_list_layout: QVBoxLayout | None = None
+        self._video_paths: list[str] = []
+        self._worker: DedupWorker | None = None
+        self._progress_dialog: QProgressDialog | None = None
+        self._frame_extract_cb: QCheckBox | None = None
+        self._frame_extract_spin_min: QSpinBox | None = None
+        self._frame_extract_spin_max: QSpinBox | None = None
+        self._bitrate_cb: QCheckBox | None = None
+        self._bitrate_spin_min: QDoubleSpinBox | None = None
+        self._bitrate_spin_max: QDoubleSpinBox | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -85,10 +102,10 @@ class VideoDedupPage(QFrame):
 
         toolbar_layout.addStretch()
 
-        self._add_video_btn = QPushButton("添加视频")
-        self._add_video_btn.setObjectName("dedupAddVideoBtn")
-        self._add_video_btn.clicked.connect(self._on_add_video)
-        toolbar_layout.addWidget(self._add_video_btn)
+        self._start_process_btn = QPushButton("开始处理")
+        self._start_process_btn.setObjectName("dedupStartProcessBtn")
+        self._start_process_btn.clicked.connect(self._on_start_process)
+        toolbar_layout.addWidget(self._start_process_btn)
 
         parent_layout.addWidget(toolbar)
 
@@ -109,6 +126,11 @@ class VideoDedupPage(QFrame):
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
+
+        self._add_video_btn = QPushButton("添加视频")
+        self._add_video_btn.setObjectName("dedupAddVideoBtn")
+        self._add_video_btn.clicked.connect(self._on_add_video)
+        left_layout.addWidget(self._add_video_btn)
 
         scroll = QScrollArea()
         scroll.setObjectName("dedupVideoScroll")
@@ -224,9 +246,9 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        cb = QCheckBox("随机抽帧")
-        cb.setObjectName("dedupGroupCheckBox")
-        group_layout.addWidget(cb)
+        self._frame_extract_cb = QCheckBox("随机抽帧")
+        self._frame_extract_cb.setObjectName("dedupGroupCheckBox")
+        group_layout.addWidget(self._frame_extract_cb)
 
         param_row = QHBoxLayout()
         param_row.setSpacing(6)
@@ -235,33 +257,33 @@ class VideoDedupPage(QFrame):
         label.setObjectName("dedupParamLabel")
         param_row.addWidget(label)
 
-        spin = QSpinBox()
-        spin.setObjectName("dedupSpinBox")
-        spin.setRange(1, 60)
-        spin.setValue(5)
-        spin.setSuffix("")
-        _set_spin_arrows(spin)
-        param_row.addWidget(spin)
+        self._frame_extract_spin_min = QSpinBox()
+        self._frame_extract_spin_min.setObjectName("dedupSpinBox")
+        self._frame_extract_spin_min.setRange(1, 60)
+        self._frame_extract_spin_min.setValue(5)
+        self._frame_extract_spin_min.setSuffix("")
+        _set_spin_arrows(self._frame_extract_spin_min)
+        param_row.addWidget(self._frame_extract_spin_min)
 
         sep = QLabel("~")
         sep.setObjectName("dedupParamSep")
         param_row.addWidget(sep)
 
-        spin2 = QSpinBox()
-        spin2.setObjectName("dedupSpinBox")
-        spin2.setRange(1, 60)
-        spin2.setValue(10)
-        _set_spin_arrows(spin2)
-        param_row.addWidget(spin2)
+        self._frame_extract_spin_max = QSpinBox()
+        self._frame_extract_spin_max.setObjectName("dedupSpinBox")
+        self._frame_extract_spin_max.setRange(1, 60)
+        self._frame_extract_spin_max.setValue(10)
+        _set_spin_arrows(self._frame_extract_spin_max)
+        param_row.addWidget(self._frame_extract_spin_max)
 
-        label2 = QLabel("秒，抽一帧")
+        label2 = QLabel("帧，抽一帧")
         label2.setObjectName("dedupParamLabel")
         param_row.addWidget(label2)
 
         param_row.addStretch()
         group_layout.addLayout(param_row)
 
-        self._bind_checkbox(cb, group_layout)
+        self._bind_checkbox(self._frame_extract_cb, group_layout)
 
         return group
 
@@ -273,9 +295,9 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        cb = QCheckBox("码率调整")
-        cb.setObjectName("dedupGroupCheckBox")
-        group_layout.addWidget(cb)
+        self._bitrate_cb = QCheckBox("码率调整")
+        self._bitrate_cb.setObjectName("dedupGroupCheckBox")
+        group_layout.addWidget(self._bitrate_cb)
 
         param_row = QHBoxLayout()
         param_row.setSpacing(6)
@@ -284,32 +306,32 @@ class VideoDedupPage(QFrame):
         label.setObjectName("dedupParamLabel")
         param_row.addWidget(label)
 
-        spin = QDoubleSpinBox()
-        spin.setObjectName("dedupDoubleSpinBox")
-        spin.setRange(0.01, 9.99)
-        spin.setDecimals(2)
-        spin.setSingleStep(0.01)
-        spin.setValue(1.02)
-        _set_spin_arrows(spin)
-        param_row.addWidget(spin)
+        self._bitrate_spin_min = QDoubleSpinBox()
+        self._bitrate_spin_min.setObjectName("dedupDoubleSpinBox")
+        self._bitrate_spin_min.setRange(0.01, 9.99)
+        self._bitrate_spin_min.setDecimals(2)
+        self._bitrate_spin_min.setSingleStep(0.01)
+        self._bitrate_spin_min.setValue(1.02)
+        _set_spin_arrows(self._bitrate_spin_min)
+        param_row.addWidget(self._bitrate_spin_min)
 
         sep = QLabel("~")
         sep.setObjectName("dedupParamSep")
         param_row.addWidget(sep)
 
-        spin2 = QDoubleSpinBox()
-        spin2.setObjectName("dedupDoubleSpinBox")
-        spin2.setRange(0.01, 9.99)
-        spin2.setDecimals(2)
-        spin2.setSingleStep(0.01)
-        spin2.setValue(1.95)
-        _set_spin_arrows(spin2)
-        param_row.addWidget(spin2)
+        self._bitrate_spin_max = QDoubleSpinBox()
+        self._bitrate_spin_max.setObjectName("dedupDoubleSpinBox")
+        self._bitrate_spin_max.setRange(0.01, 9.99)
+        self._bitrate_spin_max.setDecimals(2)
+        self._bitrate_spin_max.setSingleStep(0.01)
+        self._bitrate_spin_max.setValue(1.95)
+        _set_spin_arrows(self._bitrate_spin_max)
+        param_row.addWidget(self._bitrate_spin_max)
 
         param_row.addStretch()
         group_layout.addLayout(param_row)
 
-        self._bind_checkbox(cb, group_layout)
+        self._bind_checkbox(self._bitrate_cb, group_layout)
 
         return group
 
@@ -321,24 +343,26 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        cb = QCheckBox("画面调整")
-        cb.setObjectName("dedupGroupCheckBox")
-        group_layout.addWidget(cb)
+        self._image_adjust_cb = QCheckBox("画面调整")
+        self._image_adjust_cb.setObjectName("dedupGroupCheckBox")
+        group_layout.addWidget(self._image_adjust_cb)
+
+        self._adjust_spins: dict[str, tuple[QDoubleSpinBox | QSpinBox, QDoubleSpinBox | QSpinBox]] = {}
 
         adjust_items = [
-            "亮度",
-            "锐化",
-            "对比度",
-            "降噪",
-            "饱和度",
-            "翻转",
+            ("亮度", True),
+            ("锐化", True),
+            ("对比度", True),
+            ("降噪", True),
+            ("饱和度", True),
+            ("翻转", False),
         ]
 
         grid = QVBoxLayout()
         grid.setSpacing(8)
 
         row_layout: QHBoxLayout | None = None
-        for i, label_text in enumerate(adjust_items):
+        for i, (label_text, is_double) in enumerate(adjust_items):
             if i % 2 == 0:
                 row_layout = QHBoxLayout()
                 row_layout.setSpacing(12)
@@ -353,32 +377,54 @@ class VideoDedupPage(QFrame):
             item_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             item_row.addWidget(item_label)
 
-            spin = QDoubleSpinBox()
-            spin.setObjectName("dedupDoubleSpinBox")
-            spin.setRange(0.01, 9.99)
-            spin.setDecimals(2)
-            spin.setSingleStep(0.01)
-            spin.setValue(1.02)
-            spin.setFixedWidth(80)
-            _set_spin_arrows(spin)
-            item_row.addWidget(spin)
+            if is_double:
+                spin_min = QDoubleSpinBox()
+                spin_min.setObjectName("dedupDoubleSpinBox")
+                spin_min.setRange(0.01, 9.99)
+                spin_min.setDecimals(2)
+                spin_min.setSingleStep(0.01)
+                spin_min.setValue(1.02)
+                spin_min.setFixedWidth(80)
+                _set_spin_arrows(spin_min)
+                item_row.addWidget(spin_min)
 
-            sep = QLabel("~")
-            sep.setObjectName("dedupParamSep")
-            item_row.addWidget(sep)
+                sep = QLabel("~")
+                sep.setObjectName("dedupParamSep")
+                item_row.addWidget(sep)
 
-            spin2 = QDoubleSpinBox()
-            spin2.setObjectName("dedupDoubleSpinBox")
-            spin2.setRange(0.01, 9.99)
-            spin2.setDecimals(2)
-            spin2.setSingleStep(0.01)
-            spin2.setValue(1.30)
-            spin2.setFixedWidth(80)
-            _set_spin_arrows(spin2)
-            item_row.addWidget(spin2)
+                spin_max = QDoubleSpinBox()
+                spin_max.setObjectName("dedupDoubleSpinBox")
+                spin_max.setRange(0.01, 9.99)
+                spin_max.setDecimals(2)
+                spin_max.setSingleStep(0.01)
+                spin_max.setValue(1.30)
+                spin_max.setFixedWidth(80)
+                _set_spin_arrows(spin_max)
+                item_row.addWidget(spin_max)
+            else:
+                spin_min = QSpinBox()
+                spin_min.setObjectName("dedupSpinBox")
+                spin_min.setRange(-360, 360)
+                spin_min.setValue(-90)
+                spin_min.setFixedWidth(80)
+                _set_spin_arrows(spin_min)
+                item_row.addWidget(spin_min)
+
+                sep = QLabel("~")
+                sep.setObjectName("dedupParamSep")
+                item_row.addWidget(sep)
+
+                spin_max = QSpinBox()
+                spin_max.setObjectName("dedupSpinBox")
+                spin_max.setRange(-360, 360)
+                spin_max.setValue(90)
+                spin_max.setFixedWidth(80)
+                _set_spin_arrows(spin_max)
+                item_row.addWidget(spin_max)
 
             item_row.addStretch()
             row_layout.addLayout(item_row, stretch=1)
+            self._adjust_spins[label_text] = (spin_min, spin_max)
 
             if i % 2 == 0 and i == len(adjust_items) - 1:
                 empty = QFrame()
@@ -390,7 +436,7 @@ class VideoDedupPage(QFrame):
 
         group_layout.addLayout(grid)
 
-        self._bind_checkbox(cb, group_layout)
+        self._bind_checkbox(self._image_adjust_cb, group_layout)
 
         return group
 
@@ -411,6 +457,8 @@ class VideoDedupPage(QFrame):
             "随机加速",
         ]
 
+        self._advanced_cbs: dict[str, QCheckBox] = {}
+
         grid = QVBoxLayout()
         grid.setSpacing(8)
 
@@ -424,6 +472,7 @@ class VideoDedupPage(QFrame):
             cb = QCheckBox(text)
             cb.setObjectName("dedupAdvancedCheckBox")
             row_layout.addWidget(cb, stretch=1)
+            self._advanced_cbs[text] = cb
 
             if i % 2 == 1:
                 row_layout.addStretch()
@@ -442,6 +491,7 @@ class VideoDedupPage(QFrame):
 
         crop_cb = QCheckBox("画面裁剪")
         crop_cb.setObjectName("dedupGroupCheckBox")
+        self._crop_cb = crop_cb
         group_layout.addWidget(crop_cb)
 
         crop_inputs_layout = QHBoxLayout()
@@ -485,6 +535,7 @@ class VideoDedupPage(QFrame):
 
         cb = QCheckBox("动态缩放")
         cb.setObjectName("dedupGroupCheckBox")
+        self._scale_cb = cb
         group_layout.addWidget(cb)
 
         param_row = QHBoxLayout()
@@ -535,6 +586,7 @@ class VideoDedupPage(QFrame):
 
         cb = QCheckBox("画面移动")
         cb.setObjectName("dedupGroupCheckBox")
+        self._move_cb = cb
         group_layout.addWidget(cb)
 
         move_inputs_layout = QHBoxLayout()
@@ -568,6 +620,211 @@ class VideoDedupPage(QFrame):
 
         return group
 
+    def _get_frame_extract_params(self) -> tuple[bool, int, int]:
+        if hasattr(self, '_frame_extract_cb'):
+            return (
+                self._frame_extract_cb.isChecked(),
+                self._frame_extract_spin_min.value(),
+                self._frame_extract_spin_max.value(),
+            )
+        return False, 5, 10
+
+    def _get_bitrate_params(self) -> tuple[bool, float, float]:
+        if hasattr(self, '_bitrate_cb'):
+            return (
+                self._bitrate_cb.isChecked(),
+                self._bitrate_spin_min.value(),
+                self._bitrate_spin_max.value(),
+            )
+        return False, 1.02, 1.95
+
+    def _get_image_adjust_params(self) -> dict:
+        params = {
+            "enabled": False,
+            "brightness": (1.0, 1.0),
+            "sharpness": (1.0, 1.0),
+            "contrast": (1.0, 1.0),
+            "denoise": (1.0, 1.0),
+            "saturation": (1.0, 1.0),
+            "rotate": (0, 0),
+        }
+        if not hasattr(self, '_image_adjust_cb') or not self._image_adjust_cb.isChecked():
+            return params
+
+        params["enabled"] = True
+        for name, (spin_min, spin_max) in self._adjust_spins.items():
+            if name == "亮度":
+                params["brightness"] = (spin_min.value(), spin_max.value())
+            elif name == "锐化":
+                params["sharpness"] = (spin_min.value(), spin_max.value())
+            elif name == "对比度":
+                params["contrast"] = (spin_min.value(), spin_max.value())
+            elif name == "降噪":
+                params["denoise"] = (spin_min.value(), spin_max.value())
+            elif name == "饱和度":
+                params["saturation"] = (spin_min.value(), spin_max.value())
+            elif name == "翻转":
+                params["rotate"] = (spin_min.value(), spin_max.value())
+        return params
+
+    def _get_crop_params(self) -> dict:
+        params = {
+            "enabled": False,
+            "top": 0, "bottom": 0, "left": 0, "right": 0,
+        }
+        if hasattr(self, '_crop_cb') and self._crop_cb.isChecked():
+            params["enabled"] = True
+            params["top"] = self._crop_spins["上"].value()
+            params["bottom"] = self._crop_spins["下"].value()
+            params["left"] = self._crop_spins["左"].value()
+            params["right"] = self._crop_spins["右"].value()
+        return params
+
+    def _get_scale_params(self) -> dict:
+        params = {
+            "enabled": False,
+            "min_ratio": 1.0, "max_ratio": 1.0,
+        }
+        if hasattr(self, '_scale_cb') and self._scale_cb.isChecked():
+            params["enabled"] = True
+            params["min_ratio"] = self._scale_spin_min.value()
+            params["max_ratio"] = self._scale_spin_max.value()
+        return params
+
+    def _get_move_params(self) -> dict:
+        params = {
+            "enabled": False,
+            "top": 0, "bottom": 0, "left": 0, "right": 0,
+        }
+        if hasattr(self, '_move_cb') and self._move_cb.isChecked():
+            params["enabled"] = True
+            params["top"] = self._move_spins["上"].value()
+            params["bottom"] = self._move_spins["下"].value()
+            params["left"] = self._move_spins["左"].value()
+            params["right"] = self._move_spins["右"].value()
+        return params
+
+    def _get_advanced_params(self) -> dict:
+        params = {
+            "metadata_clean": False,
+            "noise_inject": False,
+            "deepfake_spoof": False,
+            "fingerprint_check": False,
+            "random_mirror": False,
+            "random_speed": False,
+        }
+        if hasattr(self, '_advanced_cbs'):
+            for text, cb in self._advanced_cbs.items():
+                if text == "二进制清洗与元数据剥离":
+                    params["metadata_clean"] = cb.isChecked()
+                elif text == "随机信号注入":
+                    params["noise_inject"] = cb.isChecked()
+                elif text == "深度伪造与身份伪装":
+                    params["deepfake_spoof"] = cb.isChecked()
+                elif text == "数字指纹调整":
+                    params["fingerprint_check"] = cb.isChecked()
+                elif text == "随机镜像":
+                    params["random_mirror"] = cb.isChecked()
+                elif text == "随机加速":
+                    params["random_speed"] = cb.isChecked()
+        return params
+
+    def _has_any_option_selected(self) -> bool:
+        checkboxes = self.findChildren(QCheckBox)
+        for cb in checkboxes:
+            if cb.isChecked():
+                return True
+        return False
+
+    def _on_start_process(self) -> None:
+        if not self._video_paths:
+            QMessageBox.warning(self, "提示", "请先添加视频文件")
+            return
+
+        if not self._has_any_option_selected():
+            QMessageBox.warning(self, "提示", "请选择至少一项去重选项")
+            return
+
+        frame_enabled, frame_min, frame_max = self._get_frame_extract_params()
+        bitrate_enabled, bitrate_min, bitrate_max = self._get_bitrate_params()
+        image_adjust_params = self._get_image_adjust_params()
+        crop_params = self._get_crop_params()
+        scale_params = self._get_scale_params()
+        move_params = self._get_move_params()
+        advanced_params = self._get_advanced_params()
+
+        any_advanced = any(advanced_params.values())
+        if not frame_enabled and not bitrate_enabled and not image_adjust_params["enabled"] and not any_advanced and not crop_params["enabled"] and not scale_params["enabled"] and not move_params["enabled"]:
+            QMessageBox.warning(self, "提示", "请选择至少一项去重选项")
+            return
+
+        output_dir = str(Path.home() / "Desktop" / "FrameCut_Dedup")
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+        self._progress_dialog = QProgressDialog("正在处理视频...", "取消", 0, 100, self)
+        self._progress_dialog.setWindowTitle("视频去重处理")
+        self._progress_dialog.setWindowModality(Qt.WindowModal)
+        self._progress_dialog.setAutoClose(True)
+        self._progress_dialog.setAutoReset(True)
+        self._progress_dialog.canceled.connect(self._on_process_cancelled)
+
+        self._start_process_btn.setEnabled(False)
+
+        self._worker = DedupWorker(
+            video_paths=self._video_paths,
+            output_dir=output_dir,
+            frame_extract_enabled=frame_enabled,
+            frame_min_frames=frame_min,
+            frame_max_frames=frame_max,
+            bitrate_enabled=bitrate_enabled,
+            bitrate_min=bitrate_min,
+            bitrate_max=bitrate_max,
+            image_adjust_params=image_adjust_params,
+            crop_params=crop_params,
+            scale_params=scale_params,
+            move_params=move_params,
+            advanced_params=advanced_params,
+        )
+        self._worker.progress.connect(self._on_process_progress)
+        self._worker.finished.connect(self._on_process_finished)
+        self._worker.error.connect(self._on_process_error)
+        self._worker.start()
+
+        self._progress_dialog.show()
+
+        logger.info(
+            "开始去重处理: %d 个视频, 随机抽帧=%s, 码率调整=%s, 画面调整=%s, 裁剪=%s, 缩放=%s, 移动=%s, 高级选项=%s",
+            len(self._video_paths), frame_enabled, bitrate_enabled,
+            image_adjust_params["enabled"], crop_params["enabled"],
+            scale_params["enabled"], move_params["enabled"], advanced_params,
+        )
+
+    def _on_process_progress(self, pct: int, message: str) -> None:
+        self._progress_dialog.setValue(pct)
+        self._progress_dialog.setLabelText(message)
+        logger.info("[%d%%] %s", pct, message)
+
+    def _on_process_finished(self, output_dir: str) -> None:
+        self._progress_dialog.close()
+        self._start_process_btn.setEnabled(True)
+
+        QMessageBox.information(self, "完成", "视频去重处理完成！")
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(output_dir))
+        logger.info("去重处理完成，打开输出目录: %s", output_dir)
+
+    def _on_process_error(self, error_msg: str) -> None:
+        self._progress_dialog.close()
+        self._start_process_btn.setEnabled(True)
+        QMessageBox.critical(self, "处理失败", f"视频去重处理失败:\n{error_msg}")
+        logger.error("去重处理失败: %s", error_msg)
+
+    def _on_process_cancelled(self) -> None:
+        if self._worker:
+            self._worker.cancel()
+        self._start_process_btn.setEnabled(True)
+        logger.info("用户取消了去重处理")
+
     def _on_add_video(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
             self,
@@ -578,6 +835,9 @@ class VideoDedupPage(QFrame):
         if not files:
             return
         for file_path in files:
+            if file_path in self._video_paths:
+                continue
+            self._video_paths.append(file_path)
             name = file_path.split("/")[-1].split("\\")[-1]
             item = self._create_video_item(name)
             self._video_list_layout.insertWidget(
