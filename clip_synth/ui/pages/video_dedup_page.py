@@ -82,6 +82,12 @@ class VideoDedupPage(QFrame):
         self._bitrate_spin_max: QDoubleSpinBox | None = None
         self._setup_ui()
 
+    @staticmethod
+    def _make_checkbox_with_help(text: str, tooltip: str) -> QCheckBox:
+        cb = QCheckBox(text)
+        cb.setToolTip(tooltip)
+        return cb
+
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -223,7 +229,10 @@ class VideoDedupPage(QFrame):
                     continue
                 w = item.widget()
                 if w is not None and w is not cb:
-                    children.append(w)
+                    if hasattr(w, '_cb') and w._cb is cb:
+                        pass
+                    else:
+                        children.append(w)
                     continue
                 sub = item.layout()
                 if sub is not None:
@@ -246,7 +255,11 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        self._frame_extract_cb = QCheckBox("随机抽帧")
+        self._frame_extract_cb = self._make_checkbox_with_help(
+            "随机抽帧",
+            "每隔 N 帧删除 1 帧，N 在设定的最小~最大范围内随机取值。\n"
+            "可改变视频帧率节奏，用于去重防检测。"
+        )
         self._frame_extract_cb.setObjectName("dedupGroupCheckBox")
         group_layout.addWidget(self._frame_extract_cb)
 
@@ -295,7 +308,11 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        self._bitrate_cb = QCheckBox("码率调整")
+        self._bitrate_cb = self._make_checkbox_with_help(
+            "码率调整",
+            "获取视频原始码率后，随机乘以设定的倍率范围，\n"
+            "改变视频编码码率，用于去重防检测。"
+        )
         self._bitrate_cb.setObjectName("dedupGroupCheckBox")
         group_layout.addWidget(self._bitrate_cb)
 
@@ -343,7 +360,11 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        self._image_adjust_cb = QCheckBox("画面调整")
+        self._image_adjust_cb = self._make_checkbox_with_help(
+            "画面调整",
+            "随机调整视频画面的亮度、锐化、对比度、降噪、饱和度、翻转等参数，\n"
+            "每个参数在设定的最小~最大范围内随机取值，用于去重防检测。"
+        )
         self._image_adjust_cb.setObjectName("dedupGroupCheckBox")
         group_layout.addWidget(self._image_adjust_cb)
 
@@ -448,13 +469,25 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        items = [
-            "二进制清洗与元数据剥离",
-            "随机信号注入",
-            "深度伪造与身份伪装",
-            "数字指纹调整",
-            "随机镜像",
-            "随机加速",
+        items: list[tuple[str, str]] = [
+            ("二进制清洗与元数据剥离",
+             "彻底清除视频文件内嵌的元数据信息，并随机改写文件头部二进制数据，\n"
+             "使文件指纹发生变化，用于去重防检测。"),
+            ("随机信号注入",
+             "在视频画面和音频中注入微弱的随机噪声信号，\n"
+             "人眼/耳不易察觉但可改变文件数字指纹，用于去重防检测。"),
+            ("深度伪造与身份伪装",
+             "随机修改视频的色彩空间矩阵（如 bt709/bt601/bt2020 互转），\n"
+             "伪装视频编码参数，用于去重防检测。"),
+            ("数字指纹调整",
+             "处理完成后自动对比原始文件与新文件的哈希值，\n"
+             "验证文件指纹是否已发生改变，确保去重效果。"),
+            ("随机镜像",
+             "将视频随机分割为 10 段，随机选择其中 1~5 段进行水平翻转，\n"
+             "再合并为一个完整视频，用于去重防检测。"),
+            ("随机加速",
+             "将视频随机分割为 10 段，随机选择其中 1~5 段进行 1.01~1.10 倍\n"
+             "轻微加速，再合并为一个完整视频，用于去重防检测。"),
         ]
 
         self._advanced_cbs: dict[str, QCheckBox] = {}
@@ -463,13 +496,13 @@ class VideoDedupPage(QFrame):
         grid.setSpacing(8)
 
         row_layout: QHBoxLayout | None = None
-        for i, text in enumerate(items):
+        for i, (text, tooltip) in enumerate(items):
             if i % 2 == 0:
                 row_layout = QHBoxLayout()
                 row_layout.setSpacing(12)
                 grid.addLayout(row_layout)
 
-            cb = QCheckBox(text)
+            cb = self._make_checkbox_with_help(text, tooltip)
             cb.setObjectName("dedupAdvancedCheckBox")
             row_layout.addWidget(cb, stretch=1)
             self._advanced_cbs[text] = cb
@@ -489,10 +522,13 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        crop_cb = QCheckBox("画面裁剪")
-        crop_cb.setObjectName("dedupGroupCheckBox")
-        self._crop_cb = crop_cb
-        group_layout.addWidget(crop_cb)
+        self._crop_cb = self._make_checkbox_with_help(
+            "画面裁剪",
+            "从视频的上下左右四个方向裁掉指定像素的画面内容，\n"
+            "裁剪后视频画布保持原尺寸，被裁掉的部分显示为黑边。"
+        )
+        self._crop_cb.setObjectName("dedupGroupCheckBox")
+        group_layout.addWidget(self._crop_cb)
 
         crop_inputs_layout = QHBoxLayout()
         crop_inputs_layout.setSpacing(8)
@@ -521,7 +557,7 @@ class VideoDedupPage(QFrame):
         self._crop_inputs_widget.setLayout(crop_inputs_layout)
         group_layout.addWidget(self._crop_inputs_widget)
 
-        self._bind_checkbox(crop_cb, group_layout)
+        self._bind_checkbox(self._crop_cb, group_layout)
 
         return group
 
@@ -533,10 +569,13 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        cb = QCheckBox("动态缩放")
-        cb.setObjectName("dedupGroupCheckBox")
-        self._scale_cb = cb
-        group_layout.addWidget(cb)
+        self._scale_cb = self._make_checkbox_with_help(
+            "动态缩放",
+            "视频画面在设定的最小~最大倍率之间，按正弦波平滑循环缩放，\n"
+            "输出视频保持原尺寸不变，画面呈现呼吸般的放大缩小动画效果。"
+        )
+        self._scale_cb.setObjectName("dedupGroupCheckBox")
+        group_layout.addWidget(self._scale_cb)
 
         param_row = QHBoxLayout()
         param_row.setSpacing(6)
@@ -572,7 +611,7 @@ class VideoDedupPage(QFrame):
         param_row.addStretch()
         group_layout.addLayout(param_row)
 
-        self._bind_checkbox(cb, group_layout)
+        self._bind_checkbox(self._scale_cb, group_layout)
 
         return group
 
@@ -584,10 +623,13 @@ class VideoDedupPage(QFrame):
         group_layout.setContentsMargins(12, 12, 12, 12)
         group_layout.setSpacing(10)
 
-        cb = QCheckBox("画面移动")
-        cb.setObjectName("dedupGroupCheckBox")
-        self._move_cb = cb
-        group_layout.addWidget(cb)
+        self._move_cb = self._make_checkbox_with_help(
+            "画面移动",
+            "将视频画面向指定方向移动指定像素，\n"
+            "画面移出画布的部分被裁剪，移入后空出的区域显示为黑边。"
+        )
+        self._move_cb.setObjectName("dedupGroupCheckBox")
+        group_layout.addWidget(self._move_cb)
 
         move_inputs_layout = QHBoxLayout()
         move_inputs_layout.setSpacing(8)
@@ -616,7 +658,7 @@ class VideoDedupPage(QFrame):
         move_widget.setLayout(move_inputs_layout)
         group_layout.addWidget(move_widget)
 
-        self._bind_checkbox(cb, group_layout)
+        self._bind_checkbox(self._move_cb, group_layout)
 
         return group
 
