@@ -54,6 +54,10 @@ class ExportWorker(QThread):
         except Exception as e:
             self.error.emit(str(e))
         finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                pass
             loop.close()
 
     def cancel(self):

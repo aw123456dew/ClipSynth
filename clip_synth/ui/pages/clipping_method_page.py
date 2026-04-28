@@ -50,6 +50,14 @@ class ClippingAnalysisWorker(QThread):
                 )
                 self.finished.emit(result)
             finally:
+                try:
+                    loop.run_until_complete(self._service.close())
+                except Exception:
+                    pass
+                try:
+                    loop.run_until_complete(loop.shutdown_asyncgens())
+                except Exception:
+                    pass
                 loop.close()
         except Exception as e:
             logger.error("AI剪辑分析失败: %s", str(e))
@@ -228,7 +236,7 @@ class ClippingMethodPage(QFrame):
         header_row = QHBoxLayout()
         header_row.setSpacing(16)
 
-        title = QLabel("选择剪辑手法")
+        title = QLabel("选择片段")
         title.setObjectName("clippingMethodTitle")
         header_row.addWidget(title)
 
@@ -257,12 +265,12 @@ class ClippingMethodPage(QFrame):
         self._manual_widget = QFrame()
         self._manual_widget.setObjectName("manualWidget")
         self._build_manual_ui()
-        stack_layout.addWidget(self._manual_widget)
+        stack_layout.addWidget(self._manual_widget, stretch=1)
 
         self._ai_widget = QFrame()
         self._ai_widget.setObjectName("aiWidget")
         self._build_ai_ui()
-        stack_layout.addWidget(self._ai_widget)
+        stack_layout.addWidget(self._ai_widget, stretch=1)
 
         layout.addWidget(self._stack, stretch=1)
 
@@ -273,48 +281,71 @@ class ClippingMethodPage(QFrame):
         layout.setContentsMargins(0, 16, 0, 0)
         layout.setSpacing(12)
 
-        scroll = QScrollArea()
-        scroll.setObjectName("manualScrollArea")
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._manual_scroll = QScrollArea()
+        self._manual_scroll.setObjectName("manualScrollArea")
+        self._manual_scroll.setWidgetResizable(True)
+        self._manual_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        scroll_content = QFrame()
-        scroll_content.setObjectName("manualScrollContent")
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(8)
+        self._manual_scroll_content = QFrame()
+        self._manual_scroll_content.setObjectName("manualScrollContent")
+        self._manual_scroll_layout = QVBoxLayout(self._manual_scroll_content)
+        self._manual_scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self._manual_scroll_layout.setSpacing(8)
 
+        self._manual_scroll.setWidget(self._manual_scroll_content)
+        layout.addWidget(self._manual_scroll)
+
+    def refresh_manual_ui(self):
+        self._type_groups.clear()
+        while self._manual_scroll_layout.count():
+            item = self._manual_scroll_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        has_any_segment = False
         for video_state in self._project.videos:
             video_name = video_state.video_path.split("/")[-1].split("\\")[-1]
             video_header = QLabel(f"📹 {video_name}")
             video_header.setObjectName("manualVideoHeader")
-            scroll_layout.addWidget(video_header)
+            self._manual_scroll_layout.addWidget(video_header)
 
+            video_has_segment = False
             for seg_type in ["gold_3s", "highlight", "plot", "ending"]:
                 segments = video_state.segments.get(seg_type, [])
                 if not segments:
                     continue
+                video_has_segment = True
+                has_any_segment = True
                 group = TypeSegmentGroup(seg_type, segments)
                 self._type_groups.append(group)
-                scroll_layout.addWidget(group)
+                self._manual_scroll_layout.addWidget(group)
 
-            scroll_layout.addSpacing(8)
+            if not video_has_segment:
+                empty_hint = QLabel("暂无片段，请先完成上一步的AI视频分析")
+                empty_hint.setObjectName("manualEmptyHint")
+                empty_hint.setAlignment(Qt.AlignCenter)
+                empty_hint.setWordWrap(True)
+                self._manual_scroll_layout.addWidget(empty_hint)
 
-        scroll_layout.addStretch()
-        scroll.setWidget(scroll_content)
-        layout.addWidget(scroll)
+            self._manual_scroll_layout.addSpacing(8)
+
+        self._manual_scroll_layout.addStretch()
+        self._update_ready_state()
+        self._update_visible()
 
     def _build_ai_ui(self):
         layout = QVBoxLayout(self._ai_widget)
-        layout.setContentsMargins(0, 8, 0, 0)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 16, 0, 0)
+        layout.setSpacing(6)
 
-        style_title = QLabel("选择AI剪辑手法")
+        self._ai_no_results_widget = QFrame()
+        no_results_layout = QVBoxLayout(self._ai_no_results_widget)
+        no_results_layout.setContentsMargins(0, 0, 0, 0)
+        no_results_layout.setSpacing(6)
+
+        style_title = QLabel("选择AI解说片段")
         style_title.setObjectName("aiStyleTitle")
-        layout.addWidget(style_title)
-
-        combo_row = QHBoxLayout()
-        combo_row.setSpacing(0)
+        no_results_layout.addWidget(style_title)
 
         self._style_combo = QComboBox()
         self._style_combo.setObjectName("styleCombo")
@@ -322,20 +353,12 @@ class ClippingMethodPage(QFrame):
         self._style_combo.addItem("⚡ 热点前置", "hot_prelude")
         self._style_combo.addItem("🏆 黄金三段", "golden_three")
         self._style_combo.currentIndexChanged.connect(self._on_style_changed)
-        combo_row.addWidget(self._style_combo, stretch=1)
-
-        combo_icon = QLabel("▼")
-        combo_icon.setObjectName("comboArrow")
-        combo_icon.setFixedWidth(28)
-        combo_icon.setAlignment(Qt.AlignCenter)
-        combo_row.addWidget(combo_icon)
-
-        layout.addLayout(combo_row)
+        no_results_layout.addWidget(self._style_combo)
 
         self._style_desc = QLabel()
         self._style_desc.setObjectName("styleDesc")
         self._style_desc.setWordWrap(True)
-        layout.addWidget(self._style_desc)
+        no_results_layout.addWidget(self._style_desc)
 
         if self._project.clipping_style:
             idx = self._style_combo.findData(self._project.clipping_style)
@@ -347,7 +370,10 @@ class ClippingMethodPage(QFrame):
         self._start_ai_btn.setObjectName("startAiAnalysisBtn")
         self._start_ai_btn.setCursor(Qt.PointingHandCursor)
         self._start_ai_btn.clicked.connect(self._on_start_ai_analysis)
-        layout.addWidget(self._start_ai_btn)
+        no_results_layout.addWidget(self._start_ai_btn)
+
+        no_results_layout.addStretch()
+        layout.addWidget(self._ai_no_results_widget, stretch=1)
 
         self._ai_loading = QFrame()
         self._ai_loading.setObjectName("aiLoadingFrame")
@@ -456,6 +482,7 @@ class ClippingMethodPage(QFrame):
             for r in self._project.ai_analysis_results
         ]
         self._clear_ai_results()
+        valid_count = 0
         for seg_id, reason in self._ai_results:
             seg = self._all_segments.get(seg_id)
             if seg:
@@ -463,11 +490,12 @@ class ClippingMethodPage(QFrame):
                 self._ai_results_layout.insertWidget(
                     self._ai_results_layout.count() - 1, item
                 )
-        if self._ai_results:
-            summary = QLabel(f"AI已选择 {len(self._ai_results)} 个片段")
+                valid_count += 1
+        if valid_count > 0:
+            summary = QLabel(f"AI已选择 {valid_count} 个片段")
             summary.setObjectName("aiResultSummary")
             self._ai_results_layout.insertWidget(0, summary)
-            self._start_ai_btn.hide()
+            self._ai_no_results_widget.hide()
             self._ai_results_area.show()
             self._re_analyze_btn.show()
 
@@ -476,7 +504,6 @@ class ClippingMethodPage(QFrame):
         self._ai_loading.hide()
         self._start_ai_btn.setText(" 开始AI分析 ")
         self._start_ai_btn.setEnabled(True)
-        self._start_ai_btn.hide()
 
         self._project.ai_analysis_results = [
             {"seg_id": seg_id, "reason": reason}
@@ -486,7 +513,6 @@ class ClippingMethodPage(QFrame):
             self._project_state_service.save_project(self._project)
 
         self._clear_ai_results()
-
         for seg_id, reason in results:
             seg = self._all_segments.get(seg_id)
             if seg:
@@ -500,6 +526,7 @@ class ClippingMethodPage(QFrame):
             summary.setObjectName("aiResultSummary")
             self._ai_results_layout.insertWidget(0, summary)
 
+        self._ai_no_results_widget.hide()
         self._ai_results_area.show()
         self._re_analyze_btn.show()
         self._update_ready_state()
@@ -508,13 +535,13 @@ class ClippingMethodPage(QFrame):
         self._ai_loading.hide()
         self._start_ai_btn.setText(" 开始AI分析 ")
         self._start_ai_btn.setEnabled(True)
-        self._start_ai_btn.show()
 
         error_label = QLabel(f"分析失败：{error_msg}")
         error_label.setObjectName("aiErrorLabel")
         error_label.setWordWrap(True)
         self._clear_ai_results()
         self._ai_results_layout.insertWidget(0, error_label)
+        self._ai_no_results_widget.hide()
         self._ai_results_area.show()
         self._re_analyze_btn.show()
 
@@ -527,7 +554,7 @@ class ClippingMethodPage(QFrame):
     def _on_re_analyze(self):
         self._ai_results_area.hide()
         self._re_analyze_btn.hide()
-        self._start_ai_btn.show()
+        self._ai_no_results_widget.show()
         self._clear_ai_results()
         self._on_start_ai_analysis()
 
@@ -542,8 +569,10 @@ class ClippingMethodPage(QFrame):
 
     def _update_ready_state(self):
         if self._manual_radio.isChecked():
-            all_selected = all(g.has_selection() for g in self._type_groups)
-            self.ready_for_next.emit(all_selected)
+            if not self._type_groups:
+                self.ready_for_next.emit(False)
+                return
+            self.ready_for_next.emit(True)
         else:
             has_results = len(self._ai_results) > 0
             self.ready_for_next.emit(has_results)

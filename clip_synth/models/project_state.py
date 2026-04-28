@@ -37,10 +37,10 @@ class AnalysisMode(Enum):
     @property
     def description(self) -> str:
         descs = {
-            "fastest": "仅使用字幕分析，速度最快",
-            "quick": "每段3帧（开头/中间/结尾）",
-            "precise": "每段6帧（约1.7秒/帧）",
-            "deep": "每秒1帧，分析最全面",
+            "fastest": "仅使用字幕分析，不分析画面内容，速度最快，适合对画面要求不高的场景",
+            "quick": "每10秒提取3帧（开头/中间/结尾各1帧），平衡速度与画面分析质量",
+            "precise": "每10秒提取6帧（约1.7秒/帧），画面分析更细致，推荐使用",
+            "deep": "每秒提取1帧，画面分析最全面，适合对画面细节要求极高的场景",
         }
         return descs.get(self.value, "")
 

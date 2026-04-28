@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from clip_synth.core.database import DatabaseManager
+from clip_synth.services.narrate_project_state_service import NarrateProjectStateService
 from clip_synth.services.project_state_service import ProjectStateService
 from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.widgets.content_area import ContentArea
@@ -93,8 +94,10 @@ class MainWindow(QMainWindow):
 
         self._settings_service = SettingsService(self._db_manager)
         self._project_state_service = ProjectStateService()
+        self._narrate_project_state_service = NarrateProjectStateService()
         self._content_area = ContentArea(
-            self._settings_service, self._db_manager, self._project_state_service
+            self._settings_service, self._db_manager, self._project_state_service,
+            narrate_project_state_service=self._narrate_project_state_service,
         )
         layout.addWidget(self._content_area, stretch=1)
 

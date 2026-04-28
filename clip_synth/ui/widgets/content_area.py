@@ -13,11 +13,14 @@ from PySide6.QtWidgets import (
 
 from clip_synth.core.database import DatabaseManager
 from clip_synth.services.ai_service import AIModelConfig, AIService
+from clip_synth.services.narrate_project_state_service import NarrateProjectStateService
 from clip_synth.services.project_state_service import ProjectStateService
 from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.pages.settings_page import SettingsPage
 from clip_synth.ui.pages.short_drama_mix_page import ShortDramaMixPage
+from clip_synth.ui.pages.short_drama_narrate_page import ShortDramaNarratePage
 from clip_synth.ui.pages.smart_clipping_wizard import SmartClippingWizard
+from clip_synth.ui.pages.smart_narrate_wizard import SmartNarrateWizard
 from clip_synth.ui.pages.video_dedup_page import VideoDedupPage
 
 logger = logging.getLogger(__name__)
@@ -54,6 +57,7 @@ class ContentArea(QFrame):
         settings_service: SettingsService,
         db_manager: DatabaseManager,
         project_state_service: ProjectStateService,
+        narrate_project_state_service: NarrateProjectStateService | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -61,6 +65,7 @@ class ContentArea(QFrame):
         self._settings_service = settings_service
         self._db_manager = db_manager
         self._project_state_service = project_state_service
+        self._narrate_project_state_service = narrate_project_state_service or NarrateProjectStateService()
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -78,8 +83,10 @@ class ContentArea(QFrame):
         self._stack.addWidget(self._mix_page)
         self._pages["short_drama_mix"] = self._stack.count() - 1
 
-        narrate_page = PlaceholderPage("短剧解说", "AI 自动生成解说文案并配音")
-        self._stack.addWidget(narrate_page)
+        self._narrate_page = ShortDramaNarratePage(self._narrate_project_state_service)
+        self._narrate_page.start_narrate_wizard.connect(self.switch_to_narrate_wizard)
+        self._narrate_page.open_narrate_project.connect(self.open_narrate_project)
+        self._stack.addWidget(self._narrate_page)
         self._pages["short_drama_narrate"] = self._stack.count() - 1
 
         dedup_page = VideoDedupPage()
@@ -158,6 +165,38 @@ class ContentArea(QFrame):
             self._stack.addWidget(wizard_page)
             self._stack.setCurrentIndex(self._stack.count() - 1)
 
+    def switch_to_narrate_wizard(self, data) -> None:
+        video_paths, project_name, cover_path = data
+
+        if not cover_path and video_paths:
+            cover_path = self._extract_first_frame(video_paths[0])
+
+        project = self._narrate_project_state_service.create_project(
+            video_paths, name=project_name, cover_path=cover_path,
+        )
+        vision_ai = self._create_vision_ai_service()
+        text_ai = self._create_ai_service()
+        wizard_page = SmartNarrateWizard(
+            project, self._narrate_project_state_service, vision_ai, text_ai_service=text_ai,
+        )
+        wizard_page.finished.connect(self._on_narrate_wizard_finished)
+        wizard_page.cancelled.connect(self._on_narrate_wizard_cancelled)
+        self._stack.addWidget(wizard_page)
+        self._stack.setCurrentIndex(self._stack.count() - 1)
+
+    def open_narrate_project(self, project_id: str) -> None:
+        project = self._narrate_project_state_service.load_project(project_id)
+        if project:
+            vision_ai = self._create_vision_ai_service()
+            text_ai = self._create_ai_service()
+            wizard_page = SmartNarrateWizard(
+                project, self._narrate_project_state_service, vision_ai, text_ai_service=text_ai,
+            )
+            wizard_page.finished.connect(self._on_narrate_wizard_finished)
+            wizard_page.cancelled.connect(self._on_narrate_wizard_cancelled)
+            self._stack.addWidget(wizard_page)
+            self._stack.setCurrentIndex(self._stack.count() - 1)
+
     def _create_ai_service(self) -> AIService:
         settings = self._settings_service.load()
         text_config = settings.text_model
@@ -187,6 +226,16 @@ class ContentArea(QFrame):
         self._remove_wizard_from_stack()
         self._mix_page._load_projects()
         self.switch_to("short_drama_mix")
+
+    def _on_narrate_wizard_finished(self) -> None:
+        self._remove_wizard_from_stack()
+        self._narrate_page._load_projects()
+        self.switch_to("short_drama_narrate")
+
+    def _on_narrate_wizard_cancelled(self) -> None:
+        self._remove_wizard_from_stack()
+        self._narrate_page._load_projects()
+        self.switch_to("short_drama_narrate")
 
     def _remove_wizard_from_stack(self) -> None:
         sender = self.sender()

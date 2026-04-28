@@ -1,0 +1,25 @@
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+from clip_synth.models.project_state import VideoProjectState
+
+
+@dataclass
+class NarrateProjectState:
+    """短剧解说项目状态"""
+    id: str
+    name: str
+    cover_path: Optional[str] = None
+    videos: List[VideoProjectState] = field(default_factory=list)
+    current_step: int = 0
+    clipping_mode: str = "manual"
+    clipping_style: str = "high_energy"
+    ai_analysis_results: List[dict] = field(default_factory=list)
+    created_at: float = field(default_factory=lambda: 0.0)
+    updated_at: float = field(default_factory=lambda: 0.0)
+
+    def is_all_videos_ready(self) -> bool:
+        for video_state in self.videos:
+            if not video_state.is_all_types_selected():
+                return False
+        return True

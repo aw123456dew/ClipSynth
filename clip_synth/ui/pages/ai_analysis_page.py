@@ -58,6 +58,14 @@ class AnalysisWorker(QThread):
                 )
                 self.finished.emit(segments)
             finally:
+                try:
+                    loop.run_until_complete(self._service.close())
+                except Exception:
+                    pass
+                try:
+                    loop.run_until_complete(loop.shutdown_asyncgens())
+                except Exception:
+                    pass
                 loop.close()
         except Exception as e:
             self.error.emit(str(e))
@@ -414,9 +422,20 @@ class AiAnalysisPage(QFrame):
         self._mode_combo.setFixedHeight(36)
         for m in AnalysisMode:
             self._mode_combo.addItem(m.display_name, m.value)
+        self._mode_combo.setCurrentIndex(1)
+        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_row_layout.addWidget(self._mode_combo)
 
         loading_layout.addWidget(mode_row)
+
+        self._mode_desc_label = QLabel("")
+        self._mode_desc_label.setObjectName("modeDescLabel")
+        self._mode_desc_label.setAlignment(Qt.AlignCenter)
+        self._mode_desc_label.setWordWrap(True)
+        self._mode_desc_label.setFixedWidth(400)
+        loading_layout.addWidget(self._mode_desc_label, alignment=Qt.AlignCenter)
+
+        self._update_mode_desc()
 
         self._start_analysis_btn = QPushButton("开始分析")
         self._start_analysis_btn.setObjectName("startAnalysisBtn")
@@ -508,8 +527,17 @@ class AiAnalysisPage(QFrame):
 
         if video_state.analysis_completed:
             self._display_segments()
+            self._check_ready()
         else:
             self._stack.setCurrentIndex(0)
+
+    def _update_mode_desc(self):
+        mode_value = self._mode_combo.currentData()
+        mode = AnalysisMode(mode_value)
+        self._mode_desc_label.setText(mode.description)
+
+    def _on_mode_changed(self):
+        self._update_mode_desc()
 
     def _start_analysis(self):
         self._start_analysis_btn.setEnabled(False)
@@ -642,6 +670,9 @@ class AiAnalysisPage(QFrame):
 
         self._load_current_video()
 
-    def _check_ready(self):
+    def check_ready(self):
         all_ready = self._project.is_all_videos_ready()
         self.ready_for_next.emit(all_ready)
+
+    def _check_ready(self):
+        self.check_ready()

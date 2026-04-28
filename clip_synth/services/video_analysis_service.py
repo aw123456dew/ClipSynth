@@ -157,6 +157,9 @@ class VideoAnalysisService:
         self._ai_service = ai_service
         self._preprocessor = VideoPreprocessor()
 
+    async def close(self):
+        await self._ai_service.close()
+
     async def analyze_video(
         self,
         video_path: str,

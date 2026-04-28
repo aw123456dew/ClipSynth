@@ -1,4 +1,4 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -9,35 +9,58 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from clip_synth.models import SmartClippingProjectState
-from clip_synth.services import ProjectStateService
+from clip_synth.models.narrate_project_state import NarrateProjectState
 from clip_synth.services.ai_service import AIService
 from clip_synth.services.clipping_analysis_service import ClippingAnalysisService
-from clip_synth.services.export_service import ExportService
+from clip_synth.services.narrate_project_state_service import NarrateProjectStateService
 from clip_synth.services.video_analysis_service import VideoAnalysisService
 
 
-class SmartClippingWizard(QFrame):
+class PlaceholderStepPage(QFrame):
+    def __init__(self, title: str, description: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("placeholderStepPage")
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(16)
+
+        icon_label = QLabel("\u25b6")
+        icon_label.setObjectName("placeholderIcon")
+        icon_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(icon_label)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("placeholderTitle")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+
+        desc_label = QLabel(description)
+        desc_label.setObjectName("placeholderDesc")
+        desc_label.setAlignment(Qt.AlignCenter)
+        desc_label.setWordWrap(True)
+        layout.addWidget(desc_label)
+
+
+class SmartNarrateWizard(QFrame):
     finished = Signal()
     cancelled = Signal()
 
     def __init__(
         self,
-        project: SmartClippingProjectState,
-        project_state_service: ProjectStateService,
+        project: NarrateProjectState,
+        narrate_project_state_service: NarrateProjectStateService,
         ai_service: AIService,
         text_ai_service: AIService | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self._project = project
-        self._project_state_service = project_state_service
+        self._narrate_project_state_service = narrate_project_state_service
         self._analysis_service = VideoAnalysisService(ai_service)
         self._text_ai_service = text_ai_service or ai_service
-        self._export_service = ExportService()
         self._current_step = self._project.current_step
-        self._total_steps = 4
-        self.setObjectName("smartClippingWizard")
+        self._total_steps = 6
+        self.setObjectName("smartNarrateWizard")
         self._setup_ui()
         self._update_step_indicators()
 
@@ -58,7 +81,9 @@ class SmartClippingWizard(QFrame):
         steps = [
             "上传字幕",
             "AI视频分析",
-            "剪辑手法",
+            "选择解说片段",
+            "解说文案",
+            "选择配音",
             "导出",
         ]
 
@@ -100,7 +125,7 @@ class SmartClippingWizard(QFrame):
         from clip_synth.ui.pages.ai_analysis_page import AiAnalysisPage
 
         self._ai_page = AiAnalysisPage(
-            self._project, self._analysis_service, self._project_state_service,
+            self._project, self._analysis_service, self._narrate_project_state_service,
         )
         self._ai_page.ready_for_next.connect(self._on_ai_ready)
         self._stack.addWidget(self._ai_page)
@@ -110,15 +135,27 @@ class SmartClippingWizard(QFrame):
         clipping_service = ClippingAnalysisService(self._text_ai_service)
         self._method_page = ClippingMethodPage(
             self._project, clipping_service,
-            project_state_service=self._project_state_service,
+            project_state_service=self._narrate_project_state_service,
         )
         self._method_page.ready_for_next.connect(self._on_method_ready)
         self._stack.addWidget(self._method_page)
 
-        from clip_synth.ui.pages.export_page import ExportPage
+        self._script_page = PlaceholderStepPage(
+            "生成解说文案",
+            "AI 将根据视频片段自动生成解说文案（待实现）",
+        )
+        self._stack.addWidget(self._script_page)
 
-        self._export_page = ExportPage()
-        self._export_page.set_project(self._project, self._export_service)
+        self._voice_page = PlaceholderStepPage(
+            "选择配音",
+            "选择配音音色和语速等参数（待实现）",
+        )
+        self._stack.addWidget(self._voice_page)
+
+        self._export_page = PlaceholderStepPage(
+            "导出视频",
+            "将解说文案配音与视频合并导出（待实现）",
+        )
         self._stack.addWidget(self._export_page)
 
         layout.addWidget(self._stack, stretch=1)
@@ -155,6 +192,8 @@ class SmartClippingWizard(QFrame):
         layout.addWidget(footer)
 
         self._stack.setCurrentIndex(self._current_step)
+        if self._current_step >= 2:
+            self._method_page.refresh_manual_ui()
         self._update_nav_buttons()
 
     def _update_step_indicators(self):
@@ -221,6 +260,7 @@ class SmartClippingWizard(QFrame):
 
             if self._current_step == 1:
                 self._next_btn.setEnabled(False)
+                self._ai_page.check_ready()
 
     def _on_ai_ready(self, ready):
         if self._current_step == 1:
@@ -238,4 +278,4 @@ class SmartClippingWizard(QFrame):
         self.cancelled.emit()
 
     def _save_project(self):
-        self._project_state_service.save_project(self._project)
+        self._narrate_project_state_service.save_project(self._project)

@@ -116,10 +116,14 @@ class ClippingAnalysisService:
     def __init__(self, ai_service: AIService):
         self._ai_service = ai_service
 
+    async def close(self):
+        await self._ai_service.close()
+
     async def analyze(
         self,
         segments_by_video: Dict[str, Dict[str, List[VideoSegment]]],
         style_key: str,
+        max_retries: int = 3,
     ) -> List[Tuple[str, str]]:
         """
         分析并选择最佳片段组合
@@ -127,6 +131,7 @@ class ClippingAnalysisService:
         Args:
             segments_by_video: {video_path: {type: [VideoSegment, ...]}}
             style_key: "high_energy" | "hot_prelude" | "golden_three"
+            max_retries: AI返回格式异常时的最大重试次数
 
         Returns:
             [(segment_id, reason), ...] 按时间排序的选中片段列表
@@ -156,51 +161,61 @@ class ClippingAnalysisService:
 
         prompt = _build_segments_prompt(segments_by_video, style_name, style_desc)
 
-        try:
-            response = await self._ai_service.generate_text(
-                prompt=prompt,
-                system_prompt=CLIPPING_SYSTEM_PROMPT,
-                temperature=0.3,
-                max_tokens=4096,
-                timeout=120,
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = await self._ai_service.generate_text(
+                    prompt=prompt,
+                    system_prompt=CLIPPING_SYSTEM_PROMPT,
+                    temperature=0.3,
+                    max_tokens=4096,
+                    timeout=120,
+                )
+                logger.info("AI剪辑分析返回: %s", response[:300])
+            except Exception as e:
+                logger.error("AI剪辑分析请求失败(第%d次): %s", attempt + 1, str(e))
+                last_error = e
+                continue
+
+            try:
+                selections = _parse_ai_response(response)
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning("解析AI响应失败(第%d次): %s", attempt + 1, str(e))
+                last_error = e
+                if attempt < max_retries - 1:
+                    logger.info("正在重试...")
+                continue
+
+            all_segments: Dict[str, VideoSegment] = {}
+            for type_dict in segments_by_video.values():
+                for seg_list in type_dict.values():
+                    for seg in seg_list:
+                        all_segments[seg.id] = seg
+
+            selected_segments: List[VideoSegment] = []
+            result: List[Tuple[str, str]] = []
+
+            for item in selections:
+                seg_id = item.get("segment_id", "")
+                reason = item.get("reason", "")
+                if seg_id in all_segments:
+                    seg = all_segments[seg_id]
+                    if not any(_segments_overlap(seg, s) for s in selected_segments):
+                        selected_segments.append(seg)
+                        result.append((seg_id, reason))
+                    else:
+                        logger.info("跳过重叠片段: %s (%s-%s)", seg_id, seg.start_time, seg.end_time)
+
+            result.sort(
+                key=lambda x: _time_to_seconds(all_segments[x[0]].start_time)
             )
-            logger.info("AI剪辑分析返回: %s", response[:300])
-        except Exception as e:
-            logger.error("AI剪辑分析请求失败: %s", str(e))
-            raise
 
-        try:
-            selections = _parse_ai_response(response)
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.error("解析AI响应失败: %s, 原始响应: %s", str(e), response)
-            raise ValueError(f"AI返回格式异常: {e}") from e
+            logger.info(
+                "AI选择了 %d 个片段（原始返回 %d 个）",
+                len(result), len(selections),
+            )
+            return result
 
-        all_segments: Dict[str, VideoSegment] = {}
-        for type_dict in segments_by_video.values():
-            for seg_list in type_dict.values():
-                for seg in seg_list:
-                    all_segments[seg.id] = seg
-
-        selected_segments: List[VideoSegment] = []
-        result: List[Tuple[str, str]] = []
-
-        for item in selections:
-            seg_id = item.get("segment_id", "")
-            reason = item.get("reason", "")
-            if seg_id in all_segments:
-                seg = all_segments[seg_id]
-                if not any(_segments_overlap(seg, s) for s in selected_segments):
-                    selected_segments.append(seg)
-                    result.append((seg_id, reason))
-                else:
-                    logger.info("跳过重叠片段: %s (%s-%s)", seg_id, seg.start_time, seg.end_time)
-
-        result.sort(
-            key=lambda x: _time_to_seconds(all_segments[x[0]].start_time)
-        )
-
-        logger.info(
-            "AI选择了 %d 个片段（原始返回 %d 个）",
-            len(result), len(selections),
-        )
-        return result
+        error_msg = f"AI返回格式异常（已重试{max_retries}次）: {last_error}"
+        logger.error(error_msg)
+        raise ValueError(error_msg) from last_error

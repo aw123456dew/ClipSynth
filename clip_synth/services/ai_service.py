@@ -151,17 +151,13 @@ class AIService:
         messages.append({"role": "user", "content": prompt})
 
         async with self._semaphore:
-            client = AsyncOpenAI(
-                api_key=self._config.api_key,
-                base_url=self._config.base_url,
-                timeout=timeout,
-                max_retries=0,
-            )
+            client = self._ensure_async_client()
             response = await client.chat.completions.create(
                 model=self._config.model_name,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=timeout,
             )
         return response.choices[0].message.content or ""
 
@@ -199,19 +195,29 @@ class AIService:
         messages.append({"role": "user", "content": content})
 
         async with self._semaphore:
-            client = AsyncOpenAI(
-                api_key=self._config.api_key,
-                base_url=self._config.base_url,
-                timeout=timeout,
-                max_retries=0,
-            )
+            client = self._ensure_async_client()
             response = await client.chat.completions.create(
                 model=self._config.model_name,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=timeout,
             )
         return response.choices[0].message.content or ""
+
+    async def close(self):
+        if self._async_client is not None:
+            try:
+                await self._async_client.close()
+            except Exception:
+                pass
+            self._async_client = None
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+            self._client = None
 
     @property
     def config(self) -> AIModelConfig:
