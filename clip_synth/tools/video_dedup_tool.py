@@ -347,9 +347,11 @@ class DedupWorker(QThread):
         if self._frame_extract_enabled:
             interval = random.randint(self._frame_min_frames, self._frame_max_frames)
             drop_offset = random.randint(0, interval - 1)
-            filter_chains.append(f"select=not(eq(mod(n\\,{interval})\\,{drop_offset}))")
-            filter_chains.append("setpts=N/FRAME_RATE/TB")
-            logger.info("抽帧区间: %d 帧, 删除偏移: %d", interval, drop_offset)
+            select_expr = f"not(eq(mod(n\\,{interval})\\,{drop_offset}))"
+            pts_ratio = (interval - 1) / interval
+            filter_chains.append(f"select={select_expr}")
+            filter_chains.append(f"setpts={pts_ratio:.6f}*PTS")
+            logger.info("抽帧区间: %d 帧, 删除偏移: %d, PTS缩放比: %.4f", interval, drop_offset, pts_ratio)
 
         if self._bitrate_enabled:
             original_bitrate = self._get_original_bitrate(input_path)
@@ -471,6 +473,9 @@ class DedupWorker(QThread):
 
         if filter_chains:
             cmd.extend(["-vf", ",".join(filter_chains)])
+
+        if self._frame_extract_enabled:
+            cmd.extend(["-af", f"aselect={select_expr},asetpts={pts_ratio:.6f}*PTS"])
 
         cmd.extend(["-y", output_path])
         return cmd
