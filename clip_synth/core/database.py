@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 
@@ -27,6 +27,24 @@ class DatabaseManager:
 
         import clip_synth.models  # noqa: F401
         Base.metadata.create_all(self._engine)
+        
+        self._migrate_database()
+
+    def _migrate_database(self) -> None:
+        with self._engine.connect() as conn:
+            result = conn.execute(text("PRAGMA table_info(settings)"))
+            columns = [row[1] for row in result.fetchall()]
+            
+            if "doubao_access_key" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN doubao_access_key VARCHAR(512) DEFAULT ''"))
+            if "doubao_secret_key" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN doubao_secret_key VARCHAR(512) DEFAULT ''"))
+            if "doubao_app_id" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN doubao_app_id VARCHAR(255) DEFAULT ''"))
+            if "doubao_token" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN doubao_token VARCHAR(1024) DEFAULT ''"))
+            
+            conn.commit()
 
     @property
     def engine(self):

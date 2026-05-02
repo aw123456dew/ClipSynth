@@ -30,7 +30,7 @@ class MainWindow(QMainWindow):
     def _setup_window(self) -> None:
         self.setWindowTitle("ClipSynth - AI Video Editor")
         self.resize(1200, 800)
-        self.setMinimumSize(900, 600)
+        self.setMinimumSize(1200, 800)
 
     def _setup_menu_bar(self) -> None:
         menu_bar = self.menuBar()

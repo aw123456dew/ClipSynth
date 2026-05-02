@@ -179,7 +179,7 @@ class NarrateProjectCard(QFrame):
         name_label.setAlignment(Qt.AlignCenter)
         name_label.setWordWrap(True)
         name_label.setFixedWidth(200)
-        name_label.setMaximumHeight(40)
+        name_label.setMinimumHeight(40)
 
         layout.addWidget(thumbnail_container)
         layout.addSpacing(8)

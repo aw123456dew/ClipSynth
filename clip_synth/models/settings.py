@@ -17,6 +17,10 @@ class SettingsModel(Base):
     vision_api_key: Mapped[str] = mapped_column(String(512), default="")
     vision_base_url: Mapped[str] = mapped_column(String(1024), default="")
     draft_output_dir: Mapped[str] = mapped_column(Text, default="")
+    doubao_access_key: Mapped[str] = mapped_column(String(512), default="")
+    doubao_secret_key: Mapped[str] = mapped_column(String(512), default="")
+    doubao_app_id: Mapped[str] = mapped_column(String(255), default="")
+    doubao_token: Mapped[str] = mapped_column(String(1024), default="")
 
 
 @dataclass
@@ -46,16 +50,47 @@ class AIModelSettings:
 
 
 @dataclass
+class DoubaoVoiceSettings:
+    access_key: str = ""
+    secret_key: str = ""
+    app_id: str = ""
+    token: str = ""
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.access_key and self.secret_key and self.app_id and self.token)
+
+    def to_dict(self) -> dict:
+        return {
+            "access_key": self.access_key,
+            "secret_key": self.secret_key,
+            "app_id": self.app_id,
+            "token": self.token,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "DoubaoVoiceSettings":
+        return cls(
+            access_key=data.get("access_key", ""),
+            secret_key=data.get("secret_key", ""),
+            app_id=data.get("app_id", ""),
+            token=data.get("token", ""),
+        )
+
+
+@dataclass
 class AppSettings:
     text_model: AIModelSettings = field(default_factory=AIModelSettings)
     vision_model: AIModelSettings = field(default_factory=AIModelSettings)
     draft_output_dir: str = ""
+    doubao_voice: DoubaoVoiceSettings = field(default_factory=DoubaoVoiceSettings)
 
     def to_dict(self) -> dict:
         return {
             "text_model": self.text_model.to_dict(),
             "vision_model": self.vision_model.to_dict(),
             "draft_output_dir": self.draft_output_dir,
+            "doubao_voice": self.doubao_voice.to_dict(),
         }
 
     @classmethod
@@ -64,4 +99,5 @@ class AppSettings:
             text_model=AIModelSettings.from_dict(data.get("text_model", {})),
             vision_model=AIModelSettings.from_dict(data.get("vision_model", {})),
             draft_output_dir=data.get("draft_output_dir", ""),
+            doubao_voice=DoubaoVoiceSettings.from_dict(data.get("doubao_voice", {})),
         )

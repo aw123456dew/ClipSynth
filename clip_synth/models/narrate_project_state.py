@@ -12,9 +12,11 @@ class NarrateProjectState:
     cover_path: Optional[str] = None
     videos: List[VideoProjectState] = field(default_factory=list)
     current_step: int = 0
-    clipping_mode: str = "manual"
-    clipping_style: str = "high_energy"
+    clipping_style: str = "emotional"
+    narration_language: str = "zh"
+    original_sound_ratio: int = 0
     ai_analysis_results: List[dict] = field(default_factory=list)
+    narration_scripts: List[dict] = field(default_factory=list)
     created_at: float = field(default_factory=lambda: 0.0)
     updated_at: float = field(default_factory=lambda: 0.0)
 

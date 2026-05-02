@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from clip_synth.core.database import DatabaseManager
-from clip_synth.models.settings import AIModelSettings, AppSettings, SettingsModel
+from clip_synth.models.settings import AIModelSettings, AppSettings, DoubaoVoiceSettings, SettingsModel
 
 
 class SettingsService:
@@ -26,6 +26,12 @@ class SettingsService:
                     base_url=row.vision_base_url,
                 ),
                 draft_output_dir=row.draft_output_dir,
+                doubao_voice=DoubaoVoiceSettings(
+                    access_key=row.doubao_access_key,
+                    secret_key=row.doubao_secret_key,
+                    app_id=row.doubao_app_id,
+                    token=row.doubao_token,
+                ),
             )
         finally:
             session.close()
@@ -45,6 +51,10 @@ class SettingsService:
             row.vision_api_key = settings.vision_model.api_key
             row.vision_base_url = settings.vision_model.base_url
             row.draft_output_dir = settings.draft_output_dir
+            row.doubao_access_key = settings.doubao_voice.access_key
+            row.doubao_secret_key = settings.doubao_voice.secret_key
+            row.doubao_app_id = settings.doubao_voice.app_id
+            row.doubao_token = settings.doubao_voice.token
 
             session.commit()
         finally:

@@ -207,25 +207,16 @@ class ExportPage(QFrame):
 
         segments: List[Tuple[str, str, str]] = []
 
-        if self._project.clipping_mode == "ai":
-            selected_ids = {
-                r["seg_id"] for r in self._project.ai_analysis_results
-            }
-            for video_state in self._project.videos:
-                for seg_type in ["gold_3s", "highlight", "plot", "ending"]:
-                    for seg in video_state.segments.get(seg_type, []):
-                        if seg.id in selected_ids:
-                            segments.append(
-                                (video_state.video_path, seg.start_time, seg.end_time)
-                            )
-        else:
-            for video_state in self._project.videos:
-                for seg_type in ["gold_3s", "highlight", "plot", "ending"]:
-                    for seg in video_state.segments.get(seg_type, []):
-                        if seg.selected:
-                            segments.append(
-                                (video_state.video_path, seg.start_time, seg.end_time)
-                            )
+        selected_ids = {
+            r["seg_id"] for r in self._project.ai_analysis_results
+        }
+        for video_state in self._project.videos:
+            for seg_type in ["gold_3s", "highlight", "plot", "ending"]:
+                for seg in video_state.segments.get(seg_type, []):
+                    if seg.id in selected_ids:
+                        segments.append(
+                            (video_state.video_path, seg.start_time, seg.end_time)
+                        )
 
         segments.sort(key=lambda s: (s[0], s[1]))
         return segments

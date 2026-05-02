@@ -418,8 +418,7 @@ class AiAnalysisPage(QFrame):
 
         self._mode_combo = QComboBox()
         self._mode_combo.setObjectName("modeSelectorCombo")
-        self._mode_combo.setFixedWidth(180)
-        self._mode_combo.setFixedHeight(36)
+        self._mode_combo.setMinimumWidth(180)
         for m in AnalysisMode:
             self._mode_combo.addItem(m.display_name, m.value)
         self._mode_combo.setCurrentIndex(1)
@@ -432,21 +431,18 @@ class AiAnalysisPage(QFrame):
         self._mode_desc_label.setObjectName("modeDescLabel")
         self._mode_desc_label.setAlignment(Qt.AlignCenter)
         self._mode_desc_label.setWordWrap(True)
-        self._mode_desc_label.setFixedWidth(400)
         loading_layout.addWidget(self._mode_desc_label, alignment=Qt.AlignCenter)
 
         self._update_mode_desc()
 
         self._start_analysis_btn = QPushButton("开始分析")
         self._start_analysis_btn.setObjectName("startAnalysisBtn")
-        self._start_analysis_btn.setFixedWidth(200)
-        self._start_analysis_btn.setFixedHeight(44)
+        self._start_analysis_btn.setMinimumWidth(200)
         self._start_analysis_btn.clicked.connect(self._start_analysis)
         loading_layout.addWidget(self._start_analysis_btn, alignment=Qt.AlignCenter)
 
         self._progress_container = QFrame()
         self._progress_container.setObjectName("analysisProgressContainer")
-        self._progress_container.setFixedWidth(360)
         self._progress_container.setVisible(False)
         progress_container_layout = QVBoxLayout(self._progress_container)
         progress_container_layout.setContentsMargins(0, 0, 0, 0)
@@ -635,7 +631,7 @@ class AiAnalysisPage(QFrame):
 
         self._re_analyze_btn = QPushButton("重新分析")
         self._re_analyze_btn.setObjectName("reAnalyzeBtn")
-        self._re_analyze_btn.setFixedHeight(40)
+        self._re_analyze_btn.setMinimumHeight(40)
         self._re_analyze_btn.clicked.connect(self._on_re_analyze)
         self._results_layout.addWidget(self._re_analyze_btn)
 

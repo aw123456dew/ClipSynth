@@ -91,32 +91,38 @@ class ClippingMode(Enum):
 
 class ClippingStyle(Enum):
     """AI剪辑手法"""
-    HIGH_ENERGY = "high_energy"
-    HOT_PRELUDE = "hot_prelude"
-    GOLDEN_THREE = "golden_three"
+    EMOTIONAL = "emotional"
+    HUMOROUS = "humorous"
+    LOGICAL = "logical"
+    FAST_PACED = "fast_paced"
 
     @property
     def display_name(self) -> str:
         return {
-            "high_energy": "高燃混剪",
-            "hot_prelude": "热点前置",
-            "golden_three": "黄金三段",
+            "emotional": "情感共鸣",
+            "humorous": "搞笑幽默",
+            "logical": "逻辑严谨",
+            "fast_paced": "超快节奏",
         }[self.value]
 
     @property
     def description(self) -> str:
         return {
-            "high_energy": (
-                "AI智能识别视频高能瞬间，自动提取精彩片段，"
-                "一键生成节奏紧凑、情绪炸裂的高燃混剪，瞬间点燃观众热情"
+            "emotional": (
+                "深入挖掘角色情感，通过细腻的情感表达引发观众共鸣，"
+                "让观众与角色同悲同喜，获得情感上的触动与释放"
             ),
-            "hot_prelude": (
-                "用悬念、冲突或反转打造「黄金前3秒」，"
-                "强势抓住注意力，迅速激发观看兴趣，再自然衔接原片完整剧情"
+            "humorous": (
+                "以轻松诙谐的方式解读剧情，挖掘笑点和梗，"
+                "用幽默的语言风格让观众在欢笑中看完故事"
             ),
-            "golden_three": (
-                "高能开场 → 完整叙事 → 引流转化收尾，层层递进，"
-                "兼顾吸引力与传播目标，提升完播与转化效率"
+            "logical": (
+                "严谨梳理剧情逻辑，清晰呈现事件因果，"
+                "帮助观众理清复杂的人物关系和故事脉络"
+            ),
+            "fast_paced": (
+                "快节奏、高能输出，简洁有力的语言风格，"
+                "信息密度大，保持观众持续观看的好奇心和紧张感"
             ),
         }[self.value]
 
@@ -129,9 +135,11 @@ class SmartClippingProjectState:
     cover_path: Optional[str] = None
     videos: List[VideoProjectState] = field(default_factory=list)
     current_step: int = 0
-    clipping_mode: str = "manual"
-    clipping_style: str = "high_energy"
+    clipping_style: str = "emotional"
+    narration_language: str = "zh"
+    original_sound_ratio: int = 0
     ai_analysis_results: List[dict] = field(default_factory=list)
+    narration_scripts: List[dict] = field(default_factory=list)
     created_at: float = field(default_factory=lambda: 0.0)
     updated_at: float = field(default_factory=lambda: 0.0)
 

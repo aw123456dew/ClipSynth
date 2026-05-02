@@ -1528,6 +1528,80 @@ QLineEdit::placeholder {
     background-color: transparent;
 }
 
+#narrationResultsArea {
+    border: none;
+    background-color: transparent;
+}
+
+#narrationResultsContent {
+    background-color: transparent;
+}
+
+#narrationTable {
+    background-color: #131827;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 13px;
+    gridline-color: #1e293b;
+    selection-background-color: #1a2744;
+}
+
+#narrationTable QHeaderView {
+    background-color: #1a1f2e;
+    color: #e2e8f0;
+    font-weight: bold;
+    border-bottom: 1px solid #1e293b;
+}
+
+#narrationTable QHeaderView::section {
+    background-color: #1a1f2e;
+    color: #e2e8f0;
+    padding: 8px;
+    border: none;
+    border-bottom: 1px solid #1e293b;
+}
+
+#narrationTable QTableCornerButton::section {
+    background-color: #1a1f2e;
+    border: none;
+}
+
+#narrationTable::item {
+    background-color: #131827;
+    color: #e2e8f0;
+    padding: 8px;
+    border-bottom: 1px solid #1e293b;
+}
+
+#narrationTable::item:alternate {
+    background-color: #0f1520;
+}
+
+#narrationTable::item:selected {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#segmentPlayBtn {
+    background-color: #1a2744;
+    color: #60a5fa;
+    font-size: 13px;
+    padding: 6px 12px;
+    border: 1px solid #3b82f6;
+    border-radius: 4px;
+    text-align: left;
+}
+
+#segmentPlayBtn:hover {
+    background-color: #1e3050;
+    border: 1px solid #60a5fa;
+}
+
+#segmentPlayBtn:pressed {
+    background-color: #15203a;
+}
+
 #aiResultSummary {
     color: #60a5fa;
     font-size: 13px;
@@ -2089,4 +2163,222 @@ QLineEdit::placeholder {
 
 #dedupRightScrollContent {
     background: transparent;
+}
+
+/* ===== Voice Selection Page ===== */
+#voiceSelectionPage {
+    background-color: #0a0e17;
+}
+
+#wizardStepTitle {
+    color: #e2e8f0;
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+#ttsEngineGroup {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+
+#ttsEngineGroup::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 18px;
+    padding: 0 10px;
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+#ttsEngineCombo {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    font-size: 14px;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-height: 28px;
+}
+
+#ttsEngineCombo:hover {
+    border-color: #6366f1;
+}
+
+#ttsEngineCombo:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+#ttsEngineCombo::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 32px;
+    border: none;
+}
+
+#ttsEngineCombo::down-arrow {
+    image: none;
+    border: none;
+}
+
+#ttsEngineCombo QAbstractItemView {
+    background-color: #0d111f;
+    color: #e2e8f0;
+    font-size: 13px;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+
+#ttsEngineCombo QAbstractItemView::item {
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+#ttsEngineCombo QAbstractItemView::item:hover {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#ttsEngineCombo QAbstractItemView::item:selected {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#voiceParamsGroup {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+
+#voiceParamsGroup::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 18px;
+    padding: 0 10px;
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+#voiceCombo, #styleCombo, #langCombo {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    font-size: 14px;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-height: 28px;
+}
+
+#voiceCombo:hover, #styleCombo:hover, #langCombo:hover {
+    border-color: #6366f1;
+}
+
+#voiceCombo:focus, #styleCombo:focus, #langCombo:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+#voiceCombo::drop-down, #styleCombo::drop-down, #langCombo::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 32px;
+    border: none;
+}
+
+#voiceCombo::down-arrow, #styleCombo::down-arrow, #langCombo::down-arrow {
+    image: none;
+    border: none;
+}
+
+#voiceCombo QAbstractItemView, #styleCombo QAbstractItemView, #langCombo QAbstractItemView {
+    background-color: #0d111f;
+    color: #e2e8f0;
+    font-size: 13px;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+
+#voiceCombo QAbstractItemView::item, #styleCombo QAbstractItemView::item, #langCombo QAbstractItemView::item {
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+#voiceCombo QAbstractItemView::item:hover, #styleCombo QAbstractItemView::item:hover, #langCombo QAbstractItemView::item:hover {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+/* ===== QSlider Styles ===== */
+QSlider {
+    background-color: transparent;
+}
+
+QSlider::groove:horizontal {
+    background-color: #1a2340;
+    height: 6px;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background-color: #6366f1;
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+}
+
+QSlider::handle:horizontal:hover {
+    background-color: #818cf8;
+}
+
+QSlider::sub-page:horizontal {
+    background-color: #4f46e5;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#rateSlider, #pitchSlider, #volumeSlider, #silenceSlider {
+    background-color: transparent;
+}
+
+#rateLabel, #pitchLabel, #volumeLabel, #silenceLabel {
+    color: #94a3b8;
+    font-size: 14px;
+    font-weight: 600;
+    background-color: #0a0f1a;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 6px 10px;
+    min-height: 28px;
+    text-align: center;
+}
+
+#paramLabel {
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+    padding-bottom: 6px;
+}
+
+#paramSeparator {
+    background-color: #1e293b;
+    height: 1px;
+    margin: 8px 0;
+}
+
+#voiceParamsGroup QLabel {
+    color: #cbd5e1;
+    font-size: 14px;
+    font-weight: 600;
+    min-height: 24px;
 }

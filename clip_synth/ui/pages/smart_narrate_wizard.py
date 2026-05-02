@@ -59,7 +59,7 @@ class SmartNarrateWizard(QFrame):
         self._analysis_service = VideoAnalysisService(ai_service)
         self._text_ai_service = text_ai_service or ai_service
         self._current_step = self._project.current_step
-        self._total_steps = 6
+        self._total_steps = 5
         self.setObjectName("smartNarrateWizard")
         self._setup_ui()
         self._update_step_indicators()
@@ -82,7 +82,6 @@ class SmartNarrateWizard(QFrame):
             "上传字幕",
             "AI视频分析",
             "选择解说片段",
-            "解说文案",
             "选择配音",
             "导出",
         ]
@@ -140,16 +139,9 @@ class SmartNarrateWizard(QFrame):
         self._method_page.ready_for_next.connect(self._on_method_ready)
         self._stack.addWidget(self._method_page)
 
-        self._script_page = PlaceholderStepPage(
-            "生成解说文案",
-            "AI 将根据视频片段自动生成解说文案（待实现）",
-        )
-        self._stack.addWidget(self._script_page)
+        from clip_synth.ui.pages.voice_selection_page import VoiceSelectionPage
 
-        self._voice_page = PlaceholderStepPage(
-            "选择配音",
-            "选择配音音色和语速等参数（待实现）",
-        )
+        self._voice_page = VoiceSelectionPage()
         self._stack.addWidget(self._voice_page)
 
         self._export_page = PlaceholderStepPage(
@@ -192,8 +184,6 @@ class SmartNarrateWizard(QFrame):
         layout.addWidget(footer)
 
         self._stack.setCurrentIndex(self._current_step)
-        if self._current_step >= 2:
-            self._method_page.refresh_manual_ui()
         self._update_nav_buttons()
 
     def _update_step_indicators(self):
@@ -227,8 +217,6 @@ class SmartNarrateWizard(QFrame):
             self._project.current_step = self._current_step
             self._save_project()
             self._stack.setCurrentIndex(self._current_step)
-            if self._current_step == 2:
-                self._method_page.refresh_manual_ui()
             self._update_step_indicators()
             self._update_nav_buttons()
             if self._current_step == 0:
@@ -253,8 +241,6 @@ class SmartNarrateWizard(QFrame):
             self._project.current_step = self._current_step
             self._save_project()
             self._stack.setCurrentIndex(self._current_step)
-            if self._current_step == 2:
-                self._method_page.refresh_manual_ui()
             self._update_step_indicators()
             self._update_nav_buttons()
 

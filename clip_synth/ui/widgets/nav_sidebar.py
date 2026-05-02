@@ -45,7 +45,7 @@ class NavSidebar(QFrame):
 
         header = QFrame()
         header.setObjectName("navHeader")
-        header.setFixedHeight(80)
+        header.setMinimumHeight(80)
         header_layout = QVBoxLayout(header)
         header_layout.setAlignment(Qt.AlignCenter)
 
@@ -86,7 +86,7 @@ class NavSidebar(QFrame):
         version_label = QLabel("v0.1.0")
         version_label.setObjectName("navVersion")
         version_label.setAlignment(Qt.AlignCenter)
-        version_label.setFixedHeight(32)
+        version_label.setMinimumHeight(32)
         layout.addWidget(version_label)
 
         if self._buttons:

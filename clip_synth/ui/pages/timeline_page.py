@@ -16,7 +16,6 @@ class TimelineTrack(QWidget):
         super().__init__(parent)
         self._track_name = track_name
         self.setMinimumHeight(60)
-        self.setMaximumHeight(80)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)

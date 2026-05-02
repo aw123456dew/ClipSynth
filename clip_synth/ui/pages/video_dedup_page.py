@@ -159,7 +159,7 @@ class VideoDedupPage(QFrame):
     def _create_video_item(self, name: str) -> QFrame:
         item = QFrame()
         item.setObjectName("dedupVideoItem")
-        item.setFixedHeight(48)
+        item.setMinimumHeight(48)
         item_layout = QHBoxLayout(item)
         item_layout.setContentsMargins(12, 0, 12, 0)
 
