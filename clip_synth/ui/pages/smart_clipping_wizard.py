@@ -9,8 +9,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from clip_synth.models import SmartClippingProjectState
-from clip_synth.services import ProjectStateService
+from clip_synth.models.project_state import SmartClippingProjectState
+from clip_synth.services.project_state_service import ProjectStateService
 from clip_synth.services.ai_service import AIService
 from clip_synth.services.clipping_analysis_service import ClippingAnalysisService
 from clip_synth.services.export_service import ExportService

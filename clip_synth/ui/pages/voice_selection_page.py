@@ -1,3 +1,5 @@
+import logging
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -10,6 +12,148 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+logger = logging.getLogger("clip_synth.voice_selection")
+
+DOUBAO_VOICE_OPTIONS = {
+    "BV700_V2_streaming": "灿灿 2.0",
+    "BV705_streaming": "炀炀",
+    "BV701_V2_streaming": "擎苍 2.0",
+    "BV001_V2_streaming": "通用女声 2.0",
+    "BV700_streaming": "灿灿",
+    "BV406_V2_streaming": "超自然音色-梓梓2.0",
+    "BV406_streaming": "超自然音色-梓梓",
+    "BV407_V2_streaming": "超自然音色-燃燃2.0",
+    "BV407_streaming": "超自然音色-燃燃",
+    "BV001_streaming": "通用女声",
+    "BV002_streaming": "通用男声",
+    "BV701_streaming": "擎苍",
+    "BV123_streaming": "阳光青年",
+    "BV120_streaming": "反卷青年",
+    "BV119_streaming": "通用赘婿",
+    "BV115_streaming": "古风少御",
+    "BV107_streaming": "霸气青叔",
+    "BV100_streaming": "质朴青年",
+    "BV104_streaming": "温柔淑女",
+    "BV004_streaming": "开朗青年",
+    "BV113_streaming": "甜宠少御",
+    "BV102_streaming": "儒雅青年",
+    "BV405_streaming": "甜美小源",
+    "BV007_streaming": "亲切女声",
+    "BV009_streaming": "知性女声",
+    "BV419_streaming": "诚诚",
+    "BV415_streaming": "童童",
+    "BV008_streaming": "亲切男声",
+    "BV408_streaming": "译制片男声",
+    "BV426_streaming": "懒小羊",
+    "BV428_streaming": "清新文艺女声",
+    "BV403_streaming": "鸡汤女声",
+    "BV158_streaming": "智慧老者",
+    "BV157_streaming": "慈爱姥姥",
+    "BR001_streaming": "说唱小哥",
+    "BV410_streaming": "活力解说男",
+    "BV411_streaming": "影视解说小帅",
+    "BV437_streaming": "解说小帅-多情感",
+    "BV412_streaming": "影视解说小美",
+    "BV159_streaming": "纨绔青年",
+    "BV418_streaming": "直播一姐",
+    "BV142_streaming": "沉稳解说男",
+    "BV143_streaming": "潇洒青年",
+    "BV056_streaming": "阳光男声",
+    "BV005_streaming": "活泼女声",
+    "BV064_streaming": "小萝莉",
+    "BV051_streaming": "奶气萌娃",
+    "BV063_streaming": "动漫海绵",
+    "BV417_streaming": "动漫海星",
+    "BV050_streaming": "动漫小新",
+    "BV061_streaming": "天才童声",
+    "BV401_streaming": "促销男声",
+    "BV402_streaming": "促销女声",
+    "BV006_streaming": "磁性男声",
+    "BV011_streaming": "新闻女声",
+    "BV012_streaming": "新闻男声",
+    "BV034_streaming": "知性姐姐-双语",
+    "BV033_streaming": "温柔小哥",
+    "BV511_streaming": "慵懒女声-Ava",
+    "BV505_streaming": "议论女声-Alicia",
+    "BV138_streaming": "情感女声-Lawrence",
+    "BV027_streaming": "美式女声-Amelia",
+    "BV502_streaming": "讲述女声-Amanda",
+    "BV503_streaming": "活力女声-Ariana",
+    "BV504_streaming": "活力男声-Jackson",
+    "BV421_streaming": "天才少女",
+    "BV702_streaming": "Stefan",
+    "BV506_streaming": "天真萌娃-Lily",
+    "BV040_streaming": "亲切女声-Anna",
+    "BV516_streaming": "澳洲男声-Henry",
+    "BV520_streaming": "元气少女",
+    "BV521_streaming": "萌系少女",
+    "BV522_streaming": "气质女声",
+    "BV524_streaming": "日语男声",
+    "BV531_streaming": "活力男声Carlos（巴西地区）",
+    "BV530_streaming": "活力女声（巴西地区）",
+    "BV065_streaming": "气质御姐（墨西哥地区）",
+    "BV021_streaming": "东北老铁",
+    "BV020_streaming": "东北丫头",
+    "BV704_streaming": "方言灿灿",
+    "BV210_streaming": "西安佟掌柜",
+    "BV217_streaming": "沪上阿姐",
+    "BV213_streaming": "广西表哥",
+    "BV025_streaming": "甜美台妹",
+    "BV227_streaming": "台普男声",
+    "BV026_streaming": "港剧男神",
+    "BV424_streaming": "广东女仔",
+    "BV212_streaming": "相声演员",
+    "BV019_streaming": "重庆小伙",
+    "BV221_streaming": "四川甜妹儿",
+    "BV423_streaming": "重庆幺妹儿",
+    "BV214_streaming": "乡村企业家",
+    "BV226_streaming": "湖南妹坨",
+    "BV216_streaming": "长沙靓女",
+}
+
+DOUBAO_EMOTION_OPTIONS = {
+    "": "默认",
+    "customer_service": "客服",
+    "professional": "专业",
+    "serious": "严肃",
+    "narrator": "旁白-舒缓",
+    "narrator_immersive": "旁白-沉浸",
+    "comfort": "安慰鼓励",
+    "lovey-dovey": "撒娇",
+    "energetic": "可爱元气",
+    "conniving": "绿茶",
+    "tsundere": "傲娇",
+    "charming": "娇媚",
+    "storytelling": "讲故事",
+    "radio": "情感电台",
+    "yoga": "瑜伽",
+    "advertising": "广告",
+    "assistant": "助手",
+    "chat": "自然对话",
+    "pleased": "愉悦",
+    "sorry": "抱歉",
+    "annoyed": "嗔怪",
+    "happy": "开心",
+    "sad": "悲伤",
+    "angry": "愤怒",
+    "scare": "害怕",
+    "hate": "厌恶",
+    "surprise": "惊讶",
+    "tear": "哭腔",
+    "novel_dialog": "平和",
+}
+
+DOUBAO_LANGUAGE_OPTIONS = {
+    "cn": "中文",
+    "en": "英语",
+    "ja": "日语",
+    "thth": "泰语",
+    "vivn": "越南语",
+    "id": "印尼语",
+    "ptbr": "葡萄牙语",
+    "esmx": "西班牙语",
+}
 
 
 class VoiceSelectionPage(QFrame):
@@ -54,16 +198,11 @@ class VoiceSelectionPage(QFrame):
         voice_label.setObjectName("paramLabel")
         voice_layout.addWidget(voice_label)
         self._voice_combo = QComboBox()
-        self._voice_combo.addItems([
-            "温暖女声",
-            "活力女声",
-            "知性女声",
-            "沉稳男声",
-            "阳光男声",
-            "可爱童声",
-        ])
         self._voice_combo.setObjectName("voiceCombo")
         self._voice_combo.setMinimumHeight(36)
+        for voice_id, voice_name in DOUBAO_VOICE_OPTIONS.items():
+            self._voice_combo.addItem(voice_name, voice_id)
+        self._voice_combo.setCurrentIndex(0)
         voice_layout.addWidget(self._voice_combo)
         combo_row.addLayout(voice_layout, stretch=1)
 
@@ -72,16 +211,11 @@ class VoiceSelectionPage(QFrame):
         style_label.setObjectName("paramLabel")
         style_layout.addWidget(style_label)
         self._style_combo = QComboBox()
-        self._style_combo.addItems([
-            "默认",
-            "亲切",
-            "严肃",
-            "欢快",
-            "悲伤",
-            "激动",
-        ])
         self._style_combo.setObjectName("styleCombo")
         self._style_combo.setMinimumHeight(36)
+        for emotion_id, emotion_name in DOUBAO_EMOTION_OPTIONS.items():
+            self._style_combo.addItem(emotion_name, emotion_id)
+        self._style_combo.setCurrentIndex(0)
         style_layout.addWidget(self._style_combo)
         combo_row.addLayout(style_layout, stretch=1)
 
@@ -90,15 +224,11 @@ class VoiceSelectionPage(QFrame):
         lang_label.setObjectName("paramLabel")
         lang_layout.addWidget(lang_label)
         self._lang_combo = QComboBox()
-        self._lang_combo.addItems([
-            "中文",
-            "英文",
-            "日文",
-            "韩文",
-            "泰文",
-        ])
         self._lang_combo.setObjectName("langCombo")
         self._lang_combo.setMinimumHeight(36)
+        for lang_id, lang_name in DOUBAO_LANGUAGE_OPTIONS.items():
+            self._lang_combo.addItem(lang_name, lang_id)
+        self._lang_combo.setCurrentIndex(0)
         lang_layout.addWidget(self._lang_combo)
         combo_row.addLayout(lang_layout, stretch=1)
 
@@ -196,9 +326,12 @@ class VoiceSelectionPage(QFrame):
     def get_settings(self) -> dict:
         return {
             "tts_engine": self._tts_combo.currentData(),
-            "voice": self._voice_combo.currentText(),
-            "style": self._style_combo.currentText(),
-            "language": self._lang_combo.currentText(),
+            "voice_type": self._voice_combo.currentData(),
+            "voice_name": self._voice_combo.currentText(),
+            "emotion": self._style_combo.currentData(),
+            "emotion_name": self._style_combo.currentText(),
+            "language": self._lang_combo.currentData(),
+            "language_name": self._lang_combo.currentText(),
             "rate": self._rate_slider.value() / 10,
             "pitch": self._pitch_slider.value() / 10,
             "volume": self._volume_slider.value() / 10,

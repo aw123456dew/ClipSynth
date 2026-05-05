@@ -2382,3 +2382,85 @@ QSlider::sub-page:horizontal {
     font-weight: 600;
     min-height: 24px;
 }
+
+/* ===== Narrate Export Page ===== */
+#narrateExportPage {
+    background-color: #0a0e17;
+}
+
+#exportVideoCard, #exportDraftCard {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    min-height: 80px;
+    max-width: 520px;
+}
+
+#exportVideoCard:hover, #exportDraftCard:hover {
+    background-color: #131d33;
+    border-color: #6366f1;
+}
+
+#exportVideoCard:pressed, #exportDraftCard:pressed {
+    background-color: #0d1525;
+    border-color: #4f46e5;
+}
+
+#exportCardIcon {
+    background-color: #111c30;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    font-size: 22px;
+    min-width: 48px;
+    min-height: 48px;
+}
+
+#exportVideoCard:hover #exportCardIcon {
+    background-color: #1a2744;
+    border-color: #6366f1;
+}
+
+#exportDraftCard:hover #exportCardIcon {
+    background-color: #1a2744;
+    border-color: #6366f1;
+}
+
+#exportCardTitle {
+    color: #e2e8f0;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+#exportCardDesc {
+    color: #7a8aa8;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+#exportCardArrow {
+    color: #4a5a7a;
+    font-size: 20px;
+    font-weight: bold;
+    min-width: 32px;
+}
+
+#exportVideoCard:hover #exportCardArrow, #exportDraftCard:hover #exportCardArrow {
+    color: #6366f1;
+}
+
+#exportPlaceholderHint {
+    color: #4a5a7a;
+    font-size: 12px;
+    padding-top: 4px;
+}
+
+#wizardStatusLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 10px 20px;
+    margin: 0 24px;
+}

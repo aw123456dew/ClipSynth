@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from clip_synth.models import VideoProjectState
+from clip_synth.models.project_state import VideoProjectState
 
 
 class VideoSubtitleItem(QFrame):

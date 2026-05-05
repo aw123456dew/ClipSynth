@@ -19,8 +19,6 @@ from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.pages.settings_page import SettingsPage
 from clip_synth.ui.pages.short_drama_mix_page import ShortDramaMixPage
 from clip_synth.ui.pages.short_drama_narrate_page import ShortDramaNarratePage
-from clip_synth.ui.pages.smart_clipping_wizard import SmartClippingWizard
-from clip_synth.ui.pages.smart_narrate_wizard import SmartNarrateWizard
 from clip_synth.ui.pages.video_dedup_page import VideoDedupPage
 
 logger = logging.getLogger(__name__)
@@ -102,6 +100,8 @@ class ContentArea(QFrame):
             self._stack.setCurrentIndex(self._pages[page_key])
 
     def switch_to_project_wizard(self, data) -> None:
+        from clip_synth.ui.pages.smart_clipping_wizard import SmartClippingWizard
+
         video_paths, project_name, cover_path = data
 
         if not cover_path and video_paths:
@@ -153,6 +153,8 @@ class ContentArea(QFrame):
         return None
 
     def open_smart_project(self, project_id: str) -> None:
+        from clip_synth.ui.pages.smart_clipping_wizard import SmartClippingWizard
+
         project = self._project_state_service.load_project(project_id)
         if project:
             vision_ai = self._create_vision_ai_service()
@@ -166,6 +168,8 @@ class ContentArea(QFrame):
             self._stack.setCurrentIndex(self._stack.count() - 1)
 
     def switch_to_narrate_wizard(self, data) -> None:
+        from clip_synth.ui.pages.smart_narrate_wizard import SmartNarrateWizard
+
         video_paths, project_name, cover_path = data
 
         if not cover_path and video_paths:
@@ -178,6 +182,7 @@ class ContentArea(QFrame):
         text_ai = self._create_ai_service()
         wizard_page = SmartNarrateWizard(
             project, self._narrate_project_state_service, vision_ai, text_ai_service=text_ai,
+            db_manager=self._db_manager,
         )
         wizard_page.finished.connect(self._on_narrate_wizard_finished)
         wizard_page.cancelled.connect(self._on_narrate_wizard_cancelled)
@@ -185,12 +190,15 @@ class ContentArea(QFrame):
         self._stack.setCurrentIndex(self._stack.count() - 1)
 
     def open_narrate_project(self, project_id: str) -> None:
+        from clip_synth.ui.pages.smart_narrate_wizard import SmartNarrateWizard
+
         project = self._narrate_project_state_service.load_project(project_id)
         if project:
             vision_ai = self._create_vision_ai_service()
             text_ai = self._create_ai_service()
             wizard_page = SmartNarrateWizard(
                 project, self._narrate_project_state_service, vision_ai, text_ai_service=text_ai,
+                db_manager=self._db_manager,
             )
             wizard_page.finished.connect(self._on_narrate_wizard_finished)
             wizard_page.cancelled.connect(self._on_narrate_wizard_cancelled)

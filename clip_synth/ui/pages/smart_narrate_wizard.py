@@ -1,4 +1,8 @@
-from PySide6.QtCore import Qt, Signal
+import logging
+import os
+import traceback
+
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -12,33 +16,86 @@ from PySide6.QtWidgets import (
 from clip_synth.models.narrate_project_state import NarrateProjectState
 from clip_synth.services.ai_service import AIService
 from clip_synth.services.clipping_analysis_service import ClippingAnalysisService
+from clip_synth.services.doubao_tts_service import DoubaoTTSWorker
 from clip_synth.services.narrate_project_state_service import NarrateProjectStateService
 from clip_synth.services.video_analysis_service import VideoAnalysisService
 
+logger = logging.getLogger("clip_synth.smart_narrate_wizard")
 
-class PlaceholderStepPage(QFrame):
-    def __init__(self, title: str, description: str, parent=None):
+
+class TTSTaskWorker(QThread):
+    progress = Signal(str)
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(
+        self,
+        scripts: list,
+        voice_type: str,
+        speed: float,
+        pitch: float,
+        volume: float,
+        silence_duration: float,
+        emotion: str,
+        language: str,
+        doubao_settings,
+        output_dir: str,
+        parent=None,
+    ):
         super().__init__(parent)
-        self.setObjectName("placeholderStepPage")
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignCenter)
-        layout.setSpacing(16)
+        self._scripts = scripts
+        self._voice_type = voice_type
+        self._speed = speed
+        self._pitch = pitch
+        self._volume = volume
+        self._silence_duration = silence_duration
+        self._emotion = emotion
+        self._language = language
+        self._doubao_settings = doubao_settings
+        self._output_dir = output_dir
+        self._audio_paths = []
 
-        icon_label = QLabel("\u25b6")
-        icon_label.setObjectName("placeholderIcon")
-        icon_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(icon_label)
+    def run(self):
+        try:
+            worker = DoubaoTTSWorker(self._doubao_settings)
+            os.makedirs(self._output_dir, exist_ok=True)
 
-        title_label = QLabel(title)
-        title_label.setObjectName("placeholderTitle")
-        title_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title_label)
+            for i, script in enumerate(self._scripts):
+                text = script.get("narration_script", "") or script.get("narration", "") or script.get("text", "")
+                if not text:
+                    continue
 
-        desc_label = QLabel(description)
-        desc_label.setObjectName("placeholderDesc")
-        desc_label.setAlignment(Qt.AlignCenter)
-        desc_label.setWordWrap(True)
-        layout.addWidget(desc_label)
+                self.progress.emit(f"正在生成第 {i+1}/{len(self._scripts)} 段配音...")
+                audio_path = os.path.join(self._output_dir, f"narration_{i}.mp3")
+
+                success = worker.tts(
+                    text=text,
+                    voice_type=self._voice_type,
+                    output_path=audio_path,
+                    speed=self._speed,
+                    pitch=self._pitch,
+                    volume=self._volume,
+                    silence_duration=self._silence_duration,
+                    emotion=self._emotion,
+                    language=self._language,
+                )
+
+                if not success:
+                    self.error.emit(f"第 {i+1} 段配音生成失败")
+                    return
+
+                self._audio_paths.append(
+                    {"index": i, "path": audio_path, "text": text, **script}
+                )
+
+            self.progress.emit("配音生成完成")
+            self.finished.emit()
+        except Exception as e:
+            logger.error(f"TTS生成异常: {e}", exc_info=True)
+            self.error.emit(str(e))
+
+    def get_audio_paths(self):
+        return self._audio_paths
 
 
 class SmartNarrateWizard(QFrame):
@@ -51,6 +108,7 @@ class SmartNarrateWizard(QFrame):
         narrate_project_state_service: NarrateProjectStateService,
         ai_service: AIService,
         text_ai_service: AIService | None = None,
+        db_manager=None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -58,11 +116,22 @@ class SmartNarrateWizard(QFrame):
         self._narrate_project_state_service = narrate_project_state_service
         self._analysis_service = VideoAnalysisService(ai_service)
         self._text_ai_service = text_ai_service or ai_service
+        self._db_manager = db_manager
+        self._tts_worker = None
+        self._audio_output_dir: str = ""
+        self._generated_audio_files: list = []
         self._current_step = self._project.current_step
         self._total_steps = 5
+
+        logger.info(f"SmartNarrateWizard 初始化: current_step={self._current_step}, project={self._project.id}")
+
         self.setObjectName("smartNarrateWizard")
         self._setup_ui()
         self._update_step_indicators()
+
+    def _g_nav_ok(self) -> None:
+        self._next_btn.setEnabled(True)
+        self._prev_btn.setEnabled(self._current_step > 0)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -144,13 +213,18 @@ class SmartNarrateWizard(QFrame):
         self._voice_page = VoiceSelectionPage()
         self._stack.addWidget(self._voice_page)
 
-        self._export_page = PlaceholderStepPage(
-            "导出视频",
-            "将解说文案配音与视频合并导出（待实现）",
-        )
+        from clip_synth.ui.pages.narrate_export_page import NarrateExportPage
+
+        self._export_page = NarrateExportPage()
         self._stack.addWidget(self._export_page)
 
         layout.addWidget(self._stack, stretch=1)
+
+        self._status_label = QLabel("")
+        self._status_label.setObjectName("wizardStatusLabel")
+        self._status_label.setAlignment(Qt.AlignCenter)
+        self._status_label.hide()
+        layout.addWidget(self._status_label)
 
         footer = QFrame()
         footer.setObjectName("wizardFooter")
@@ -183,7 +257,11 @@ class SmartNarrateWizard(QFrame):
 
         layout.addWidget(footer)
 
+        self._sync_ui()
+
+    def _sync_ui(self) -> None:
         self._stack.setCurrentIndex(self._current_step)
+        self._update_step_indicators()
         self._update_nav_buttons()
 
     def _update_step_indicators(self):
@@ -210,43 +288,134 @@ class SmartNarrateWizard(QFrame):
         else:
             self._next_btn.show()
             self._finish_btn.hide()
+            self._next_btn.setEnabled(True)
 
     def _on_prev(self):
         if self._current_step > 0:
             self._current_step -= 1
             self._project.current_step = self._current_step
             self._save_project()
-            self._stack.setCurrentIndex(self._current_step)
-            self._update_step_indicators()
-            self._update_nav_buttons()
-            if self._current_step == 0:
-                self._next_btn.setEnabled(True)
+            self._sync_ui()
+            self._status_label.hide()
+
+    def _advance(self) -> None:
+        if self._current_step >= self._total_steps - 1:
+            return
+        self._current_step += 1
+        self._project.current_step = self._current_step
+        self._save_project()
+        self._sync_ui()
+
+        if self._current_step == 1:
+            self._next_btn.setEnabled(False)
+            self._ai_page.check_ready()
 
     def _on_next(self):
-        if self._current_step < self._total_steps - 1:
+        try:
+            if self._current_step >= self._total_steps - 1:
+                return
+
             if self._current_step == 0:
                 subtitles = self._upload_page.get_subtitles()
                 for video_state in self._project.videos:
                     video_state.subtitle_path = subtitles.get(video_state.video_path)
                 self._save_project()
+                self._advance()
             elif self._current_step == 1:
                 if not self._project.is_all_videos_ready():
+                    logger.warning("视频分析未完成，无法继续")
                     return
                 self._save_project()
+                self._advance()
             elif self._current_step == 2:
                 self._method_page.save_state()
                 self._save_project()
+                self._advance()
+            elif self._current_step == 3:
+                if self._project.audio_files:
+                    logger.info("已有配音文件，跳过TTS直接进入导出页")
+                    self._advance()
+                elif self._project.narration_scripts:
+                    self._on_generate_tts()
+                else:
+                    logger.warning("没有解说文案，跳过配音直接进入导出页")
+                    self._advance()
+        except Exception as e:
+            logger.error(f"下一步操作失败: {e}\n{traceback.format_exc()}")
+            self._g_nav_ok()
 
-            self._current_step += 1
-            self._project.current_step = self._current_step
-            self._save_project()
-            self._stack.setCurrentIndex(self._current_step)
-            self._update_step_indicators()
-            self._update_nav_buttons()
+    def _on_generate_tts(self):
+        voice_settings = self._voice_page.get_settings()
 
-            if self._current_step == 1:
-                self._next_btn.setEnabled(False)
-                self._ai_page.check_ready()
+        scripts = self._project.narration_scripts
+        if not scripts:
+            logger.error("没有解说文案，无法生成配音")
+            self._g_nav_ok()
+            return
+
+        if self._db_manager is None:
+            logger.error("数据库管理器未配置，无法读取豆包语音配置")
+            self._g_nav_ok()
+            return
+
+        from clip_synth.services.settings_service import SettingsService
+
+        settings_service = SettingsService(self._db_manager)
+        app_settings = settings_service.load()
+        doubao_settings = app_settings.doubao_voice
+
+        if not doubao_settings.is_configured:
+            logger.error("豆包语音配置不完整，请先在系统设置中完成配置")
+            self._g_nav_ok()
+            return
+
+        project_dir = os.path.join(
+            str(self._narrate_project_state_service.projects_dir),
+            self._project.id,
+            "audio",
+        )
+        self._audio_output_dir = project_dir
+        os.makedirs(project_dir, exist_ok=True)
+
+        self._next_btn.setEnabled(False)
+        self._prev_btn.setEnabled(False)
+        self._status_label.setText("正在生成配音...")
+        self._status_label.show()
+
+        self._tts_worker = TTSTaskWorker(
+            scripts=scripts,
+            voice_type=voice_settings["voice_type"],
+            speed=voice_settings["rate"],
+            pitch=voice_settings["pitch"],
+            volume=voice_settings["volume"],
+            silence_duration=voice_settings["silence"],
+            emotion=voice_settings["emotion"],
+            language=voice_settings["language"],
+            doubao_settings=doubao_settings,
+            output_dir=project_dir,
+        )
+        self._tts_worker.progress.connect(self._on_tts_progress)
+        self._tts_worker.finished.connect(self._on_tts_finished)
+        self._tts_worker.error.connect(self._on_tts_error)
+        self._tts_worker.start()
+
+    def _on_tts_progress(self, message: str):
+        self._status_label.setText(message)
+
+    def _on_tts_finished(self):
+        self._generated_audio_files = self._tts_worker.get_audio_paths() if self._tts_worker else []
+        self._project.audio_files = self._generated_audio_files
+        self._save_project()
+
+        self._status_label.setText("配音生成完成！")
+        self._g_nav_ok()
+        self._advance()
+        self._status_label.hide()
+
+    def _on_tts_error(self, message: str):
+        self._status_label.setText(f"配音生成失败，可尝试重新生成")
+        self._g_nav_ok()
+        logger.error(f"TTS生成失败: {message}")
 
     def _on_ai_ready(self, ready):
         if self._current_step == 1:
@@ -257,9 +426,14 @@ class SmartNarrateWizard(QFrame):
             self._next_btn.setEnabled(ready)
 
     def _on_finish(self):
+        if self._project.audio_files:
+            self._save_project()
         self.finished.emit()
 
     def _on_cancel(self):
+        if self._tts_worker and self._tts_worker.isRunning():
+            self._tts_worker.quit()
+            self._tts_worker.wait()
         self._save_project()
         self.cancelled.emit()
 

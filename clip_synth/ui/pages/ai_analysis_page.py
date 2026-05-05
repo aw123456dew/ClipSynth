@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from clip_synth.models import SmartClippingProjectState, VideoSegment
+from clip_synth.models.project_state import SmartClippingProjectState, VideoSegment
 from clip_synth.models.project_state import AnalysisMode
 from clip_synth.services.project_state_service import ProjectStateService
 from clip_synth.services.video_analysis_service import VideoAnalysisService

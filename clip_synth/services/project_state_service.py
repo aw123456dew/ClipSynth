@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
-from clip_synth.models import (
+from clip_synth.models.project_state import (
     SmartClippingProjectState,
     VideoProjectState,
     VideoSegment,

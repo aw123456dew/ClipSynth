@@ -17,6 +17,7 @@ class NarrateProjectState:
     original_sound_ratio: int = 0
     ai_analysis_results: List[dict] = field(default_factory=list)
     narration_scripts: List[dict] = field(default_factory=list)
+    audio_files: List[dict] = field(default_factory=list)
     created_at: float = field(default_factory=lambda: 0.0)
     updated_at: float = field(default_factory=lambda: 0.0)
 
