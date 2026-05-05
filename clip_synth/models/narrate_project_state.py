@@ -20,6 +20,17 @@ class NarrateProjectState:
     audio_files: List[dict] = field(default_factory=list)
     created_at: float = field(default_factory=lambda: 0.0)
     updated_at: float = field(default_factory=lambda: 0.0)
+    
+    # 字幕相关设置
+    enable_subtitle: bool = False
+    subtitle_font_size: int = 24
+    subtitle_font_color: str = "#FFFFFF"
+    subtitle_bg_color: str = "#000000"
+    subtitle_bg_opacity: int = 50
+    subtitle_position: str = "bottom"  # top, middle, bottom
+    subtitle_offset_x: float = 0.5
+    subtitle_offset_y: float = 0.9
+    subtitle_font: str = "Microsoft YaHei"
 
     def is_all_videos_ready(self) -> bool:
         for video_state in self.videos:

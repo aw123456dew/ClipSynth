@@ -2519,3 +2519,345 @@ QSlider::sub-page:horizontal {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
         stop:0 #4338ca, stop:1 #4f46e5);
 }
+
+/* ===== Subtitle Settings ===== */
+#subtitleGroup {
+    margin-top: 16px;
+}
+
+#paramLabel {
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding-left: 2px;
+}
+
+#fontCombo, #fontSizeCombo, #positionCombo {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    font-size: 13px;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px 10px;
+    min-height: 22px;
+}
+
+#fontCombo:hover, #fontSizeCombo:hover, #positionCombo:hover {
+    border-color: #6366f1;
+}
+
+#fontCombo:focus, #fontSizeCombo:focus, #positionCombo:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+#fontCombo:disabled, #fontSizeCombo:disabled, #positionCombo:disabled {
+    background-color: #0c1322;
+    color: #4a5a7a;
+    border-color: #1a2340;
+}
+
+#fontCombo::drop-down, #fontSizeCombo::drop-down, #positionCombo::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 24px;
+    border: none;
+}
+
+#fontCombo::down-arrow, #fontSizeCombo::down-arrow, #positionCombo::down-arrow {
+    image: none;
+    border: none;
+}
+
+#fontCombo QAbstractItemView, #fontSizeCombo QAbstractItemView, #positionCombo QAbstractItemView {
+    background-color: #0d111f;
+    color: #e2e8f0;
+    font-size: 13px;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px;
+    outline: none;
+}
+
+#fontCombo QAbstractItemView::item, #fontSizeCombo QAbstractItemView::item, #positionCombo QAbstractItemView::item {
+    padding: 6px 10px;
+    border-radius: 4px;
+}
+
+#fontCombo QAbstractItemView::item:hover, #fontSizeCombo QAbstractItemView::item:hover, #positionCombo QAbstractItemView::item:hover {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#fontCombo QAbstractItemView::item:selected, #fontSizeCombo QAbstractItemView::item:selected, #positionCombo QAbstractItemView::item:selected {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#bgOpacitySlider {
+    background-color: transparent;
+}
+
+#bgOpacitySlider::groove:horizontal {
+    background-color: #1a2340;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#bgOpacitySlider::handle:horizontal {
+    background-color: #6366f1;
+    width: 14px;
+    height: 14px;
+    margin: -4px 0;
+    border-radius: 7px;
+}
+
+#bgOpacitySlider::handle:horizontal:hover {
+    background-color: #818cf8;
+}
+
+#bgOpacitySlider::sub-page:horizontal {
+    background-color: #4f46e5;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#bgOpacitySlider:disabled::groove:horizontal {
+    background-color: #1a2340;
+}
+
+#bgOpacitySlider:disabled::handle:horizontal {
+    background-color: #374151;
+}
+
+#fontColorBtn, #bgColorBtn {
+    border: 2px solid #1e293b;
+    border-radius: 6px;
+    min-width: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    max-height: 28px;
+}
+
+#fontColorBtn:hover, #bgColorBtn:hover {
+    border-color: #6366f1;
+}
+
+#fontColorBtn:disabled, #bgColorBtn:disabled {
+    border-color: #1a2340;
+}
+
+#subtitleEnableBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#subtitleEnableBtn:hover {
+    background-color: #1a2744;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#subtitleEnableBtn:checked {
+    background-color: #1a2744;
+    border-color: #6366f1;
+    color: #a5b4fc;
+}
+
+#subtitlePreviewBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#subtitlePreviewBtn:hover {
+    background-color: #1a2744;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#subtitlePreviewBtn:disabled {
+    background-color: #0c1322;
+    color: #334155;
+    border-color: #1e293b;
+}
+
+/* ===== Subtitle Preview Dialog ===== */
+#subtitlePreviewDialog {
+    background-color: #0a0e17;
+}
+
+#previewLeftPanel {
+    background-color: #0a0e17;
+}
+
+#previewFrame {
+    background-color: #060a12;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+    min-height: 360px;
+}
+
+#previewTimeSlider::groove:horizontal {
+    background-color: #1a2340;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#previewTimeSlider::handle:horizontal {
+    background-color: #6366f1;
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+}
+
+#previewTimeSlider::handle:horizontal:hover {
+    background-color: #818cf8;
+}
+
+#previewTimeSlider::sub-page:horizontal {
+    background-color: #4f46e5;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#previewTimeLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-weight: 600;
+}
+
+#previewRightPanel {
+    background-color: #0d111f;
+    border-left: 1px solid #1a2340;
+}
+
+#previewRightContent {
+    background-color: #0d111f;
+}
+
+#previewSettingsTitle {
+    color: #e2e8f0;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding-bottom: 4px;
+}
+
+#previewTextCombo, #previewFontCombo, #previewSizeCombo, #previewPosCombo {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    font-size: 13px;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 6px 10px;
+    min-height: 24px;
+}
+
+#previewTextCombo:hover, #previewFontCombo:hover, #previewSizeCombo:hover, #previewPosCombo:hover {
+    border-color: #6366f1;
+}
+
+#previewTextCombo QAbstractItemView, #previewFontCombo QAbstractItemView, #previewSizeCombo QAbstractItemView, #previewPosCombo QAbstractItemView {
+    background-color: #0d111f;
+    color: #e2e8f0;
+    font-size: 13px;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px;
+    outline: none;
+}
+
+#previewTextCombo QAbstractItemView::item, #previewFontCombo QAbstractItemView::item, #previewSizeCombo QAbstractItemView::item, #previewPosCombo QAbstractItemView::item {
+    padding: 6px 10px;
+    border-radius: 4px;
+}
+
+#previewTextCombo QAbstractItemView::item:hover, #previewFontCombo QAbstractItemView::item:hover, #previewSizeCombo QAbstractItemView::item:hover, #previewPosCombo QAbstractItemView::item:hover {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#previewFgColorBtn, #previewBgColorBtn {
+    border: 2px solid #1e293b;
+    border-radius: 6px;
+    min-width: 32px;
+    min-height: 32px;
+    max-width: 32px;
+    max-height: 32px;
+}
+
+#previewFgColorBtn:hover, #previewBgColorBtn:hover {
+    border-color: #6366f1;
+}
+
+#previewOpacitySlider {
+    background-color: transparent;
+}
+
+#previewOpacitySlider::groove:horizontal {
+    background-color: #1a2340;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#previewOpacitySlider::handle:horizontal {
+    background-color: #6366f1;
+    width: 14px;
+    height: 14px;
+    margin: -4px 0;
+    border-radius: 7px;
+}
+
+#previewOpacitySlider::handle:horizontal:hover {
+    background-color: #818cf8;
+}
+
+#previewOpacitySlider::sub-page:horizontal {
+    background-color: #4f46e5;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#previewCloseBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    min-height: 20px;
+    margin-top: 8px;
+}
+
+#previewCloseBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#previewCloseBtn:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4338ca, stop:1 #4f46e5);
+}
+
+#previewHintLabel {
+    color: #4a5a7a;
+    font-size: 12px;
+    padding: 4px 8px;
+}

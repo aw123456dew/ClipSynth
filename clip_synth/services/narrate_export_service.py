@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from clip_synth.models.narrate_project_state import NarrateProjectState
+from clip_synth.services.subtitle_service import SubtitleService
 
 logger = logging.getLogger("clip_synth.narrate_export_service")
 
@@ -57,6 +58,27 @@ def _get_media_duration(path: str) -> float:
     return 0.0
 
 
+def _get_video_resolution(path: str) -> tuple[int, int]:
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0",
+        path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=False, timeout=30)
+        if result.returncode == 0:
+            output = result.stdout.decode("utf-8", errors="replace").strip()
+            if output:
+                parts = output.split(",")
+                if len(parts) >= 2:
+                    return int(parts[0]), int(parts[1])
+    except Exception as e:
+        logger.warning("获取视频分辨率失败: %s", str(e))
+    return 1920, 1080
+
+
 class NarrateExportService:
     def __init__(self, output_dir: str):
         self._output_dir = Path(output_dir)
@@ -85,10 +107,26 @@ class NarrateExportService:
         output_path = str(self._output_dir / f"{project.name}_成品视频.mp4")
         raw_dir = self._output_dir / "clip_raw"
         proc_dir = self._output_dir / "clip_processed"
+        sub_dir = self._output_dir / "subtitles"
         raw_dir.mkdir(parents=True, exist_ok=True)
         proc_dir.mkdir(parents=True, exist_ok=True)
+        sub_dir.mkdir(parents=True, exist_ok=True)
         raw_list: List[str] = []
         final_list: List[str] = []
+
+        # 字幕设置
+        enable_subtitle = getattr(project, "enable_subtitle", False)
+        subtitle_settings = {
+            "font": getattr(project, "subtitle_font", "Microsoft YaHei"),
+            "font_size": getattr(project, "subtitle_font_size", 24),
+            "font_color": getattr(project, "subtitle_font_color", "#FFFFFF"),
+            "bg_color": getattr(project, "subtitle_bg_color", "#000000"),
+            "bg_opacity": getattr(project, "subtitle_bg_opacity", 50),
+            "position": getattr(project, "subtitle_position", "bottom"),
+            "offset_x": getattr(project, "subtitle_offset_x", 0.5),
+            "offset_y": getattr(project, "subtitle_offset_y", 0.9),
+        }
+        logger.info(f"字幕设置: enable={enable_subtitle}, font={subtitle_settings['font']}, size={subtitle_settings['font_size']}, color={subtitle_settings['font_color']}, bg={subtitle_settings['bg_color']}, opacity={subtitle_settings['bg_opacity']}, position={subtitle_settings['position']}, offset=({subtitle_settings['offset_x']}, {subtitle_settings['offset_y']})")
 
         total = len(scripts)
         try:
@@ -163,11 +201,14 @@ class NarrateExportService:
 
                 audio_path = None
                 audio_duration = 0.0
+                timestamps = []
                 if audio_idx < len(audio_files):
-                    candidate = audio_files[audio_idx].get("path", "")
+                    audio_info = audio_files[audio_idx]
+                    candidate = audio_info.get("path", "")
                     if os.path.exists(candidate):
                         audio_path = candidate
                         audio_duration = _get_media_duration(audio_path)
+                        timestamps = audio_info.get("timestamps", [])
                 audio_idx += 1
 
                 if not audio_path:
@@ -177,6 +218,49 @@ class NarrateExportService:
 
                 raw_duration = _get_media_duration(raw_path)
                 diff = audio_duration - raw_duration
+
+                # 获取视频分辨率
+                video_res = _get_video_resolution(raw_path)
+                video_width, video_height = video_res
+
+                # 生成字幕（如果启用）
+                subtitle_path = None
+                if enable_subtitle and timestamps:
+                    sentences = SubtitleService.merge_words_to_sentences(timestamps, max_chars=20)
+                    if sentences:
+                        subtitle_path = str(sub_dir / f"sub_{i:04d}.srt")
+                        srt_content = SubtitleService.generate_srt(sentences, clip_start_time=0.0)
+                        SubtitleService.save_srt(srt_content, subtitle_path)
+                        logger.info(f"生成字幕文件: {subtitle_path}")
+
+                # 构建 drawtext 滤镜（像水印文字一样直接叠加）
+                sub_filter = None
+                if subtitle_path:
+                    offset_x = subtitle_settings.get("offset_x", 0.5)
+                    offset_y = subtitle_settings.get("offset_y", 0.9)
+                    position = subtitle_settings["position"]
+                    if position not in ("top", "middle", "bottom"):
+                        position = "bottom"
+                    custom_position = f"custom:{offset_x}:{offset_y}"
+                    drawtext_filter = SubtitleService.build_drawtext_filter(
+                        sentences,
+                        clip_start_time=0.0,
+                        font=subtitle_settings["font"],
+                        font_size=subtitle_settings["font_size"],
+                        font_color=subtitle_settings["font_color"],
+                        bg_color=subtitle_settings["bg_color"],
+                        bg_opacity=subtitle_settings["bg_opacity"],
+                        position=custom_position,
+                        video_width=video_width,
+                        video_height=video_height,
+                    )
+                    if drawtext_filter:
+                        sub_filter = drawtext_filter
+                        logger.info(f"字幕滤镜(drawtext): {sub_filter[:500]}")
+                    if os.path.exists(subtitle_path):
+                        with open(subtitle_path, "r", encoding="utf-8") as f:
+                            srt_content = f.read()
+                        logger.info(f"SRT字幕内容:\n{srt_content[:500]}")
 
                 if diff > 0.5:
                     extend_path = str(raw_dir / f"ext_{i:04d}.mp4")
@@ -201,18 +285,33 @@ class NarrateExportService:
                     ]
                     _run_cmd(extend_cmd, f"扩展片段 {i+1}")
 
-                    overlay_cmd = [
-                        "ffmpeg", "-y",
-                        "-i", extend_path,
-                        "-i", audio_path,
-                        "-c:v", "copy",
-                        "-c:a", "aac",
-                        "-b:a", "128k",
-                        "-map", "0:v:0",
-                        "-map", "1:a:0",
-                        "-shortest",
-                        final_path,
-                    ]
+                    # 添加字幕滤镜
+                    if sub_filter:
+                        overlay_cmd = [
+                            "ffmpeg", "-y",
+                            "-i", extend_path,
+                            "-i", audio_path,
+                            "-filter:v", sub_filter,
+                            "-c:a", "aac",
+                            "-b:a", "128k",
+                            "-map", "0:v:0",
+                            "-map", "1:a:0",
+                            "-shortest",
+                            final_path,
+                        ]
+                    else:
+                        overlay_cmd = [
+                            "ffmpeg", "-y",
+                            "-i", extend_path,
+                            "-i", audio_path,
+                            "-c:v", "copy",
+                            "-c:a", "aac",
+                            "-b:a", "128k",
+                            "-map", "0:v:0",
+                            "-map", "1:a:0",
+                            "-shortest",
+                            final_path,
+                        ]
                     _run_cmd(overlay_cmd, f"配音扩展 {i+1}")
                 else:
                     speed = raw_duration / audio_duration
@@ -242,18 +341,33 @@ class NarrateExportService:
                         _run_cmd(mute_cmd, f"静音 {i+1}")
                         input_video_path = mute_path
 
-                    overlay_cmd = [
-                        "ffmpeg", "-y",
-                        "-i", input_video_path,
-                        "-i", audio_path,
-                        "-c:v", "copy",
-                        "-c:a", "aac",
-                        "-b:a", "128k",
-                        "-map", "0:v:0",
-                        "-map", "1:a:0",
-                        "-shortest",
-                        final_path,
-                    ]
+                    # 添加字幕滤镜
+                    if sub_filter:
+                        overlay_cmd = [
+                            "ffmpeg", "-y",
+                            "-i", input_video_path,
+                            "-i", audio_path,
+                            "-filter:v", sub_filter,
+                            "-c:a", "aac",
+                            "-b:a", "128k",
+                            "-map", "0:v:0",
+                            "-map", "1:a:0",
+                            "-shortest",
+                            final_path,
+                        ]
+                    else:
+                        overlay_cmd = [
+                            "ffmpeg", "-y",
+                            "-i", input_video_path,
+                            "-i", audio_path,
+                            "-c:v", "copy",
+                            "-c:a", "aac",
+                            "-b:a", "128k",
+                            "-map", "0:v:0",
+                            "-map", "1:a:0",
+                            "-shortest",
+                            final_path,
+                        ]
                     _run_cmd(overlay_cmd, f"配音合成 {i+1}")
 
                 final_list.append(final_path)

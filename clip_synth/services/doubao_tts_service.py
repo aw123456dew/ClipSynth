@@ -116,9 +116,27 @@ class DoubaoTTSWorker:
         emotion: str = "",
         language: str = "cn",
     ) -> Tuple[bool, str]:
+        success, error_msg, _ = self.tts_single_with_timestamps(
+            text, voice_type, output_path, speed, pitch, volume,
+            silence_duration, emotion, language
+        )
+        return success, error_msg
+
+    def tts_single_with_timestamps(
+        self,
+        text: str,
+        voice_type: str,
+        output_path: str,
+        speed: float = 1.0,
+        pitch: float = 1.0,
+        volume: float = 1.0,
+        silence_duration: float = 0.125,
+        emotion: str = "",
+        language: str = "cn",
+    ) -> Tuple[bool, str, list]:
         if not self._settings.is_configured:
             logger.error("豆包语音 TTS 配置未完成")
-            return False, "豆包语音 TTS 配置未完成"
+            return False, "豆包语音 TTS 配置未完成", []
 
         appid = self._settings.app_id
         token = self._settings.token
@@ -181,28 +199,145 @@ class DoubaoTTSWorker:
                             os.makedirs(os.path.dirname(output_path), exist_ok=True)
                             with open(output_path, "wb") as f:
                                 f.write(audio_bytes)
-                            logger.info(f"豆包语音 TTS 合成成功: {output_path}")
-                            return True, ""
+                            
+                            # 解析时间戳
+                            timestamps = []
+                            addition = result.get("addition", {})
+                            if isinstance(addition, dict):
+                                frontend_str = addition.get("frontend", "")
+                                if frontend_str:
+                                    try:
+                                        frontend = json.loads(frontend_str)
+                                        words = frontend.get("words", [])
+                                        for word in words:
+                                            timestamps.append({
+                                                "word": word.get("word", ""),
+                                                "start": word.get("start_time", 0.0),
+                                                "end": word.get("end_time", 0.0)
+                                            })
+                                    except json.JSONDecodeError as e:
+                                        logger.warning(f"解析frontend失败: {e}")
+                            
+                            logger.info(f"豆包语音 TTS 合成成功: {output_path}, 时间戳数量: {len(timestamps)}")
+                            return True, "", timestamps
                         else:
                             logger.error("豆包语音 TTS 响应中无音频数据")
-                            return False, "响应中无音频数据"
+                            return False, "响应中无音频数据", []
                     else:
                         error_msg = result.get("message", "未知错误")
                         logger.error(f"豆包语音 TTS 失败: {error_msg}")
                         if "exceed max len limit" in error_msg.lower():
-                            return False, "TEXT_TOO_LONG"
-                        return False, error_msg
+                            return False, "TEXT_TOO_LONG", []
+                        return False, error_msg, []
                 else:
                     error_msg = f"API 请求失败: {response.status_code}, {response.text}"
                     logger.error(f"豆包语音 TTS {error_msg}")
-                    return False, error_msg
+                    return False, error_msg, []
 
             except Exception as e:
                 logger.error(f"豆包语音 TTS 错误: {str(e)}")
                 if i < 2:
                     time.sleep(3)
 
-        return False, "所有重试均失败"
+        return False, "所有重试均失败", []
+
+    def tts_with_timestamps(
+        self,
+        text: str,
+        voice_type: str,
+        output_path: str,
+        speed: float = 1.0,
+        pitch: float = 1.0,
+        volume: float = 1.0,
+        silence_duration: float = 0.125,
+        emotion: str = "",
+        language: str = "cn",
+    ) -> tuple:
+        """
+        生成配音并返回时间戳信息
+        :return: (success: bool, timestamps: list)
+        """
+        text_bytes = len(text.encode("utf-8"))
+        if text_bytes <= 1000:
+            success, error_msg, timestamps = self.tts_single_with_timestamps(
+                text, voice_type, output_path, speed, pitch, volume,
+                silence_duration, emotion, language,
+            )
+            if success:
+                return True, timestamps
+            if error_msg == "TEXT_TOO_LONG":
+                logger.warning("单次调用返回长度限制错误，尝试分割文本")
+            else:
+                logger.error(f"豆包语音 TTS 失败: {error_msg}")
+                return False, []
+
+        logger.info(f"文本过长 ({text_bytes} 字节)，开始分割处理")
+        text_parts = split_text_by_length(text, max_bytes=1000)
+        
+        all_timestamps = []
+        offset = 0.0
+
+        temp_dir = os.path.join(os.path.dirname(output_path), "temp_doubaotts")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        audio_files = []
+        try:
+            for i, part in enumerate(text_parts):
+                logger.info(f"处理第 {i+1}/{len(text_parts)} 部分")
+                temp_audio = os.path.join(temp_dir, f"part_{i+1}.mp3")
+
+                success, error_msg, timestamps = self.tts_single_with_timestamps(
+                    part, voice_type, temp_audio, speed, pitch, volume,
+                    silence_duration, emotion, language,
+                )
+
+                if not success:
+                    logger.error(f"第 {i+1} 部分TTS失败: {error_msg}")
+                    for f in audio_files:
+                        if os.path.exists(f):
+                            os.remove(f)
+                    return False, []
+
+                # 调整时间戳偏移
+                for ts in timestamps:
+                    ts["start"] = ts.get("start", 0.0) + offset
+                    ts["end"] = ts.get("end", 0.0) + offset
+                all_timestamps.extend(timestamps)
+
+                audio_files.append(temp_audio)
+                # 计算偏移（音频时长 + 静音间隔）
+                import subprocess
+                try:
+                    result = subprocess.run(
+                        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", temp_audio],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    if result.returncode == 0:
+                        offset += float(result.stdout.strip()) + silence_duration
+                except Exception as e:
+                    logger.warning(f"获取音频时长失败: {e}")
+                    offset += 5.0  # 默认5秒
+
+            logger.info(f"合并 {len(audio_files)} 个音频文件")
+            if merge_audio_files(audio_files, output_path):
+                logger.info(f"音频文件合并成功: {output_path}")
+                return True, all_timestamps
+            else:
+                logger.error("音频文件合并失败")
+                return False, []
+
+        finally:
+            for f in audio_files:
+                if os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except Exception:
+                        pass
+            if os.path.exists(temp_dir):
+                try:
+                    os.rmdir(temp_dir)
+                except Exception:
+                    pass
 
     def tts(
         self,

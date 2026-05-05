@@ -56,6 +56,7 @@ class TTSTaskWorker(QThread):
         self._doubao_settings = doubao_settings
         self._output_dir = output_dir
         self._audio_paths = []
+        self._timestamps = {}  # 存储时间戳信息
 
     def run(self):
         try:
@@ -70,7 +71,7 @@ class TTSTaskWorker(QThread):
                 self.progress.emit(f"正在生成第 {i+1}/{len(self._scripts)} 段配音...")
                 audio_path = os.path.join(self._output_dir, f"narration_{i}.mp3")
 
-                success = worker.tts(
+                success, timestamps = worker.tts_with_timestamps(
                     text=text,
                     voice_type=self._voice_type,
                     output_path=audio_path,
@@ -86,9 +87,11 @@ class TTSTaskWorker(QThread):
                     self.error.emit(f"第 {i+1} 段配音生成失败")
                     return
 
-                self._audio_paths.append(
-                    {"index": i, "path": audio_path, "text": text, **script}
-                )
+                audio_info = {"index": i, "path": audio_path, "text": text, **script}
+                if timestamps:
+                    audio_info["timestamps"] = timestamps
+                    self._timestamps[i] = timestamps
+                self._audio_paths.append(audio_info)
 
             self.progress.emit("配音生成完成")
             self.finished.emit()
@@ -98,6 +101,9 @@ class TTSTaskWorker(QThread):
 
     def get_audio_paths(self):
         return self._audio_paths
+
+    def get_timestamps(self):
+        return self._timestamps
 
 
 class SmartNarrateWizard(QFrame):
