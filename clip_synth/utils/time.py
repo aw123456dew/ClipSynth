@@ -21,6 +21,7 @@ def format_time(seconds: float, format: str = "auto") -> str:
 
 
 def parse_time(time_str: str) -> float:
+    time_str = time_str.replace(",", ".")
     parts = time_str.split(":")
     if len(parts) == 3:
         hours, minutes, seconds = parts

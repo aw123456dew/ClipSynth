@@ -30,19 +30,16 @@ NARRATION_SYSTEM_PROMPT = """\
 3. 每段解说要标注对应的时间范围
 4. 解说内容要能让观众快速看懂故事
 5. 返回格式必须是合法的JSON数组
-6. 如果原声比例大于0，需要将片段拆分为多个子片段，每个子片段作为独立项返回：
-   - content_type: "narration"表示解说，"original_sound"表示原声
-   - start_time: 片段开始时间
-   - end_time: 片段结束时间
-   - narration_script: 解说文案（如果是原声片段则为空字符串）
+
+**时间格式必须严格遵守：HH:MM:SS,mmm（例如：00:01:25,500），秒和毫秒之间用逗号隔开，这是SRT标准格式**
 
 返回格式示例（无原声）：
 ```json
 [
     {
         "segment_id": "片段ID",
-        "start_time": "00:00:00",
-        "end_time": "00:00:15",
+        "start_time": "00:00:00,000",
+        "end_time": "00:00:15,000",
         "content_type": "narration",
         "story_summary": "这个片段的故事梗概",
         "narration_script": "第三人称解说文案..."
@@ -50,69 +47,58 @@ NARRATION_SYSTEM_PROMPT = """\
 ]
 ```
 
-返回格式示例（有原声比例30%）：
+返回格式示例（原声比例>0%时，每个片段拆分为解说+原声两部分）：
 ```json
 [
     {
-        "segment_id": "片段ID",
-        "start_time": "00:00:00",
-        "end_time": "00:00:07",
+        "segment_id": "片段ID-1",
+        "start_time": "00:00:00,000",
+        "end_time": "00:00:07,000",
         "content_type": "narration",
         "story_summary": "这个片段的故事梗概",
         "narration_script": "解说文案..."
     },
     {
-        "segment_id": "片段ID",
-        "start_time": "00:00:07",
-        "end_time": "00:00:10",
+        "segment_id": "片段ID-1",
+        "start_time": "00:00:07,000",
+        "end_time": "00:00:10,000",
         "content_type": "original_sound",
         "story_summary": "",
         "narration_script": ""
-    },
-    {
-        "segment_id": "片段ID",
-        "start_time": "00:00:10",
-        "end_time": "00:00:15",
-        "content_type": "narration",
-        "story_summary": "",
-        "narration_script": "解说文案..."
     }
 ]
 ```
 
-注意：只返回JSON数组，不要包含其他文字。"""
+注意：
+- 原声比例=0%时，所有项都是content_type="narration"，不需要拆分
+- 原声比例>0%时，才需要按比例拆分为narration+original_sound
+- 只返回JSON数组，不要包含其他文字。"""
 
 CLIPPING_SYSTEM_PROMPT = """\
-你是一个专业的短视频剪辑师，擅长从视频片段中选择最佳组合来制作高质量的解说视频。
+你是一个专业的短视频剪辑师。从提供的片段列表中按时间顺序选择片段，串联成一个完整的故事解说。
 
-你的任务是根据用户选择的解说风格，从提供的片段列表中选择最合适的片段组合。
+选择要求：
+1. **按时间顺序**选择片段，串联起来能还原完整故事脉络
+2. 片段时间**绝对不能重叠**
+3. 优先选择 gold_3s（黄金3秒）、highlight（亮点解析）、plot（剧情解析）、ending（结尾悬念）四种类型
+4. 返回合法的JSON数组
 
-要求：
-1. 选择的片段在时间上**绝对不能重合**（即不能有时间重叠的片段）
-2. 每个片段只能选择一次
-3. 根据解说风格的特点选择最能展现该风格特色的片段
-4. 优先选择有清晰剧情、有看点、有冲突的片段
-5. 返回格式必须是合法的JSON数组
-
-返回格式示例：
+返回格式：
 ```json
 [
-    {
-        "segment_id": "片段ID",
-        "reason": "选择这个片段的原因"
-    }
+    {"segment_id": "片段ID", "reason": "选择原因"}
 ]
 ```
-
-注意：只返回JSON数组，不要包含其他文字。"""
+只返回JSON数组，不要包含其他文字。"""
 
 
 def _time_to_seconds(t: str) -> int:
-    """将 HH:MM:SS 或 MM:SS 格式转为秒数"""
-    parts = list(map(int, t.split(":")))
+    """将 HH:MM:SS,mmm 格式转为秒数"""
+    parts = t.split(":")
     if len(parts) == 3:
-        return parts[0] * 3600 + parts[1] * 60 + parts[2]
-    return parts[0] * 60 + parts[1]
+        sec_part = parts[2].split(",")[0]
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(sec_part)
+    return 0
 
 
 def _seconds_to_time(seconds: int) -> str:
@@ -141,6 +127,7 @@ def _build_segments_prompt(
     lines = [f"解说风格：{style_name}", f"风格说明：{style_description}", ""]
     lines.append("可用的片段列表：")
 
+    max_duration = 0
     for video_path, type_dict in segments_by_video.items():
         video_name = video_path.split("/")[-1].split("\\")[-1]
         lines.append(f"\n## 视频：{video_name}")
@@ -149,6 +136,11 @@ def _build_segments_prompt(
             segments = type_dict.get(seg_type, [])
             if not segments:
                 continue
+
+            for seg in segments:
+                seg_end = _time_to_seconds(seg.end_time)
+                if seg_end > max_duration:
+                    max_duration = seg_end
 
             type_names = {
                 "gold_3s": "黄金3秒",
@@ -162,8 +154,11 @@ def _build_segments_prompt(
                     f"- ID: {seg.id} | {seg.start_time}-{seg.end_time} | {seg.description}"
                 )
 
+    total_minutes = max_duration // 60
+    lines.append(f"\n原视频总时长：约{total_minutes}分钟")
+
     lines.append(
-        "\n请根据解说风格选择最合适的片段组合，确保片段之间时间不重叠。"
+        "\n请根据解说风格选择最合适的片段组合，确保片段之间时间不重叠，按时间顺序排列。"
     )
     return "\n".join(lines)
 
@@ -217,47 +212,152 @@ def _build_narration_prompt(
 
     lines.append(
         "\n\n请按照指定风格生成解说文案，要求："
-        "\n1. 先分析整体故事梗概"
-        "\n2. 为每个选中的片段生成第三人称解说"
-        "\n3. 确保故事线清晰，主线明确"
-        "\n4. 让观众能快速看懂故事"
+        "\n1. 先分析整体故事梗概，梳理清晰的故事主线"
+        "\n2. 选择片段时，优先选择能推动主线剧情发展的关键片段"
+        "\n3. 片段数量不限制，但片段时间戳绝对不能重叠"
+        "\n4. 所有选中片段的总时长应控制在原视频时长的50%-70%之间，不宜过短或过长"
+        "\n5. 确保故事线清晰完整，主线叙事连贯，让观众能快速看懂故事"
+        "\n6. 为每个选中的片段生成第三人称解说文案"
     )
     
     if original_sound_ratio > 0:
         lines.append(
-            f"\n5. 原声片段比例：{original_sound_ratio}%，即每个片段中{original_sound_ratio}%使用原始声音，{100-original_sound_ratio}%使用解说"
-            f"\n6. 如果原声比例大于0，需要将片段拆分为多个子片段："
-            f"\n   - 每个子片段需要标注是'narration'(解说)还是'original_sound'(原声)"
-            f"\n   - 原声片段应选择该片段中最精彩、最有代表性的部分"
-            f"\n   - 解说片段与原声片段的总时长应保持原始片段的时长"
+            f"\n7. 原声片段比例：每个选中片段中，前{100-original_sound_ratio}%时长是解说，后{original_sound_ratio}%时长是原声"
+            f"\n   例如：一个10秒的片段，原声比例30%，则前7秒是解说，后3秒是原声"
+            f"\n8. 每个选中片段最多拆分为2个子片段（解说+原声），不许拆分为3个"
+            f"\n9. 不许出现连续的原声片段"
+        )
+    else:
+        lines.append(
+            "\n7. 原声比例=0%，所有片段都是解说片段，不需要拆分原声"
         )
     
     return "\n".join(lines)
 
 
+TIME_FORMAT_PATTERN = r"^\d{2}:\d{2}:\d{2},\d{3}$"
+
+
+def _validate_time_format(t: str) -> bool:
+    if not re.match(TIME_FORMAT_PATTERN, t):
+        return False
+    parts = t.split(":")
+    h, m = int(parts[0]), int(parts[1])
+    s, ms = parts[2].split(",")
+    s, ms = int(s), int(ms)
+    return 0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59 and 0 <= ms <= 999
+
+
+def _validate_narration_time_format(scripts: List[dict]) -> list[str]:
+    errors = []
+    for i, item in enumerate(scripts):
+        for key in ("start_time", "end_time"):
+            val = item.get(key, "")
+            if val and not _validate_time_format(val):
+                errors.append(f"第{i+1}条文案 {key}格式错误: {repr(val)}，应为HH:MM:SS,mmm")
+    return errors
+
+
+def _time_str_to_sec(t: str) -> float:
+    parts = t.split(":")
+    sec_part = parts[2].replace(",", ".")
+    return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(sec_part)
+
+
+def _post_process_scripts(scripts: List[dict]) -> List[dict]:
+    if not scripts:
+        return scripts
+
+    seen_seg_ids = set()
+    deduped = []
+    for item in scripts:
+        seg_id = item.get("segment_id", "")
+        combo = (seg_id, item.get("content_type", ""), item.get("start_time", ""), item.get("end_time", ""))
+        if combo not in seen_seg_ids:
+            seen_seg_ids.add(combo)
+            deduped.append(item)
+
+    if len(deduped) != len(scripts):
+        logger.warning(f"去除了 {len(scripts) - len(deduped)} 个重复的片段")
+
+    cleaned = []
+    for item in deduped:
+        if item.get("content_type") == "original_sound" and cleaned and cleaned[-1].get("content_type") == "original_sound":
+            prev = cleaned[-1]
+            if _time_str_to_sec(item["end_time"]) > _time_str_to_sec(prev["end_time"]):
+                prev["end_time"] = item["end_time"]
+            continue
+        cleaned.append(item)
+
+    if len(cleaned) != len(deduped):
+        logger.warning(f"合并了 {len(deduped) - len(cleaned)} 个连续的原声片段")
+
+    return cleaned
+
+
+def _extract_json_array(text: str) -> str | None:
+    text = text.strip()
+
+    md_match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", text)
+    if md_match:
+        candidate = md_match.group(1).strip()
+        try:
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            pass
+
+    start = text.find("[")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                candidate = text[start:i+1]
+                try:
+                    json.loads(candidate)
+                    return candidate
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
 def _parse_ai_response(response: str) -> List[dict]:
     """解析AI返回的JSON"""
-    json_match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", response)
-    if json_match:
-        response = json_match.group(1)
+    extracted = _extract_json_array(response)
+    if extracted is not None:
+        parsed = json.loads(extracted)
+        time_errors = _validate_narration_time_format(parsed)
+        if time_errors:
+            error_detail = "；".join(time_errors)
+            logger.error(f"AI返回的时间格式错误: {error_detail}")
+            raise ValueError(
+                f"AI返回的时间格式不符合要求（应为HH:MM:SS,mmm格式，如00:01:25,500），"
+                f"请点击「重新生成」按钮重新生成。\n详细错误：{error_detail}"
+            )
+        return parsed
 
-    response = response.strip()
-    if response.startswith("```"):
-        response = response.strip("`").strip()
-    if response.startswith("json"):
-        response = response[4:].strip()
-
-    try:
-        return json.loads(response)
-    except json.JSONDecodeError:
-        logger.warning("JSON解析失败，尝试提取数组: %s", response[:200])
-        array_match = re.search(r"\[[\s\S]*?\]", response)
-        if array_match:
-            try:
-                return json.loads(array_match.group())
-            except json.JSONDecodeError:
-                pass
-        raise
+    logger.error("无法从AI响应中提取JSON数组: %s", response[:500])
+    raise ValueError("AI返回格式错误，无法解析为JSON数组")
 
 
 class ClippingAnalysisService:
@@ -323,10 +423,9 @@ class ClippingAnalysisService:
                     prompt=prompt,
                     system_prompt=CLIPPING_SYSTEM_PROMPT,
                     temperature=0.3,
-                    max_tokens=4096,
                     timeout=120,
                 )
-                logger.info("AI片段选择返回: %s", response[:300])
+                logger.info("AI片段选择返回: %s", response[:500])
             except Exception as e:
                 logger.error("AI片段选择请求失败(第%d次): %s", attempt + 1, str(e))
                 last_error = e
@@ -362,7 +461,7 @@ class ClippingAnalysisService:
                         logger.info("跳过重叠片段: %s (%s-%s)", seg_id, seg.start_time, seg.end_time)
 
             result.sort(
-                key=lambda x: _time_to_seconds(all_segments[x[0]].start_time)
+                key=lambda x: _time_to_seconds(all_segments[x[0]].start_time),
             )
 
             logger.info(
@@ -401,7 +500,6 @@ class ClippingAnalysisService:
                     prompt=polish_prompt,
                     system_prompt=POLISH_NARRATION_SYSTEM_PROMPT,
                     temperature=0.7,
-                    max_tokens=8192,
                     timeout=180,
                 )
                 logger.info("AI文案润色返回: %s", response[:300])
@@ -496,7 +594,6 @@ class ClippingAnalysisService:
                     prompt=prompt,
                     system_prompt=NARRATION_SYSTEM_PROMPT,
                     temperature=0.7,
-                    max_tokens=8192,
                     timeout=180,
                 )
                 logger.info("AI解说文案生成返回: %s", response[:300])
@@ -507,11 +604,14 @@ class ClippingAnalysisService:
 
             try:
                 narration_scripts = _parse_ai_response(response)
+                narration_scripts = _post_process_scripts(narration_scripts)
                 logger.info("成功解析 %d 条解说文案", len(narration_scripts))
 
                 polished_results = await self.polish_narration(narration_scripts, language)
                 if polished_results and polished_results != narration_scripts:
                     for item in narration_scripts:
+                        if item.get("content_type") != "narration":
+                            continue
                         seg_id = item.get("segment_id", "")
                         if seg_id in polished_results:
                             item["narration_script"] = polished_results[seg_id]
@@ -536,34 +636,22 @@ def _build_polish_prompt(narration_results: List[dict], language: str) -> str:
     lang_name = lang_names.get(language, "中文")
 
     lang_config = {
-        "zh": {
-            "name": "中文",
-            "speed": "每100字约需23秒",
-            "chars_per_sec": 4.3,
-        },
-        "en": {
-            "name": "英文",
-            "speed": "每100词约需12秒",
-            "chars_per_sec": 8,
-        },
-        "th": {
-            "name": "泰文",
-            "speed": "每100字约需18秒",
-            "chars_per_sec": 5.5,
-        },
+        "zh": {"name": "中文", "natural_speed": 3},
+        "en": {"name": "英文", "natural_speed": 3},
+        "th": {"name": "泰文", "natural_speed": 4},
     }
     config = lang_config.get(language, lang_config["zh"])
 
     lines = [
         f"解说语言：{lang_name}",
-        f"语速参考：{config['speed']}",
+        f"自然语速参考：{config['natural_speed']}字/秒",
         "",
-        "请对以下解说文案进行润色，确保文案朗读时长不超过对应片段时长：",
+        "请对以下解说文案进行润色，使其朗读时长精确匹配对应片段的时长。",
+        "润色时需计算当前文案的字数和语速，再根据片段时长调整到合适长度。",
         "",
     ]
 
     for i, item in enumerate(narration_results):
-        seg_id = item.get("segment_id", "")
         content_type = item.get("content_type", "narration")
         start_time = item.get("start_time", "")
         end_time = item.get("end_time", "")
@@ -577,54 +665,47 @@ def _build_polish_prompt(narration_results: List[dict], language: str) -> str:
         start_sec = _time_to_seconds(start_time)
         end_sec = _time_to_seconds(end_time)
         duration = end_sec - start_sec
-
-        max_chars = int(duration * config["chars_per_sec"])
+        char_count = len(narration_script)
+        current_speed = char_count / duration if duration > 0 else 0
+        target_chars = int(duration * config["natural_speed"])
 
         lines.append(f"{i+1}. [解说片段] {start_time}-{end_time} (时长{duration}秒)")
         lines.append(f"   故事梗概：{story_summary}")
-        lines.append(f"   原始文案：{narration_script}")
-        lines.append(f"   建议字数：不超过{max_chars}字")
+        lines.append(f"   原始文案（{char_count}字）：{narration_script}")
+        lines.append(f"   当前语速：{current_speed:.1f}字/秒 | 目标语速：{config['natural_speed']}字/秒")
+        lines.append(f"   目标字数：约{target_chars}字")
         lines.append("")
 
     lines.append("")
     lines.append("请返回润色后的JSON数组，格式：")
-    lines.append('[{"segment_id": "1", "polished_script": "润色后的文案", ...}, ...]')
+    lines.append('[{"segment_id": "1", "polished_script": "润色后的文案"}, ...]')
     lines.append("只返回JSON数组，不要包含其他文字。")
 
     return "\n".join(lines)
 
 
 POLISH_NARRATION_SYSTEM_PROMPT = """\
-你是一个专业的短剧解说配音编辑，擅长将解说文案调整到适合配音的时长。
+你是一个专业的短剧解说配音编辑，擅长将解说文案调整到精确匹配片段时长。
 
-你的任务：
-1. 分析原始解说文案的内容和时长
-2. 根据目标时长（片段时长）调整文案长度
-3. 保持文案的核心信息和风格
-4. 确保调整后的文案流畅易读
+你的工作流程：
+1. 分析原始文案的字数，计算当前语速（字数/片段时长）
+2. 根据目标语速（中文4字/秒，英文8字/秒，泰文5字/秒）计算应保留的字数
+3. 精简或扩写文案，使润色后的文案能在片段时长内自然读完
 
 要求：
-1. 文案必须保持第三人称叙述
-2. 故事线要清晰，主线明确
-3. 朗读时长不能超过对应片段时长
-4. 返回格式必须是合法的JSON数组
-5. 只处理 content_type="narration" 的片段，original_sound 片段保持不变
+1. 保持文案的核心信息、故事脉络和第三人称叙述风格
+2. 朗读时长必须精确匹配对应片段时长（不能超时，也不要太短）
+3. 只处理 content_type="narration" 的片段，original_sound 保持不变
+4. 返回合法的JSON数组
 
-返回格式示例：
+返回格式：
 ```json
 [
-    {
-        "segment_id": "1",
-        "polished_script": "润色后的解说文案..."
-    },
-    {
-        "segment_id": "2",
-        "polished_script": "润色后的解说文案..."
-    }
+    {"segment_id": "1", "polished_script": "润色后的解说文案"},
+    {"segment_id": "2", "polished_script": "润色后的解说文案"}
 ]
 ```
-
-注意：只返回JSON数组，不要包含其他文字。"""
+只返回JSON数组，不要包含其他文字。"""
 
 
 def _parse_ai_polish_response(response: str) -> List[dict]:

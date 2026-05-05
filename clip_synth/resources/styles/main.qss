@@ -2464,3 +2464,58 @@ QSlider::sub-page:horizontal {
     padding: 10px 20px;
     margin: 0 24px;
 }
+
+#exportProgressContainer {
+    background-color: #131827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 20px 24px;
+}
+
+#exportProgressLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#exportProgressBar {
+    background-color: #4f46e5;
+    border-radius: 3px;
+    min-width: 100px;
+}
+
+#exportResultContainer {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 32px 24px;
+}
+
+#exportResultLabel {
+    color: #34d399;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+#exportOpenFolderBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 32px;
+    min-width: 140px;
+    min-height: 20px;
+}
+
+#exportOpenFolderBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#exportOpenFolderBtn:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4338ca, stop:1 #4f46e5);
+}

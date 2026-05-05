@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -337,3 +338,4 @@ class VoiceSelectionPage(QFrame):
             "volume": self._volume_slider.value() / 10,
             "silence": self._silence_slider.value() / 10,
         }
+

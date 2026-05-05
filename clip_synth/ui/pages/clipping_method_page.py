@@ -345,13 +345,11 @@ class ClippingMethodPage(QFrame):
         self._analysis_service = clipping_analysis_service
         self._project_state_service = project_state_service
         self._type_groups: List[TypeSegmentGroup] = []
-        self._ai_results: List[Tuple[str, str]] = []
         self._narration_results: List[dict] = []
         self._all_segments: Dict[str, VideoSegment] = {}
         self.setObjectName("clippingMethodPage")
         self._setup_ui()
         self._collect_all_segments()
-        self._restore_ai_results()
         self._restore_narration_results()
         self._update_ready_state()
 
@@ -444,16 +442,16 @@ class ClippingMethodPage(QFrame):
     def _build_ai_ui(self):
         layout = QVBoxLayout(self._ai_widget)
         layout.setContentsMargins(0, 16, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(12)
 
-        self._ai_no_results_widget = QFrame()
-        no_results_layout = QVBoxLayout(self._ai_no_results_widget)
-        no_results_layout.setContentsMargins(0, 0, 0, 0)
-        no_results_layout.setSpacing(6)
+        self._params_widget = QFrame()
+        params_layout = QVBoxLayout(self._params_widget)
+        params_layout.setContentsMargins(0, 0, 0, 0)
+        params_layout.setSpacing(12)
 
         style_title = QLabel("解说风格")
         style_title.setObjectName("aiStyleTitle")
-        no_results_layout.addWidget(style_title)
+        params_layout.addWidget(style_title)
 
         self._style_combo = QComboBox()
         self._style_combo.setObjectName("styleCombo")
@@ -462,27 +460,27 @@ class ClippingMethodPage(QFrame):
         self._style_combo.addItem("🧠 逻辑严谨", "logical")
         self._style_combo.addItem("⚡ 超快节奏", "fast_paced")
         self._style_combo.currentIndexChanged.connect(self._on_style_changed)
-        no_results_layout.addWidget(self._style_combo)
+        params_layout.addWidget(self._style_combo)
 
         self._style_desc = QLabel()
         self._style_desc.setObjectName("styleDesc")
         self._style_desc.setWordWrap(True)
-        no_results_layout.addWidget(self._style_desc)
+        params_layout.addWidget(self._style_desc)
 
         lang_title = QLabel("解说语言")
         lang_title.setObjectName("aiStyleTitle")
-        no_results_layout.addWidget(lang_title)
+        params_layout.addWidget(lang_title)
 
         self._lang_combo = QComboBox()
         self._lang_combo.setObjectName("styleCombo")
         self._lang_combo.addItem("中文", "zh")
         self._lang_combo.addItem("英文", "en")
         self._lang_combo.addItem("泰文", "th")
-        no_results_layout.addWidget(self._lang_combo)
+        params_layout.addWidget(self._lang_combo)
 
         ratio_title = QLabel("原声片段比例")
         ratio_title.setObjectName("aiStyleTitle")
-        no_results_layout.addWidget(ratio_title)
+        params_layout.addWidget(ratio_title)
 
         self._ratio_combo = QComboBox()
         self._ratio_combo.setObjectName("styleCombo")
@@ -492,7 +490,7 @@ class ClippingMethodPage(QFrame):
         self._ratio_combo.addItem("50%", 50)
         self._ratio_combo.addItem("60%", 60)
         self._ratio_combo.addItem("70%", 70)
-        no_results_layout.addWidget(self._ratio_combo)
+        params_layout.addWidget(self._ratio_combo)
 
         if self._project.clipping_style:
             idx = self._style_combo.findData(self._project.clipping_style)
@@ -509,48 +507,18 @@ class ClippingMethodPage(QFrame):
         if idx >= 0:
             self._ratio_combo.setCurrentIndex(idx)
 
-        self._start_ai_btn = QPushButton(" 开始AI分析 ")
-        self._start_ai_btn.setObjectName("startAiAnalysisBtn")
-        self._start_ai_btn.setCursor(Qt.PointingHandCursor)
-        self._start_ai_btn.clicked.connect(self._on_start_ai_analysis)
-        no_results_layout.addWidget(self._start_ai_btn)
+        params_layout.addStretch()
+        layout.addWidget(self._params_widget)
 
-        no_results_layout.addStretch()
-        layout.addWidget(self._ai_no_results_widget, stretch=1)
+        self._generate_narration_btn = QPushButton(" 生成解说文案 ")
+        self._generate_narration_btn.setObjectName("startAiAnalysisBtn")
+        self._generate_narration_btn.setCursor(Qt.PointingHandCursor)
+        self._generate_narration_btn.clicked.connect(self._on_generate_narration)
+        layout.addWidget(self._generate_narration_btn)
 
-        self._ai_loading = QFrame()
-        self._ai_loading.setObjectName("aiLoadingFrame")
-        loading_layout = QVBoxLayout(self._ai_loading)
-        loading_layout.setContentsMargins(0, 20, 0, 20)
-        loading_layout.setAlignment(Qt.AlignCenter)
-
-        loading_label = QLabel("AI正在分析片段，请稍候...")
-        loading_label.setObjectName("aiLoadingLabel")
-        loading_layout.addWidget(loading_label)
-
-        self._ai_progress = QFrame()
-        self._ai_progress.setObjectName("aiProgressBar")
-        self._ai_progress.setFixedHeight(6)
-        loading_layout.addWidget(self._ai_progress)
-
-        layout.addWidget(self._ai_loading)
-        self._ai_loading.hide()
-
-        self._ai_results_area = QScrollArea()
-        self._ai_results_area.setObjectName("aiResultsArea")
-        self._ai_results_area.setWidgetResizable(True)
-        self._ai_results_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-
-        self._ai_results_content = QFrame()
-        self._ai_results_content.setObjectName("aiResultsContent")
-        self._ai_results_layout = QVBoxLayout(self._ai_results_content)
-        self._ai_results_layout.setContentsMargins(0, 0, 0, 0)
-        self._ai_results_layout.setSpacing(6)
-        self._ai_results_layout.addStretch()
-        self._ai_results_area.setWidget(self._ai_results_content)
-
-        layout.addWidget(self._ai_results_area, stretch=1)
-        self._ai_results_area.hide()
+        if self._project.narration_scripts:
+            self._params_widget.hide()
+            self._generate_narration_btn.hide()
 
         self._narration_loading = QFrame()
         self._narration_loading.setObjectName("narrationLoadingFrame")
@@ -564,16 +532,15 @@ class ClippingMethodPage(QFrame):
         layout.addWidget(self._narration_loading)
         self._narration_loading.hide()
 
-        self._narration_results_area = QScrollArea()
-        self._narration_results_area.setObjectName("narrationResultsArea")
-        self._narration_results_area.setWidgetResizable(True)
-        self._narration_results_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-
-        self._narration_results_content = QFrame()
-        self._narration_results_content.setObjectName("narrationResultsContent")
-        self._narration_results_layout = QVBoxLayout(self._narration_results_content)
+        self._narration_results_widget = QFrame()
+        self._narration_results_widget.setObjectName("narrationResultsWidget")
+        self._narration_results_layout = QVBoxLayout(self._narration_results_widget)
         self._narration_results_layout.setContentsMargins(0, 0, 0, 0)
-        self._narration_results_layout.setSpacing(6)
+        self._narration_results_layout.setSpacing(8)
+
+        results_title = QLabel("解说文案预览")
+        results_title.setObjectName("aiStyleTitle")
+        self._narration_results_layout.addWidget(results_title)
 
         self._narration_table = QTableWidget()
         self._narration_table.setObjectName("narrationTable")
@@ -592,24 +559,15 @@ class ClippingMethodPage(QFrame):
         self._narration_table.cellClicked.connect(self._on_narration_cell_clicked)
         self._narration_results_layout.addWidget(self._narration_table, stretch=1)
 
-        self._narration_results_layout.addStretch()
-        self._narration_results_area.setWidget(self._narration_results_content)
-        layout.addWidget(self._narration_results_area, stretch=1)
-        self._narration_results_area.hide()
-
-        self._generate_narration_btn = QPushButton(" 生成解说文案 ")
-        self._generate_narration_btn.setObjectName("startAiAnalysisBtn")
-        self._generate_narration_btn.setCursor(Qt.PointingHandCursor)
-        self._generate_narration_btn.clicked.connect(self._on_generate_narration)
-        self._generate_narration_btn.hide()
-        layout.addWidget(self._generate_narration_btn)
-
         self._re_analyze_btn = QPushButton("重新生成")
         self._re_analyze_btn.setObjectName("reAnalyzeBtn")
         self._re_analyze_btn.setCursor(Qt.PointingHandCursor)
         self._re_analyze_btn.clicked.connect(self._on_re_analyze)
         self._re_analyze_btn.hide()
-        layout.addWidget(self._re_analyze_btn)
+        self._narration_results_layout.addWidget(self._re_analyze_btn)
+
+        layout.addWidget(self._narration_results_widget, stretch=1)
+        self._narration_results_widget.hide()
 
     def _collect_all_segments(self):
         self._all_segments = {}
@@ -652,152 +610,28 @@ class ClippingMethodPage(QFrame):
     def _on_style_changed(self):
         self._update_style_desc()
 
-    def _on_start_ai_analysis(self):
-        if not self._analysis_service:
-            logger.error("AI分析服务未配置")
-            return
-
-        style_key = self._style_combo.currentData()
-        if not style_key:
-            return
-
-        self._start_ai_btn.setEnabled(False)
-        self._start_ai_btn.setText("分析中...")
-        self._ai_results_area.hide()
-        self._re_analyze_btn.hide()
-        self._ai_loading.show()
-
-        segments_by_video = self._collect_segments_by_video()
-
-        self._worker = ClippingAnalysisWorker(
-            self._analysis_service, segments_by_video, style_key, self,
-        )
-        self._worker.finished.connect(self._on_analysis_finished)
-        self._worker.error.connect(self._on_analysis_error)
-        self._worker.start()
-
-    def _restore_ai_results(self):
-        if not self._project.ai_analysis_results:
-            return
-        self._ai_results = [
-            (r["seg_id"], r["reason"])
-            for r in self._project.ai_analysis_results
-        ]
-        self._clear_ai_results()
-        valid_count = 0
-        for seg_id, reason in self._ai_results:
-            seg = self._all_segments.get(seg_id)
-            if seg:
-                item = AiResultItem(seg, reason)
-                self._ai_results_layout.insertWidget(
-                    self._ai_results_layout.count() - 1, item
-                )
-                valid_count += 1
-        if valid_count > 0:
-            summary = QLabel(f"AI已选择 {valid_count} 个片段")
-            summary.setObjectName("aiResultSummary")
-            self._ai_results_layout.insertWidget(0, summary)
-            self._ai_no_results_widget.hide()
-            self._ai_results_area.show()
-            self._re_analyze_btn.show()
-
-    def _on_analysis_finished(self, results: List[Tuple[str, str]]):
-        self._ai_results = results
-        self._ai_loading.hide()
-        self._start_ai_btn.setText(" 开始AI分析 ")
-        self._start_ai_btn.setEnabled(True)
-
-        self._project.ai_analysis_results = [
-            {"seg_id": seg_id, "reason": reason}
-            for seg_id, reason in results
-        ]
-        if self._project_state_service:
-            self._project_state_service.save_project(self._project)
-
-        self._clear_ai_results()
-        for seg_id, reason in results:
-            seg = self._all_segments.get(seg_id)
-            if seg:
-                item = AiResultItem(seg, reason)
-                self._ai_results_layout.insertWidget(
-                    self._ai_results_layout.count() - 1, item
-                )
-
-        if results:
-            summary = QLabel(f"AI已选择 {len(results)} 个片段")
-            summary.setObjectName("aiResultSummary")
-            self._ai_results_layout.insertWidget(0, summary)
-
-        self._ai_no_results_widget.hide()
-        self._ai_results_area.show()
-        self._generate_narration_btn.show()
-        self._re_analyze_btn.show()
-        self._update_ready_state()
-
-    def _on_analysis_error(self, error_msg: str):
-        self._ai_loading.hide()
-        self._start_ai_btn.setText(" 开始AI分析 ")
-        self._start_ai_btn.setEnabled(True)
-
-        error_label = QLabel(f"分析失败：{error_msg}")
-        error_label.setObjectName("aiErrorLabel")
-        error_label.setWordWrap(True)
-        self._clear_ai_results()
-        self._ai_results_layout.insertWidget(0, error_label)
-        self._ai_no_results_widget.hide()
-        self._ai_results_area.show()
-        self._generate_narration_btn.hide()
-        self._re_analyze_btn.show()
-
-    def _clear_ai_results(self):
-        while self._ai_results_layout.count() > 1:
-            item = self._ai_results_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
     def _on_re_analyze(self):
-        # 隐藏所有结果区域
-        self._ai_results_area.hide()
-        self._narration_results_area.hide()
-        
-        # 隐藏按钮
+        self._narration_results_widget.hide()
         self._re_analyze_btn.hide()
-        self._generate_narration_btn.hide()
-        
-        # 显示初始选择区域
-        self._ai_no_results_widget.show()
-        
-        # 清空结果
-        self._clear_ai_results()
         self._clear_narration_results()
-        
-        # 重置项目状态
-        self._ai_results = []
         self._narration_results = []
-        self._project.ai_analysis_results = []
         self._project.narration_scripts = []
-        
-        # 启用风格选择
         self._style_combo.setEnabled(True)
-        
-        # 更新状态
+        self._params_widget.show()
+        self._generate_narration_btn.show()
         self._update_ready_state()
 
     def _update_visible(self):
         self._ai_widget.setVisible(True)
 
     def _update_ready_state(self):
-        has_results = len(self._ai_results) > 0
-        self.ready_for_next.emit(has_results)
+        has_narration_results = len(self._narration_results) > 0
+        self.ready_for_next.emit(has_narration_results)
 
     def save_state(self):
         self._project.clipping_style = self._style_combo.currentData()
         self._project.narration_language = self._lang_combo.currentData()
         self._project.original_sound_ratio = self._ratio_combo.currentData()
-        self._project.ai_analysis_results = [
-            {"seg_id": seg_id, "reason": reason}
-            for seg_id, reason in self._ai_results
-        ]
         self._project.narration_scripts = self._narration_results
 
     def _collect_subtitles_by_video(self) -> Dict[str, str]:
@@ -826,8 +660,8 @@ class ClippingMethodPage(QFrame):
 
         self._generate_narration_btn.setEnabled(False)
         self._generate_narration_btn.setText("生成中...")
-        self._narration_results_area.hide()
-        self._ai_results_area.hide()
+        self._params_widget.hide()
+        self._narration_results_widget.hide()
         self._narration_loading.show()
 
         language = self._lang_combo.currentData()
@@ -848,6 +682,8 @@ class ClippingMethodPage(QFrame):
         self._narration_results = results
         self._narration_loading.hide()
         self._generate_narration_btn.hide()
+        self._params_widget.hide()
+        self._re_analyze_btn.show()
 
         self._project.narration_scripts = results
         if self._project_state_service:
@@ -902,28 +738,26 @@ class ClippingMethodPage(QFrame):
                 
                 self._narration_table.setRowHeight(i, 64)
 
-            self._ai_results_area.hide()
-            self._narration_results_area.show()
+            self._narration_results_widget.show()
         else:
             error_label = QLabel("未生成任何解说文案，请重试")
             error_label.setObjectName("narrationErrorLabel")
             error_label.setWordWrap(True)
             self._narration_results_layout.insertWidget(0, error_label)
-            self._ai_results_area.hide()
-            self._narration_results_area.show()
+            self._narration_results_widget.show()
 
     def _on_narration_error(self, error_msg: str):
         self._narration_loading.hide()
         self._generate_narration_btn.setText(" 生成解说文案 ")
         self._generate_narration_btn.setEnabled(True)
+        self._params_widget.show()
 
         error_label = QLabel(f"文案生成失败：{error_msg}")
         error_label.setObjectName("narrationErrorLabel")
         error_label.setWordWrap(True)
         self._clear_narration_results()
         self._narration_results_layout.insertWidget(0, error_label)
-        self._ai_results_area.hide()
-        self._narration_results_area.show()
+        self._narration_results_widget.show()
 
     def _clear_narration_results(self):
         self._narration_table.setRowCount(0)
@@ -953,40 +787,45 @@ class ClippingMethodPage(QFrame):
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QHBoxLayout
         from PySide6.QtCore import QUrl
         from PySide6.QtMultimediaWidgets import QVideoWidget
-        
+
         dialog = QDialog(self)
         dialog.setWindowTitle(f"预览 {start_time} - {end_time}")
         dialog.resize(800, 600)
-        
+
         layout = QVBoxLayout(dialog)
-        
+
         player = QMediaPlayer()
         video_widget = QVideoWidget()
         layout.addWidget(video_widget)
-        
+
         player.setVideoOutput(video_widget)
         player.setSource(QUrl.fromLocalFile(video_path))
-        
+
         from clip_synth.utils.time import parse_time
         start_ms = int(parse_time(start_time) * 1000)
         end_ms = int(parse_time(end_time) * 1000)
-        
+
         def on_position_changed(pos):
-            if pos >= end_ms:
+            if end_ms > 0 and pos >= end_ms:
                 player.setPosition(start_ms)
-        
+
         player.positionChanged.connect(on_position_changed)
-        player.setPosition(start_ms)
-        
+
+        def on_media_status(status):
+            if status == QMediaPlayer.LoadedMedia:
+                player.setPosition(start_ms)
+                player.play()
+
+        player.mediaStatusChanged.connect(on_media_status)
+
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         close_btn = QPushButton("关闭")
         close_btn.clicked.connect(dialog.close)
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
-        
+
         dialog.finished.connect(lambda: player.stop())
-        player.play()
         dialog.exec()
 
     def _on_narration_cell_clicked(self, row: int, col: int):
@@ -998,6 +837,7 @@ class ClippingMethodPage(QFrame):
         self._narration_results = self._project.narration_scripts
         self._clear_narration_results()
         self._generate_narration_btn.hide()
+        self._re_analyze_btn.show()
 
         self._collect_all_segments()
 
@@ -1047,5 +887,4 @@ class ClippingMethodPage(QFrame):
                 self._narration_table.setCellWidget(i, 1, col2_label)
                 
                 self._narration_table.setRowHeight(i, 64)
-        self._ai_results_area.hide()
-        self._narration_results_area.show()
+        self._narration_results_widget.show()

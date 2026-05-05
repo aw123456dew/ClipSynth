@@ -75,8 +75,8 @@ FINAL_ANALYSIS_PROMPT = (
     '  "segments": [\n'
     "    {\n"
     '      "type": "gold_3s",\n'
-    '      "start_time": "HH:MM:SS",\n'
-    '      "end_time": "HH:MM:SS",\n'
+    '      "start_time": "00:00:00,000",\n'
+    '      "end_time": "00:00:00,000",\n'
     '      "description": "片段描述（20字以内）"\n'
     "    }\n"
     "  ]\n"
@@ -84,7 +84,7 @@ FINAL_ANALYSIS_PROMPT = (
     "```\n"
     "\n"
     "## 重要规则\n"
-    "1. 时间格式必须为 HH:MM:SS（如 00:01:25）\n"
+    "1. **时间格式必须是 HH:MM:SS,mmm（例如：00:01:25,500），秒和毫秒之间用逗号隔开，这是SRT标准格式**\n"
     "2. **黄金3秒(gold_3s)长度控制在3-8秒**，其他类型片段要完整，长度在10-40秒\n"
     "3. 描述要简洁有力，控制在20字以内\n"
     "4. **每类至少输出3-5个片段**，内容丰富时可以更多，不设上限\n"
@@ -132,8 +132,8 @@ SUBTITLE_ONLY_PROMPT = (
     '  "segments": [\n'
     "    {\n"
     '      "type": "gold_3s",\n'
-    '      "start_time": "HH:MM:SS",\n'
-    '      "end_time": "HH:MM:SS",\n'
+    '      "start_time": "00:00:00,000",\n'
+    '      "end_time": "00:00:00,000",\n'
     '      "description": "片段描述（20字以内）"\n'
     "    }\n"
     "  ]\n"
@@ -141,7 +141,7 @@ SUBTITLE_ONLY_PROMPT = (
     "```\n"
     "\n"
     "## 重要规则\n"
-    "1. 时间格式必须为 HH:MM:SS（如 00:01:25）\n"
+    "1. **时间格式必须是 HH:MM:SS,mmm（例如：00:01:25,500），秒和毫秒之间用逗号隔开，这是SRT标准格式**\n"
     "2. **黄金3秒(gold_3s)长度控制在3-8秒**，其他类型片段要完整，长度在10-40秒\n"
     "3. 描述要简洁有力，控制在20字以内\n"
     "4. **每类至少输出3-5个片段**，内容丰富时可以更多，不设上限\n"
@@ -150,6 +150,28 @@ SUBTITLE_ONLY_PROMPT = (
     "7. 如果某类片段确实不存在，可以不输出该类型\n"
     "8. 确保输出的JSON是合法有效的"
 )
+
+
+def _validate_time_format(t: str) -> bool:
+    if not re.match(r"^\d{2}:\d{2}:\d{2},\d{3}$", t):
+        return False
+    parts = t.split(":")
+    h, m = int(parts[0]), int(parts[1])
+    s, ms = parts[2].split(",")
+    s, ms = int(s), int(ms)
+    return 0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59 and 0 <= ms <= 999
+
+
+def _validate_segment_time_format(segments: list) -> list[str]:
+    errors = []
+    for i, seg in enumerate(segments):
+        st = seg.get("start_time", "")
+        et = seg.get("end_time", "")
+        if not _validate_time_format(st):
+            errors.append(f"片段{i+1} start_time格式错误: {repr(st)}，应为HH:MM:SS,mmm")
+        if not _validate_time_format(et):
+            errors.append(f"片段{i+1} end_time格式错误: {repr(et)}，应为HH:MM:SS,mmm")
+    return errors
 
 
 class VideoAnalysisService:
@@ -248,7 +270,6 @@ class VideoAnalysisService:
                     prompt=prompt,
                     system_prompt="你是一个专业的视频分析专家，严格按照JSON格式输出分析结果。",
                     temperature=0.3,
-                    max_tokens=8192,
                 )
                 segments = self._parse_response(response)
                 if not segments:
@@ -534,7 +555,6 @@ class VideoAnalysisService:
                     prompt=prompt,
                     system_prompt="你是一个专业的视频分析专家，严格按照JSON格式输出分析结果。",
                     temperature=0.3,
-                    max_tokens=8192,
                 )
                 segments = self._parse_response(response)
                 if not segments:
@@ -676,6 +696,15 @@ class VideoAnalysisService:
             logger.warning("JSON中未找到segments字段")
             return []
 
+        time_errors = _validate_segment_time_format(raw_segments)
+        if time_errors:
+            error_detail = "；".join(time_errors)
+            logger.error(f"AI返回的时间格式错误: {error_detail}")
+            raise ValueError(
+                f"AI返回的时间格式不符合要求（应为HH:MM:SS,mmm格式，如00:01:25,500），"
+                f"请点击「重新分析」按钮重新生成。\n详细错误：{error_detail}"
+            )
+
         segments = []
         for raw in raw_segments:
             seg_type = raw.get("type", "")
@@ -715,7 +744,8 @@ class VideoAnalysisService:
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         secs = int(seconds % 60)
-        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        msecs = int((seconds - int(seconds)) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{msecs:03d}"
 
     def _merge_segments(self, segments: list[VideoSegment]) -> list[VideoSegment]:
         grouped: dict[str, list[VideoSegment]] = {
@@ -753,5 +783,6 @@ class VideoAnalysisService:
     def _time_to_seconds(self, time_str: str) -> float:
         parts = time_str.split(":")
         if len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            sec_part = parts[2].replace(",", ".")
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(sec_part)
         return 0.0

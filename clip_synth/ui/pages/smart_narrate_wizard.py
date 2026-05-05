@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -17,6 +18,7 @@ from clip_synth.models.narrate_project_state import NarrateProjectState
 from clip_synth.services.ai_service import AIService
 from clip_synth.services.clipping_analysis_service import ClippingAnalysisService
 from clip_synth.services.doubao_tts_service import DoubaoTTSWorker
+from clip_synth.services.narrate_export_service import NarrateExportService
 from clip_synth.services.narrate_project_state_service import NarrateProjectStateService
 from clip_synth.services.video_analysis_service import VideoAnalysisService
 
@@ -123,11 +125,20 @@ class SmartNarrateWizard(QFrame):
         self._current_step = self._project.current_step
         self._total_steps = 5
 
+        export_dir = os.path.join(
+            str(self._narrate_project_state_service.projects_dir),
+            self._project.id,
+        )
+        self._export_service = NarrateExportService(export_dir)
+
         logger.info(f"SmartNarrateWizard 初始化: current_step={self._current_step}, project={self._project.id}")
 
         self.setObjectName("smartNarrateWizard")
         self._setup_ui()
         self._update_step_indicators()
+
+    def _init_export_page(self) -> None:
+        self._export_page.set_project(self._project, self._export_service)
 
     def _g_nav_ok(self) -> None:
         self._next_btn.setEnabled(True)
@@ -257,6 +268,7 @@ class SmartNarrateWizard(QFrame):
 
         layout.addWidget(footer)
 
+        self._init_export_page()
         self._sync_ui()
 
     def _sync_ui(self) -> None:
@@ -329,13 +341,17 @@ class SmartNarrateWizard(QFrame):
                 self._advance()
             elif self._current_step == 2:
                 self._method_page.save_state()
+                if not self._project.narration_scripts:
+                    QMessageBox.warning(
+                        self,
+                        "提示",
+                        "请先生成解说文案后再进入下一步"
+                    )
+                    return
                 self._save_project()
                 self._advance()
             elif self._current_step == 3:
-                if self._project.audio_files:
-                    logger.info("已有配音文件，跳过TTS直接进入导出页")
-                    self._advance()
-                elif self._project.narration_scripts:
+                if self._project.narration_scripts:
                     self._on_generate_tts()
                 else:
                     logger.warning("没有解说文案，跳过配音直接进入导出页")
@@ -345,6 +361,17 @@ class SmartNarrateWizard(QFrame):
             self._g_nav_ok()
 
     def _on_generate_tts(self):
+        old_audio = self._project.audio_files
+        for path in old_audio:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                    logger.info(f"删除旧配音文件: {path}")
+            except Exception as e:
+                logger.warning(f"删除旧配音文件失败: {path} -> {e}")
+        self._project.audio_files = []
+        self._generated_audio_files = []
+
         voice_settings = self._voice_page.get_settings()
 
         scripts = self._project.narration_scripts

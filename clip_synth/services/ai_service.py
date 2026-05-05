@@ -142,7 +142,7 @@ class AIService:
         prompt: str,
         system_prompt: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
+        max_tokens: int | None = None,
         timeout: float | None = None,
     ) -> str:
         messages = []
@@ -152,13 +152,15 @@ class AIService:
 
         async with self._semaphore:
             client = self._ensure_async_client()
-            response = await client.chat.completions.create(
+            kwargs = dict(
                 model=self._config.model_name,
                 messages=messages,
                 temperature=temperature,
-                max_tokens=max_tokens,
                 timeout=timeout,
             )
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            response = await client.chat.completions.create(**kwargs)
         return response.choices[0].message.content or ""
 
     async def generate_text_with_images(
