@@ -638,7 +638,7 @@ def _build_polish_prompt(narration_results: List[dict], language: str) -> str:
     lang_config = {
         "zh": {"name": "中文", "natural_speed": 3},
         "en": {"name": "英文", "natural_speed": 3},
-        "th": {"name": "泰文", "natural_speed": 4},
+        "th": {"name": "泰文", "natural_speed": 3},
     }
     config = lang_config.get(language, lang_config["zh"])
 

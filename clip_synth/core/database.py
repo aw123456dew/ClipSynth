@@ -3,6 +3,8 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
+from clip_synth.core.config import AppConfig
+
 
 class Base(DeclarativeBase):
     pass
@@ -11,7 +13,8 @@ class Base(DeclarativeBase):
 class DatabaseManager:
     def __init__(self, db_path: Path | None = None):
         if db_path is None:
-            db_path = Path.home() / ".clip_synth" / "clip_synth.db"
+            config = AppConfig()
+            db_path = config.db_path
         self._db_path = db_path
         self._engine = None
         self._session_factory = None

@@ -23,6 +23,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(levelname)s] %(message)s",
@@ -35,6 +37,41 @@ DIST_DIR = PROJECT_ROOT / "dist"
 BUILD_DIR = PROJECT_ROOT / "build"
 
 FFMPEG_FILENAME = "ffmpeg.exe"
+DEFAULT_ICON_PATH = PROJECT_ROOT / "clip_synth/resources/icons/icon.jpg"
+
+
+def convert_jpg_to_ico(jpg_path: str | Path, ico_path: str | Path) -> None:
+    """将 JPG 图标转换为 ICO 格式"""
+    try:
+        img = Image.open(jpg_path)
+        img = img.convert("RGBA")
+        sizes = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
+        img.save(ico_path, format="ICO", sizes=sizes)
+        logger.info("已将图标转换为 ICO 格式: %s", ico_path)
+    except Exception as e:
+        logger.warning("图标转换失败: %s", e)
+
+
+def get_icon_path(icon_arg: str | None) -> str | None:
+    """获取图标路径，自动转换 JPG 为 ICO"""
+    if icon_arg:
+        icon_path = Path(icon_arg)
+    else:
+        icon_path = DEFAULT_ICON_PATH
+
+    if not icon_path.exists():
+        logger.warning("图标文件不存在: %s", icon_path)
+        return None
+
+    if icon_path.suffix.lower() in [".jpg", ".jpeg"]:
+        ico_path = icon_path.with_suffix(".ico")
+        convert_jpg_to_ico(icon_path, ico_path)
+        return str(ico_path)
+    elif icon_path.suffix.lower() == ".ico":
+        return str(icon_path)
+    else:
+        logger.warning("不支持的图标格式: %s", icon_path.suffix)
+        return None
 
 
 def check_python() -> None:
@@ -269,7 +306,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--icon",
         default=None,
-        help="指定 exe 图标路径",
+        help=f"指定 exe 图标路径（默认 {DEFAULT_ICON_PATH}）",
     )
     parser.add_argument(
         "--ffmpeg-dir",
@@ -296,11 +333,13 @@ def main() -> None:
     ffmpeg_path = find_ffmpeg(args.ffmpeg_dir)
     check_ffmpeg_version(ffmpeg_path)
 
+    icon_path = get_icon_path(args.icon)
+
     run_pyinstaller(
         console=args.console,
         clean=args.clean,
         exe_name=args.name,
-        icon_path=args.icon,
+        icon_path=icon_path,
         upx_dir=args.upx_dir,
     )
 

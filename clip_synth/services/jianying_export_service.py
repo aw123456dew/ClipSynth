@@ -58,6 +58,31 @@ def _build_blur_filter(
     return filter_str
 
 
+def _get_video_duration(path: str) -> float:
+    """获取视频时长（秒）"""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "csv=p=0",
+        path,
+    ]
+    try:
+        kwargs = {}
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            **kwargs,
+        )
+        if result.returncode == 0:
+            return float(result.stdout.strip())
+    except Exception as e:
+        logger.warning(f"获取视频时长失败: {path}, 错误: {e}")
+    return 0.0
+
+
 def _get_video_resolution(path: str) -> tuple:
     """获取视频分辨率"""
     cmd = [
@@ -340,7 +365,9 @@ class JianYingExportService:
                 ]
                 # 添加模糊滤镜
                 if blur_filter:
-                    cut_cmd.insert(cut_cmd.index("-c:v"), "-filter:v", blur_filter)
+                    idx = cut_cmd.index("-c:v")
+                    cut_cmd.insert(idx, blur_filter)
+                    cut_cmd.insert(idx, "-filter:v")
                 _run_cmd(cut_cmd, f"裁剪原声片段 {i+1}")
                 clip_videos.append((clip_path, content_type, None, segment_duration))
             else:
@@ -375,6 +402,7 @@ class JianYingExportService:
                         "-i", video_path,
                         "-t", f"{segment_duration}",
                         "-filter:v", filter_str,
+                        "-t", f"{audio_duration}",
                         "-c:v", "libx264",
                         "-preset", "ultrafast",
                         "-crf", "23",
@@ -384,13 +412,19 @@ class JianYingExportService:
                     ]
                     _run_cmd(cut_cmd, f"裁剪解说片段 {i+1}（加速 x{speed:.2f}）")
                 else:
-                    # 音频比视频长：延长视频到音频时长（末尾重复帧）
-                    clip_duration = audio_duration
+                    # 音频比视频长：延长视频到音频时长（放慢速度）
+                    speed = segment_duration / audio_duration
+                    filters = [f"setpts={1.0/speed}*PTS"]
+                    if blur_filter:
+                        filters.append(blur_filter)
+                    filter_str = ",".join(filters)
                     cut_cmd = [
                         "ffmpeg", "-y",
                         "-ss", raw_start,
                         "-i", video_path,
-                        "-t", f"{clip_duration}",
+                        "-t", f"{segment_duration}",
+                        "-filter:v", filter_str,
+                        "-t", f"{audio_duration}",
                         "-c:v", "libx264",
                         "-preset", "ultrafast",
                         "-crf", "23",
@@ -398,9 +432,6 @@ class JianYingExportService:
                         "-avoid_negative_ts", "make_zero",
                         clip_path,
                     ]
-                    # 添加模糊滤镜
-                    if blur_filter:
-                        cut_cmd.insert(cut_cmd.index("-c:v"), "-filter:v", blur_filter)
                     _run_cmd(cut_cmd, f"裁剪解说片段 {i+1}（延长到音频时长）")
                 
                 clip_videos.append((clip_path, content_type, audio_path, audio_duration))
@@ -444,6 +475,16 @@ class JianYingExportService:
                 current_time += duration
                 continue
 
+            # 获取实际视频文件时长
+            actual_duration = _get_video_duration(clip_path)
+            if actual_duration <= 0:
+                logger.warning(f"无法获取视频时长: {clip_path}，跳过")
+                current_time += duration
+                continue
+
+            # 使用实际时长，避免超出范围
+            duration = actual_duration
+
             # 添加到视频轨道
             video_segment = VideoSegment(
                 clip_path,
@@ -453,9 +494,13 @@ class JianYingExportService:
 
             # 解说片段：添加配音音频到音频轨道
             if content_type != "original_sound" and audio_path and os.path.exists(audio_path):
+                # 获取音频文件的实际时长
+                audio_duration = _get_video_duration(audio_path)
+                if audio_duration <= 0:
+                    audio_duration = duration
                 audio_segment = AudioSegment(
                     audio_path,
-                    trange(f"{current_time}s", f"{duration}s")
+                    trange(f"{current_time}s", f"{min(duration, audio_duration)}s")
                 )
                 script.add_segment(audio_segment, "音频轨道")
 

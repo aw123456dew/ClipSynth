@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from clip_synth.core.config import AppConfig
 from clip_synth.models.narrate_project_state import NarrateProjectState
 from clip_synth.models.project_state import VideoProjectState, VideoSegment
 
@@ -11,9 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class NarrateProjectStateService:
-    def __init__(self, data_dir: str = "data"):
+    def __init__(self, data_dir: str | None = None):
+        if data_dir is None:
+            config = AppConfig()
+            data_dir = config.data_dir / "narrate_projects"
         self.data_dir = Path(data_dir)
-        self.projects_dir = self.data_dir / "narrate_projects"
+        self.projects_dir = self.data_dir
         self.projects_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"解说项目状态服务初始化，数据目录: {self.projects_dir}")
 

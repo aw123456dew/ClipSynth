@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from clip_synth.core.config import AppConfig
 from clip_synth.models.narrate_project_state import NarrateProjectState
 from clip_synth.services.jianying_export_service import JianYingExportService
 from clip_synth.services.narrate_export_service import NarrateExportService
@@ -400,9 +401,10 @@ class NarrateExportPage(QFrame):
         
         # 创建剪映导出服务
         jianying_service = JianYingExportService(self._settings_service)
-        
+
         # 获取临时输出目录
-        output_dir = os.path.join(os.path.expanduser("~"), ".clip_synth", "exports")
+        config = AppConfig()
+        output_dir = str(config.export_dir)
         os.makedirs(output_dir, exist_ok=True)
         
         self._jianying_worker = JianYingExportWorker(jianying_service, self._project, output_dir)
