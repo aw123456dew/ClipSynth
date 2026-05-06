@@ -231,8 +231,10 @@ class SmartNarrateWizard(QFrame):
         self._stack.addWidget(self._voice_page)
 
         from clip_synth.ui.pages.narrate_export_page import NarrateExportPage
+        from clip_synth.services.settings_service import SettingsService
 
-        self._export_page = NarrateExportPage()
+        self._settings_service = SettingsService(self._db_manager) if self._db_manager else None
+        self._export_page = NarrateExportPage(self._settings_service)
         self._stack.addWidget(self._export_page)
 
         layout.addWidget(self._stack, stretch=1)
@@ -246,7 +248,7 @@ class SmartNarrateWizard(QFrame):
         footer = QFrame()
         footer.setObjectName("wizardFooter")
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(24, 16, 24, 16)
+        footer_layout.setContentsMargins(24, 16, 24, 32)
 
         self._cancel_btn = QPushButton("取消")
         self._cancel_btn.setObjectName("wizardCancelBtn")
@@ -302,7 +304,7 @@ class SmartNarrateWizard(QFrame):
 
         if self._current_step == self._total_steps - 1:
             self._next_btn.hide()
-            self._finish_btn.show()
+            self._finish_btn.hide()
         else:
             self._next_btn.show()
             self._finish_btn.hide()

@@ -1,6 +1,7 @@
 import logging
 import os
 import subprocess
+from typing import Dict
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
@@ -18,7 +19,9 @@ from PySide6.QtWidgets import (
 )
 
 from clip_synth.models.narrate_project_state import NarrateProjectState
+from clip_synth.services.jianying_export_service import JianYingExportService
 from clip_synth.services.narrate_export_service import NarrateExportService
+from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.widgets.subtitle_preview_dialog import SubtitlePreviewDialog
 
 logger = logging.getLogger("clip_synth.narrate_export")
@@ -45,6 +48,39 @@ class ExportWorker(QThread):
             self.finished.emit(output_path)
         except Exception as e:
             logger.error(f"导出失败: {e}", exc_info=True)
+            self.error.emit(str(e))
+
+    def cancel(self):
+        self._service.cancel()
+
+
+class JianYingExportWorker(QThread):
+    progress = Signal(str)
+    export_finished = Signal(object)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        service: JianYingExportService,
+        project: NarrateProjectState,
+        output_dir: str,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._service = service
+        self._project = project
+        self._output_dir = output_dir
+
+    def run(self):
+        try:
+            result = self._service.export_to_jianying(
+                self._project,
+                self._output_dir,
+                progress_callback=lambda msg, pct: self.progress.emit(msg),
+            )
+            self.export_finished.emit(result)
+        except Exception as e:
+            logger.error(f"导出到剪映草稿失败: {e}", exc_info=True)
             self.error.emit(str(e))
 
     def cancel(self):
@@ -95,10 +131,11 @@ class _ExportActionCard(QFrame):
 
 
 class NarrateExportPage(QFrame):
-    def __init__(self, parent=None):
+    def __init__(self, settings_service: SettingsService | None = None, parent=None):
         super().__init__(parent)
         self._project: NarrateProjectState | None = None
         self._export_service: NarrateExportService | None = None
+        self._settings_service = settings_service
         self._worker: ExportWorker | None = None
         self.setObjectName("narrateExportPage")
         self._setup_ui()
@@ -107,6 +144,9 @@ class NarrateExportPage(QFrame):
         self._project = project
         self._export_service = export_service
         self._reset_ui()
+
+    def set_settings_service(self, settings_service: SettingsService):
+        self._settings_service = settings_service
 
     def _reset_ui(self):
         self._card_container.show()
@@ -244,7 +284,7 @@ class NarrateExportPage(QFrame):
 
         self._card_container = QFrame()
         self._card_container.setObjectName("exportCardsFrame")
-        card_inner = QVBoxLayout(self._card_container)
+        card_inner = QHBoxLayout(self._card_container)
         card_inner.setContentsMargins(0, 0, 0, 0)
         card_inner.setSpacing(16)
         card_inner.setAlignment(Qt.AlignCenter)
@@ -256,6 +296,7 @@ class NarrateExportPage(QFrame):
         )
         self._export_video_card.clicked.connect(self._on_export_video)
         self._export_video_card.setObjectName("exportVideoCard")
+        self._export_video_card.setMinimumWidth(280)
         card_inner.addWidget(self._export_video_card)
 
         self._export_draft_card = _ExportActionCard(
@@ -265,12 +306,8 @@ class NarrateExportPage(QFrame):
         )
         self._export_draft_card.clicked.connect(self._on_export_draft)
         self._export_draft_card.setObjectName("exportDraftCard")
+        self._export_draft_card.setMinimumWidth(280)
         card_inner.addWidget(self._export_draft_card)
-
-        hint = QLabel("提示：导出到剪映草稿功能开发中")
-        hint.setObjectName("exportPlaceholderHint")
-        hint.setAlignment(Qt.AlignCenter)
-        card_inner.addWidget(hint)
 
         layout.addWidget(self._card_container, stretch=1)
 
@@ -402,7 +439,49 @@ class NarrateExportPage(QFrame):
         self._worker.start()
 
     def _on_export_draft(self):
-        logger.info("导出到剪映草稿（功能待实现）")
+        if not self._project:
+            logger.warning("项目未设置")
+            return
+        
+        if not self._settings_service:
+            logger.error("SettingsService 未设置")
+            from clip_synth.ui.components.toast import show_toast
+            show_toast(self, "系统配置服务未初始化", "error", duration=3000)
+            return
+        
+        self._card_container.hide()
+        self._progress_container.show()
+        self._progress_label.setText("正在准备导出到剪映草稿...")
+        
+        # 创建剪映导出服务
+        jianying_service = JianYingExportService(self._settings_service)
+        
+        # 获取临时输出目录
+        output_dir = os.path.join(os.path.expanduser("~"), ".clip_synth", "exports")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        self._jianying_worker = JianYingExportWorker(jianying_service, self._project, output_dir)
+        self._jianying_worker.progress.connect(self._on_export_progress)
+        self._jianying_worker.export_finished.connect(self._on_jianying_export_finished)
+        self._jianying_worker.error.connect(self._on_export_error)
+        self._jianying_worker.start()
+
+    def _on_jianying_export_finished(self, result: Dict[str, str] = None):
+        self._progress_container.hide()
+        self._card_container.show()
+        
+        if result is None:
+            logger.error("导出结果为空")
+            from clip_synth.ui.components.toast import show_toast
+            show_toast(self, "导出结果为空", "error", duration=3000)
+            return
+        
+        draft_path = result.get("draft_path", "")
+        draft_name = result.get("draft_name", "")
+        logger.info(f"导出到剪映草稿成功: {draft_name} -> {draft_path}")
+        
+        from clip_synth.ui.components.toast import show_toast
+        show_toast(self, f"成功导出到剪映草稿: {draft_name}", "success", duration=3000)
 
     def _on_export_progress(self, message: str):
         self._progress_label.setText(message)

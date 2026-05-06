@@ -8,9 +8,17 @@ logger = logging.getLogger("clip_synth.subtitle_service")
 
 class SubtitleService:
     @staticmethod
+    def _is_punctuation(char: str) -> bool:
+        """判断是否为标点符号"""
+        if not char:
+            return False
+        punct_set = set("，。！？、；：""''（）【】《》——…·～〝〟,.!?;:()[]{}""''<>")
+        return char in punct_set
+
+    @staticmethod
     def merge_words_to_sentences(words: List[dict], max_chars: int = 20, max_pause: float = 0.3) -> List[dict]:
         """
-        将单个字合并为句子
+        将单个字合并为句子，根据标点符号断句并去除标点
         :param words: [{"word": "字", "start": 0.0, "end": 0.1}, ...]
         :param max_chars: 单行字幕最大字数
         :param max_pause: 超过此间隔(秒)视为句子断开
@@ -32,9 +40,22 @@ class SubtitleService:
             if not char:
                 continue
 
+            # 标点符号作为断句点，不加入文本
+            if SubtitleService._is_punctuation(char):
+                if current_chars:
+                    sentences.append({
+                        'text': ''.join(current_chars),
+                        'start': current_start,
+                        'end': current_end or end,
+                    })
+                    current_chars = []
+                    current_start = None
+                    current_end = None
+                continue
+
             # 检查是否需要断开
             is_long_pause = current_end is not None and (start - current_end) > max_pause
-            current_text_length = len("".join(current_chars))
+            current_text_length = len(current_chars)
             is_too_long = current_text_length > 0 and (current_text_length + len(char) > max_chars)
 
             if (is_long_pause or is_too_long) and current_chars:

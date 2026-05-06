@@ -737,7 +737,8 @@ QLineEdit::placeholder {
 #wizardFooter {
     background-color: #0d111f;
     border-top: 1px solid #1a2340;
-    min-height: 56px;
+    min-height: 72px;
+    padding: 8px 0;
 }
 
 #wizardPrevBtn, #wizardCancelBtn, #wizardNextBtn, #wizardFinishBtn {
@@ -2392,8 +2393,8 @@ QSlider::sub-page:horizontal {
     background-color: #0c1322;
     border: 1px solid #1e293b;
     border-radius: 12px;
-    min-height: 80px;
-    max-width: 520px;
+    min-height: 100px;
+    max-width: 400px;
 }
 
 #exportVideoCard:hover, #exportDraftCard:hover {
@@ -2541,6 +2542,7 @@ QSlider::sub-page:horizontal {
     border-radius: 6px;
     padding: 4px 10px;
     min-height: 22px;
+    min-width: 60px;
 }
 
 #fontCombo:hover, #fontSizeCombo:hover, #positionCombo:hover {
