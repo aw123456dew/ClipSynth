@@ -1,5 +1,5 @@
+import os
 import sys
-from pathlib import Path
 
 import qasync
 from PySide6.QtCore import Qt
@@ -7,7 +7,25 @@ from PySide6.QtWidgets import QApplication
 
 from clip_synth.core.database import DatabaseManager
 from clip_synth.ui.main_window import MainWindow
+from clip_synth.utils.ffmpeg_helper import add_ffmpeg_to_path, get_resource_path
 from clip_synth.utils.logger import setup_logger
+
+
+def _patch_pyjianying_assets() -> None:
+    """修复 pyJianYingDraft 在打包后的资源文件路径问题"""
+    if not getattr(sys, 'frozen', False):
+        return
+    
+    try:
+        import pyJianYingDraft.assets as assets_module
+        
+        meipass = getattr(sys, '_MEIPASS', None)
+        if meipass:
+            actual_assets_dir = os.path.join(meipass, 'pyJianYingDraft', 'assets')
+            if os.path.isdir(actual_assets_dir):
+                assets_module.ASSETS_DIR = type(assets_module.ASSETS_DIR)(actual_assets_dir)
+    except Exception:
+        pass
 
 
 class Application:
@@ -18,6 +36,8 @@ class Application:
 
     def initialize(self) -> None:
         setup_logger()
+        add_ffmpeg_to_path()
+        _patch_pyjianying_assets()
 
         self._qt_app = QApplication(sys.argv)
         self._qt_app.setApplicationName("ClipSynth")
@@ -33,8 +53,8 @@ class Application:
         self._main_window.show()
 
     def _load_stylesheet(self) -> None:
-        qss_path = Path(__file__).parent.parent / "resources" / "styles" / "main.qss"
-        if qss_path.exists():
+        qss_path = get_resource_path("clip_synth/resources/styles/main.qss")
+        if os.path.exists(qss_path):
             with open(qss_path, "r", encoding="utf-8") as f:
                 self._qt_app.setStyleSheet(f.read())
 

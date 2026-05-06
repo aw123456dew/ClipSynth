@@ -1,8 +1,9 @@
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
@@ -22,6 +23,67 @@ from clip_synth.ui.pages.short_drama_narrate_page import ShortDramaNarratePage
 from clip_synth.ui.pages.video_dedup_page import VideoDedupPage
 
 logger = logging.getLogger(__name__)
+
+
+class CoverExtractorWorker(QThread):
+    """异步提取视频封面的工作线程"""
+    finished = Signal(str)  # 提取成功时返回封面路径
+    failed = Signal()        # 提取失败
+    
+    def __init__(self, video_path: str, parent=None):
+        super().__init__(parent)
+        self._video_path = video_path
+    
+    def run(self):
+        """执行封面提取"""
+        cover_path = self._extract_first_frame(self._video_path)
+        if cover_path:
+            self.finished.emit(cover_path)
+        else:
+            self.failed.emit()
+    
+    @staticmethod
+    def _extract_first_frame(video_path: str) -> str | None:
+        """提取视频第一帧作为封面"""
+        cache_dir = Path(__file__).resolve().parent.parent.parent / "cache" / "covers"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        video_name = Path(video_path).stem
+        safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in video_name)
+        output_path = str(cache_dir / f"{safe_name}_cover.jpg")
+
+        if Path(output_path).exists():
+            return output_path
+
+        cmd = [
+            "ffmpeg",
+            "-ss", "0",
+            "-i", video_path,
+            "-vframes", "1",
+            "-vf", "scale=400:-1",
+            "-q:v", "3",
+            "-y",
+            output_path,
+        ]
+        
+        # 设置参数避免弹出黑框
+        kwargs = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=False, timeout=30, **kwargs)
+            if result.returncode == 0 and Path(output_path).exists():
+                logger.info("已提取视频封面: %s", output_path)
+                return output_path
+            else:
+                logger.warning("封面提取失败: %s", result.stderr.decode('utf-8', errors='ignore') if result.stderr else "unknown")
+        except subprocess.TimeoutExpired:
+            logger.warning("封面提取超时")
+        except Exception as e:
+            logger.error("封面提取异常: %s", e)
+        
+        return None
 
 
 class PlaceholderPage(QFrame):
@@ -142,8 +204,14 @@ class ContentArea(QFrame):
             "-y",
             output_path,
         ]
+        
+        # 设置参数避免弹出黑框
+        kwargs = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        
         try:
-            result = subprocess.run(cmd, capture_output=True, text=False, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, text=False, timeout=30, **kwargs)
             if result.returncode == 0 and Path(output_path).exists():
                 logger.info("已提取视频封面: %s", output_path)
                 return output_path
@@ -172,8 +240,15 @@ class ContentArea(QFrame):
 
         video_paths, project_name, cover_path = data
 
+        # 先检查缓存中是否已有封面，避免不必要的等待
+        cached_cover = None
         if not cover_path and video_paths:
-            cover_path = self._extract_first_frame(video_paths[0])
+            cache_dir = Path(__file__).resolve().parent.parent.parent / "cache" / "covers"
+            video_name = Path(video_paths[0]).stem
+            safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in video_name)
+            cached_cover_path = cache_dir / f"{safe_name}_cover.jpg"
+            if cached_cover_path.exists():
+                cover_path = str(cached_cover_path)
 
         project = self._narrate_project_state_service.create_project(
             video_paths, name=project_name, cover_path=cover_path,
@@ -188,6 +263,10 @@ class ContentArea(QFrame):
         wizard_page.cancelled.connect(self._on_narrate_wizard_cancelled)
         self._stack.addWidget(wizard_page)
         self._stack.setCurrentIndex(self._stack.count() - 1)
+
+        # 异步提取封面（不阻塞UI）
+        if not cover_path and video_paths:
+            self._async_extract_cover(video_paths[0], project.id)
 
     def open_narrate_project(self, project_id: str) -> None:
         from clip_synth.ui.pages.smart_narrate_wizard import SmartNarrateWizard
@@ -249,3 +328,23 @@ class ContentArea(QFrame):
         sender = self.sender()
         if sender:
             sender.deleteLater()
+    
+    def _async_extract_cover(self, video_path: str, project_id: str) -> None:
+        """异步提取视频封面，提取完成后更新项目"""
+        if hasattr(self, '_cover_worker') and self._cover_worker is not None:
+            self._cover_worker.deleteLater()
+        self._cover_worker = CoverExtractorWorker(video_path)
+        self._cover_worker.finished.connect(lambda cover_path: self._on_cover_extracted(cover_path, project_id))
+        self._cover_worker.failed.connect(lambda: logger.debug("封面提取失败"))
+        self._cover_worker.start()
+    
+    def _on_cover_extracted(self, cover_path: str, project_id: str) -> None:
+        """封面提取完成后的回调"""
+        try:
+            project = self._narrate_project_state_service.load_project(project_id)
+            if project:
+                project.cover_path = cover_path
+                self._narrate_project_state_service.save_project(project)
+                logger.info("异步更新项目封面: %s", project_id)
+        except Exception as e:
+            logger.error("更新项目封面失败: %s", e)

@@ -436,8 +436,11 @@ class VideoAnalysisService:
             ]
 
             try:
+                kwargs = {}
+                if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
                 result = subprocess.run(
-                    cmd, capture_output=True, text=False, timeout=30,
+                    cmd, capture_output=True, text=False, timeout=30, **kwargs
                 )
                 if result.returncode == 0:
                     frame_paths.append(output_path)
@@ -610,8 +613,11 @@ class VideoAnalysisService:
             video_path,
         ]
         try:
+            kwargs = {}
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             result = subprocess.run(
-                cmd, capture_output=True, text=False, timeout=30,
+                cmd, capture_output=True, text=False, timeout=30, **kwargs
             )
             if result.returncode == 0:
                 stdout = result.stdout.decode("utf-8", errors="replace").strip()

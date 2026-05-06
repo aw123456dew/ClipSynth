@@ -308,9 +308,12 @@ class DoubaoTTSWorker:
                 # 计算偏移（音频时长 + 静音间隔）
                 import subprocess
                 try:
+                    kwargs = {}
+                    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
                     result = subprocess.run(
                         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", temp_audio],
-                        capture_output=True, text=True, timeout=30
+                        capture_output=True, text=True, timeout=30, **kwargs
                     )
                     if result.returncode == 0:
                         offset += float(result.stdout.strip()) + silence_duration

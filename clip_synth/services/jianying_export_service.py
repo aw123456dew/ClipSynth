@@ -36,7 +36,10 @@ def _get_media_duration(path: str) -> float:
         path,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=False, timeout=30)
+        kwargs = {}
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(cmd, capture_output=True, text=False, timeout=30, **kwargs)
         if result.returncode == 0:
             stdout = result.stdout.decode("utf-8", errors="replace").strip()
             if stdout:
@@ -259,21 +262,41 @@ class JianYingExportService:
                     logger.warning(f"解说片段 {i+1} 缺少配音文件，跳过")
                     continue
 
-                # 按配音时长裁剪视频并移除原声
-                clip_duration = max(audio_duration, segment_duration)
-                cut_cmd = [
-                    "ffmpeg", "-y",
-                    "-ss", raw_start,
-                    "-i", video_path,
-                    "-t", f"{clip_duration}",
-                    "-c:v", "libx264",
-                    "-preset", "ultrafast",
-                    "-crf", "23",
-                    "-an",
-                    "-avoid_negative_ts", "make_zero",
-                    clip_path,
-                ]
-                _run_cmd(cut_cmd, f"裁剪解说片段 {i+1}（静音）")
+                # 按配音时长处理视频：音频比视频短时加速视频，音频比视频长时延长视频
+                if audio_duration < segment_duration:
+                    # 音频比视频短：加速视频到音频时长
+                    speed = segment_duration / audio_duration
+                    cut_cmd = [
+                        "ffmpeg", "-y",
+                        "-ss", raw_start,
+                        "-i", video_path,
+                        "-t", f"{segment_duration}",
+                        "-filter:v", f"setpts={1.0/speed}*PTS",
+                        "-c:v", "libx264",
+                        "-preset", "ultrafast",
+                        "-crf", "23",
+                        "-an",
+                        "-avoid_negative_ts", "make_zero",
+                        clip_path,
+                    ]
+                    _run_cmd(cut_cmd, f"裁剪解说片段 {i+1}（加速 x{speed:.2f}）")
+                else:
+                    # 音频比视频长：延长视频到音频时长（末尾重复帧）
+                    clip_duration = audio_duration
+                    cut_cmd = [
+                        "ffmpeg", "-y",
+                        "-ss", raw_start,
+                        "-i", video_path,
+                        "-t", f"{clip_duration}",
+                        "-c:v", "libx264",
+                        "-preset", "ultrafast",
+                        "-crf", "23",
+                        "-an",
+                        "-avoid_negative_ts", "make_zero",
+                        clip_path,
+                    ]
+                    _run_cmd(cut_cmd, f"裁剪解说片段 {i+1}（延长到音频时长）")
+                
                 clip_videos.append((clip_path, content_type, audio_path, audio_duration))
 
         if not clip_videos:

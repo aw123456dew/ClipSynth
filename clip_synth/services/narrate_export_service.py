@@ -48,7 +48,10 @@ def _get_media_duration(path: str) -> float:
         path,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=False, timeout=30)
+        kwargs = {}
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(cmd, capture_output=True, text=False, timeout=30, **kwargs)
         if result.returncode == 0:
             stdout = result.stdout.decode("utf-8", errors="replace").strip()
             if stdout:
@@ -67,7 +70,10 @@ def _get_video_resolution(path: str) -> tuple[int, int]:
         path,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=False, timeout=30)
+        kwargs = {}
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(cmd, capture_output=True, text=False, timeout=30, **kwargs)
         if result.returncode == 0:
             output = result.stdout.decode("utf-8", errors="replace").strip()
             if output:

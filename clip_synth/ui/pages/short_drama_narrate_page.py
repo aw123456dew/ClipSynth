@@ -242,7 +242,7 @@ class ShortDramaNarratePage(QFrame):
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(24, 16, 24, 16)
 
-        title_label = QLabel("短剧解说")
+        title_label = QLabel("视频解说")
         title_label.setObjectName("mixTitle")
         toolbar_layout.addWidget(title_label)
 

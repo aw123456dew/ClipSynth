@@ -50,11 +50,15 @@ class VideoPreprocessor:
         ]
 
         try:
+            kwargs = {}
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=False,
                 timeout=600,
+                **kwargs
             )
 
             if result.returncode != 0:

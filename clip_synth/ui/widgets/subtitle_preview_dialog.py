@@ -339,7 +339,10 @@ class SubtitlePreviewDialog(QDialog):
                 "-of", "csv=p=0",
                 self._video_path,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            kwargs = {}
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, **kwargs)
             if result.returncode == 0:
                 duration_str = result.stdout.strip()
                 if duration_str:
@@ -422,9 +425,12 @@ class SubtitlePreviewDialog(QDialog):
                 "-q:v", "2",
                 tmp_path,
             ]
+            kwargs = {}
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             result = subprocess.run(
                 cmd, capture_output=True, text=False,
-                timeout=30,
+                timeout=30, **kwargs
             )
             if result.returncode != 0:
                 stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""

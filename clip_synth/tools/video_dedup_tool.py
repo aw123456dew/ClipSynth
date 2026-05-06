@@ -106,7 +106,10 @@ class DedupWorker(QThread):
             video_path,
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            kwargs = {}
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, **kwargs)
             if result.returncode == 0:
                 text = result.stdout.strip()
                 if text:
@@ -311,7 +314,10 @@ class DedupWorker(QThread):
             video_path,
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            kwargs = {}
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, **kwargs)
             if result.returncode == 0:
                 parts = result.stdout.strip().split(",")
                 if len(parts) == 2:
@@ -330,7 +336,10 @@ class DedupWorker(QThread):
             video_path,
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            kwargs = {}
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, **kwargs)
             if result.returncode == 0:
                 bitrate_str = result.stdout.strip()
                 if bitrate_str and bitrate_str.isdigit():

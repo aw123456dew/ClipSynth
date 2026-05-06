@@ -167,7 +167,7 @@ class SmartNarrateWizard(QFrame):
         steps = [
             "上传字幕",
             "AI视频分析",
-            "选择解说片段",
+            "生成解说文案",
             "选择配音",
             "导出",
         ]

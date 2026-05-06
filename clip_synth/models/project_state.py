@@ -63,7 +63,7 @@ class VideoProjectState:
     subtitle_path: Optional[str] = None
     segments: Dict[str, List[VideoSegment]] = field(default_factory=dict)
     analysis_completed: bool = False
-    analysis_mode: str = "precise"
+    analysis_mode: str = "fastest"
 
     def __post_init__(self):
         if not self.segments:

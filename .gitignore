@@ -34,6 +34,12 @@ exports/
 Thumbs.db
 .DS_Store
 
+# Build output
+scripts/*.spec
+
+# PyInstaller
+*.manifest
+
 # Project specific
 *.exe
 *.dll
