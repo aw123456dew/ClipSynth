@@ -2696,6 +2696,244 @@ QSlider::sub-page:horizontal {
     border-color: #1e293b;
 }
 
+/* ===== Remove Subtitle Settings ===== */
+#removeSubtitleGroup {
+    margin-top: 16px;
+}
+
+#removeSubtitleEnableBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#removeSubtitleEnableBtn:hover {
+    background-color: #1a2744;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#removeSubtitleEnableBtn:checked {
+    background-color: #1a2744;
+    border-color: #6366f1;
+    color: #a5b4fc;
+}
+
+#removeSubtitlePreviewBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#removeSubtitlePreviewBtn:hover {
+    background-color: #1a2744;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#removeSubtitlePreviewBtn:disabled {
+    background-color: #0c1322;
+    color: #334155;
+    border-color: #1e293b;
+}
+
+/* ===== Remove Subtitle Preview Dialog ===== */
+#removeSubtitlePreviewDialog {
+    background-color: #0a0e17;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+}
+
+#removeSubtitlePreviewDialog QLabel {
+    color: #c8d6e5;
+}
+
+#previewLeftPanel {
+    background-color: #0d111f;
+    border-right: 1px solid #1e293b;
+}
+
+#previewFrame {
+    background-color: #060a12;
+    border-radius: 8px;
+}
+
+#previewTimeSlider {
+    background-color: transparent;
+    height: 6px;
+}
+
+#previewTimeSlider::groove:horizontal {
+    background-color: #1e293b;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#previewTimeSlider::handle:horizontal {
+    background-color: #6366f1;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    margin: -5px 0;
+}
+
+#previewTimeLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-family: "Consolas", "Courier New", monospace;
+}
+
+#previewHintLabel {
+    color: #64748b;
+    font-size: 12px;
+}
+
+#previewRightPanel {
+    background-color: #0d111f;
+    border-left: 1px solid #1e293b;
+}
+
+#previewRightContent {
+    background-color: transparent;
+}
+
+#previewSettingsTitle {
+    color: #e2e8f0;
+    font-size: 16px;
+    font-weight: 700;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1e293b;
+}
+
+#maskXSpin, #maskYSpin, #maskWidthSpin, #maskHeightSpin {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    font-size: 13px;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 6px 10px;
+    min-height: 28px;
+}
+
+#maskXSpin:hover, #maskYSpin:hover, #maskWidthSpin:hover, #maskHeightSpin:hover {
+    border-color: #6366f1;
+}
+
+#maskXSpin:focus, #maskYSpin:focus, #maskWidthSpin:focus, #maskHeightSpin:focus {
+    border-color: #6366f1;
+}
+
+#maskBlurSlider {
+    background-color: transparent;
+    height: 6px;
+}
+
+#maskBlurSlider::groove:horizontal {
+    background-color: #1e293b;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#maskBlurSlider::handle:horizontal {
+    background-color: #3b82f6;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    margin: -5px 0;
+}
+
+#maskBlurSlider::sub-page:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #3b82f6, stop:1 #60a5fa);
+    border-radius: 3px;
+}
+
+#maskBlurLabel {
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#maskFeatherSlider {
+    background-color: transparent;
+    height: 6px;
+}
+
+#maskFeatherSlider::groove:horizontal {
+    background-color: #1e293b;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#maskFeatherSlider::handle:horizontal {
+    background-color: #10b981;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    margin: -5px 0;
+}
+
+#maskFeatherSlider::sub-page:horizontal {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #10b981, stop:1 #34d399);
+    border-radius: 3px;
+}
+
+#maskFeatherLabel {
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#presetBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#presetBtn:hover {
+    background-color: #1a2744;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+#previewCloseBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    min-height: 20px;
+}
+
+#previewCloseBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#removeSubtitleTipsLabel {
+    color: #64748b;
+    font-size: 12px;
+}
+
 /* ===== Subtitle Preview Dialog ===== */
 #subtitlePreviewDialog {
     background-color: #0a0e17;

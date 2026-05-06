@@ -15,6 +15,69 @@ def _normalize_time(t: str) -> str:
     return t.replace(",", ".")
 
 
+def _build_blur_filter(
+    mask_x: float,
+    mask_y: float,
+    mask_width: float,
+    mask_height: float,
+    blur_radius: int,
+    video_width: int,
+    video_height: int,
+    feather: int = 0,
+) -> str:
+    """构建模糊遮罩滤镜
+    使用遮罩混合技术实现带羽化的模糊效果
+    """
+    x = int(video_width * mask_x)
+    y = int(video_height * mask_y)
+    w = int(video_width * mask_width)
+    h = int(video_height * mask_height)
+    
+    # 使用复合滤镜实现带羽化的模糊遮罩
+    # 使用alphamerge将遮罩作为alpha通道应用
+    filter_str = (
+        f"split=3[base][blur_stream][mask_stream];"
+        f"[blur_stream]boxblur=luma_radius={blur_radius}:luma_power=1[blurred];"
+        f"[mask_stream]drawbox=x={x}:y={y}:w={w}:h={h}:color=white:t=fill[mask];"
+    )
+    
+    # 添加羽化效果并应用遮罩
+    if feather > 0:
+        # 使用gblur模糊遮罩边缘实现羽化，然后作为alpha通道
+        filter_str += (
+            f"[mask]gblur=sigma={feather}[mask_blur];"
+            f"[blurred][mask_blur]alphamerge[masked_blur];"
+            f"[base][masked_blur]overlay=x=0:y=0"
+        )
+    else:
+        filter_str += (
+            f"[blurred][mask]alphamerge[masked_blur];"
+            f"[base][masked_blur]overlay=x=0:y=0"
+        )
+    
+    return filter_str
+
+
+def _get_video_resolution(path: str) -> tuple:
+    """获取视频分辨率"""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0",
+        path,
+    ]
+    flags = 0
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        flags = subprocess.CREATE_NO_WINDOW
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, creationflags=flags)
+    if result.returncode == 0:
+        parts = result.stdout.strip().split(",")
+        if len(parts) == 2:
+            return int(parts[0]), int(parts[1])
+    return 1920, 1080
+
+
 def _time_to_seconds(t: str) -> float:
     t = t.replace(",", ".")
     parts = t.split(":")
@@ -185,6 +248,39 @@ class JianYingExportService:
         clip_dir = Path(output_dir) / "clips"
         clip_dir.mkdir(parents=True, exist_ok=True)
 
+        # 获取移除字幕（模糊遮罩）设置
+        enable_remove_subtitle = getattr(project, "enable_remove_subtitle", False)
+        mask_settings = {
+            "mask_x": getattr(project, "mask_x", 0.2),
+            "mask_y": getattr(project, "mask_y", 0.85),
+            "mask_width": getattr(project, "mask_width", 0.6),
+            "mask_height": getattr(project, "mask_height", 0.1),
+            "blur_radius": getattr(project, "mask_blur_radius", 20),
+        }
+        logger.info(f"移除字幕设置: enable={enable_remove_subtitle}, mask=({mask_settings['mask_x']}, {mask_settings['mask_y']}, {mask_settings['mask_width']}, {mask_settings['mask_height']}), blur={mask_settings['blur_radius']}")
+
+        # 获取视频分辨率（用于计算模糊区域）
+        video_width, video_height = 1920, 1080
+        if project.videos:
+            first_video = project.videos[0].video_path
+            if first_video and os.path.exists(first_video):
+                video_width, video_height = _get_video_resolution(first_video)
+
+        # 构建模糊滤镜
+        blur_filter = None
+        if enable_remove_subtitle:
+            blur_filter = _build_blur_filter(
+                mask_settings["mask_x"],
+                mask_settings["mask_y"],
+                mask_settings["mask_width"],
+                mask_settings["mask_height"],
+                mask_settings["blur_radius"],
+                video_width,
+                video_height,
+                mask_settings.get("feather", 0),
+            )
+            logger.info(f"模糊遮罩滤镜: {blur_filter}")
+
         # ========== 第1步：ffmpeg裁剪所有片段 ==========
         if progress_callback:
             progress_callback("正在裁剪视频片段...", 20)
@@ -242,6 +338,9 @@ class JianYingExportService:
                     "-avoid_negative_ts", "make_zero",
                     clip_path,
                 ]
+                # 添加模糊滤镜
+                if blur_filter:
+                    cut_cmd.insert(cut_cmd.index("-c:v"), "-filter:v", blur_filter)
                 _run_cmd(cut_cmd, f"裁剪原声片段 {i+1}")
                 clip_videos.append((clip_path, content_type, None, segment_duration))
             else:
@@ -266,12 +365,16 @@ class JianYingExportService:
                 if audio_duration < segment_duration:
                     # 音频比视频短：加速视频到音频时长
                     speed = segment_duration / audio_duration
+                    filters = [f"setpts={1.0/speed}*PTS"]
+                    if blur_filter:
+                        filters.append(blur_filter)
+                    filter_str = ",".join(filters)
                     cut_cmd = [
                         "ffmpeg", "-y",
                         "-ss", raw_start,
                         "-i", video_path,
                         "-t", f"{segment_duration}",
-                        "-filter:v", f"setpts={1.0/speed}*PTS",
+                        "-filter:v", filter_str,
                         "-c:v", "libx264",
                         "-preset", "ultrafast",
                         "-crf", "23",
@@ -295,6 +398,9 @@ class JianYingExportService:
                         "-avoid_negative_ts", "make_zero",
                         clip_path,
                     ]
+                    # 添加模糊滤镜
+                    if blur_filter:
+                        cut_cmd.insert(cut_cmd.index("-c:v"), "-filter:v", blur_filter)
                     _run_cmd(cut_cmd, f"裁剪解说片段 {i+1}（延长到音频时长）")
                 
                 clip_videos.append((clip_path, content_type, audio_path, audio_duration))

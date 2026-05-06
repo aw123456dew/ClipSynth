@@ -22,7 +22,10 @@ from clip_synth.models.narrate_project_state import NarrateProjectState
 from clip_synth.services.jianying_export_service import JianYingExportService
 from clip_synth.services.narrate_export_service import NarrateExportService
 from clip_synth.services.settings_service import SettingsService
-from clip_synth.ui.widgets.subtitle_preview_dialog import SubtitlePreviewDialog
+from clip_synth.ui.widgets.subtitle_preview_dialog import (
+    RemoveSubtitlePreviewDialog,
+    SubtitlePreviewDialog,
+)
 
 logger = logging.getLogger("clip_synth.narrate_export")
 
@@ -167,6 +170,9 @@ class NarrateExportPage(QFrame):
         info.setWordWrap(True)
         layout.addWidget(info)
 
+        groups_row = QHBoxLayout()
+        groups_row.setSpacing(16)
+
         subtitle_group = QGroupBox("字幕设置")
         subtitle_group.setObjectName("subtitleGroup")
         subtitle_layout = QVBoxLayout(subtitle_group)
@@ -191,96 +197,45 @@ class NarrateExportPage(QFrame):
         enable_row.addStretch()
         subtitle_layout.addLayout(enable_row)
 
-        settings_row = QHBoxLayout()
-        settings_row.setSpacing(16)
+        tips_label = QLabel("字幕样式（字体、大小、颜色等）请在预览时设置")
+        tips_label.setObjectName("subtitleTipsLabel")
+        tips_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        subtitle_layout.addWidget(tips_label)
 
-        font_col = QVBoxLayout()
-        font_col.setSpacing(4)
-        font_label = QLabel("字体")
-        font_label.setObjectName("paramLabel")
-        font_col.addWidget(font_label)
-        self._font_combo = QComboBox()
-        self._font_combo.setObjectName("fontCombo")
-        self._font_combo.addItems(["Microsoft YaHei", "SimHei", "SimSun", "KaiTi", "Arial"])
-        self._font_combo.setFixedHeight(32)
-        font_col.addWidget(self._font_combo)
-        settings_row.addLayout(font_col)
+        groups_row.addWidget(subtitle_group, stretch=1)
 
-        size_col = QVBoxLayout()
-        size_col.setSpacing(4)
-        size_label = QLabel("大小")
-        size_label.setObjectName("paramLabel")
-        size_col.addWidget(size_label)
-        self._font_size_combo = QComboBox()
-        self._font_size_combo.setObjectName("fontSizeCombo")
-        self._font_size_combo.setEditable(True)
-        self._font_size_combo.addItems([str(i) for i in range(30, 61)])
-        self._font_size_combo.setCurrentText("40")
-        self._font_size_combo.setFixedHeight(32)
-        size_col.addWidget(self._font_size_combo)
-        settings_row.addLayout(size_col)
+        remove_subtitle_group = QGroupBox("启用移除字幕")
+        remove_subtitle_group.setObjectName("removeSubtitleGroup")
+        remove_subtitle_layout = QVBoxLayout(remove_subtitle_group)
+        remove_subtitle_layout.setContentsMargins(16, 24, 16, 16)
+        remove_subtitle_layout.setSpacing(12)
 
-        color_col = QVBoxLayout()
-        color_col.setSpacing(4)
-        color_label = QLabel("字体颜色")
-        color_label.setObjectName("paramLabel")
-        color_col.addWidget(color_label)
-        self._font_color_btn = QPushButton()
-        self._font_color_btn.setObjectName("fontColorBtn")
-        self._font_color = QColor("#FFFFFF")
-        self._font_color_btn.setStyleSheet(f"background-color: {self._font_color.name()}; border: 2px solid #1e293b; border-radius: 6px;")
-        self._font_color_btn.setFixedSize(32, 32)
-        self._font_color_btn.setCursor(Qt.PointingHandCursor)
-        self._font_color_btn.clicked.connect(self._on_font_color_clicked)
-        color_col.addWidget(self._font_color_btn)
-        settings_row.addLayout(color_col)
+        remove_enable_row = QHBoxLayout()
+        remove_enable_row.setSpacing(12)
+        self._remove_subtitle_check = QPushButton("☐ 启用")
+        self._remove_subtitle_check.setObjectName("removeSubtitleEnableBtn")
+        self._remove_subtitle_check.setCheckable(True)
+        self._remove_subtitle_check.setCursor(Qt.PointingHandCursor)
+        self._remove_subtitle_check.clicked.connect(self._on_remove_subtitle_toggle)
+        remove_enable_row.addWidget(self._remove_subtitle_check)
+        
+        self._remove_preview_btn = QPushButton("👁 预览")
+        self._remove_preview_btn.setObjectName("removeSubtitlePreviewBtn")
+        self._remove_preview_btn.setCursor(Qt.PointingHandCursor)
+        self._remove_preview_btn.setEnabled(False)
+        self._remove_preview_btn.clicked.connect(self._on_remove_subtitle_preview)
+        remove_enable_row.addWidget(self._remove_preview_btn)
+        remove_enable_row.addStretch()
+        remove_subtitle_layout.addLayout(remove_enable_row)
 
-        bg_col = QVBoxLayout()
-        bg_col.setSpacing(4)
-        bg_label = QLabel("背景颜色")
-        bg_label.setObjectName("paramLabel")
-        bg_col.addWidget(bg_label)
-        self._bg_color_btn = QPushButton()
-        self._bg_color_btn.setObjectName("bgColorBtn")
-        self._bg_color = QColor("#000000")
-        self._bg_color_btn.setStyleSheet(f"background-color: {self._bg_color.name()}; border: 2px solid #1e293b; border-radius: 6px;")
-        self._bg_color_btn.setFixedSize(32, 32)
-        self._bg_color_btn.setCursor(Qt.PointingHandCursor)
-        self._bg_color_btn.clicked.connect(self._on_bg_color_clicked)
-        bg_col.addWidget(self._bg_color_btn)
-        settings_row.addLayout(bg_col)
+        remove_tips_label = QLabel("点击预览设置模糊区域")
+        remove_tips_label.setObjectName("removeSubtitleTipsLabel")
+        remove_tips_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        remove_subtitle_layout.addWidget(remove_tips_label)
 
-        opacity_col = QVBoxLayout()
-        opacity_col.setSpacing(4)
-        opacity_label = QLabel("背景透明度")
-        opacity_label.setObjectName("paramLabel")
-        opacity_col.addWidget(opacity_label)
-        self._bg_opacity_slider = QSlider(Qt.Horizontal)
-        self._bg_opacity_slider.setRange(0, 100)
-        self._bg_opacity_slider.setValue(50)
-        self._bg_opacity_slider.setObjectName("bgOpacitySlider")
-        self._bg_opacity_slider.setFixedWidth(80)
-        opacity_col.addWidget(self._bg_opacity_slider)
-        settings_row.addLayout(opacity_col)
+        groups_row.addWidget(remove_subtitle_group, stretch=1)
 
-        position_col = QVBoxLayout()
-        position_col.setSpacing(4)
-        position_label = QLabel("位置")
-        position_label.setObjectName("paramLabel")
-        position_col.addWidget(position_label)
-        self._position_combo = QComboBox()
-        self._position_combo.setObjectName("positionCombo")
-        self._position_combo.addItem("底部", "bottom")
-        self._position_combo.addItem("中部", "middle")
-        self._position_combo.addItem("顶部", "top")
-        self._position_combo.setFixedHeight(32)
-        position_col.addWidget(self._position_combo)
-        settings_row.addLayout(position_col)
-
-        settings_row.addStretch()
-        subtitle_layout.addLayout(settings_row)
-
-        layout.addWidget(subtitle_group)
+        layout.addLayout(groups_row)
 
         self._card_container = QFrame()
         self._card_container.setObjectName("exportCardsFrame")
@@ -355,15 +310,34 @@ class NarrateExportPage(QFrame):
 
     def _on_subtitle_toggle(self, checked: bool) -> None:
         self._preview_btn.setEnabled(checked)
-        self._font_combo.setEnabled(checked)
-        self._font_size_combo.setEnabled(checked)
-        self._font_color_btn.setEnabled(checked)
-        self._bg_color_btn.setEnabled(checked)
-        self._bg_opacity_slider.setEnabled(checked)
-        self._position_combo.setEnabled(checked)
         self._subtitle_check.setText("☑ 启用字幕" if checked else "☐ 启用字幕")
         if self._project:
             self._project.enable_subtitle = checked
+    
+    def _on_remove_subtitle_toggle(self, checked: bool) -> None:
+        self._remove_preview_btn.setEnabled(checked)
+        self._remove_subtitle_check.setText("☑ 启用" if checked else "☐ 启用")
+        if self._project:
+            self._project.enable_remove_subtitle = checked
+
+    def _on_remove_subtitle_preview(self) -> None:
+        if not self._project or not self._project.videos:
+            return
+        video_path = self._project.videos[0].video_path
+        if not video_path or not os.path.exists(video_path):
+            logger.warning("视频文件不存在")
+            return
+
+        dialog = RemoveSubtitlePreviewDialog(video_path, self)
+        if dialog.exec_() == QDialog.Accepted:
+            settings = dialog.get_settings()
+            # 保存遮罩设置到项目中
+            self._project.mask_x = settings["mask_x"]
+            self._project.mask_y = settings["mask_y"]
+            self._project.mask_width = settings["mask_width"]
+            self._project.mask_height = settings["mask_height"]
+            self._project.mask_blur_radius = settings["blur_radius"]
+            logger.info(f"保存遮罩设置: {settings}")
 
     def _on_preview(self) -> None:
         if not self._project or not self._project.videos:
@@ -376,35 +350,15 @@ class NarrateExportPage(QFrame):
         dialog = SubtitlePreviewDialog(video_path, self)
         if dialog.exec_() == QDialog.Accepted:
             settings = dialog.get_settings()
-            font_index = self._font_combo.findText(settings["font"])
-            if font_index >= 0:
-                self._font_combo.setCurrentIndex(font_index)
-            size_index = self._font_size_combo.findText(str(settings["font_size"]))
-            if size_index >= 0:
-                self._font_size_combo.setCurrentIndex(size_index)
-            self._font_color = QColor(settings["font_color"])
-            self._font_color_btn.setStyleSheet(f"background-color: {settings['font_color']}; border: 2px solid #1e293b; border-radius: 6px;")
-            self._bg_color = QColor(settings["bg_color"])
-            self._bg_color_btn.setStyleSheet(f"background-color: {settings['bg_color']}; border: 2px solid #1e293b; border-radius: 6px;")
-            self._bg_opacity_slider.setValue(settings["bg_opacity"])
-            pos = settings.get("position", "bottom")
-            pos_index = self._position_combo.findData(pos)
-            if pos_index >= 0:
-                self._position_combo.setCurrentIndex(pos_index)
-            self._subtitle_offset_x = settings.get("offset_x", 0.5)
-            self._subtitle_offset_y = settings.get("offset_y", 0.9)
-
-    def _on_font_color_clicked(self) -> None:
-        color = QColorDialog.getColor(self._font_color, self, "选择字体颜色")
-        if color.isValid():
-            self._font_color = color
-            self._font_color_btn.setStyleSheet(f"background-color: {color.name()}; border: 2px solid #1e293b; border-radius: 6px;")
-
-    def _on_bg_color_clicked(self) -> None:
-        color = QColorDialog.getColor(self._bg_color, self, "选择背景颜色")
-        if color.isValid():
-            self._bg_color = color
-            self._bg_color_btn.setStyleSheet(f"background-color: {color.name()}; border: 2px solid #1e293b; border-radius: 6px;")
+            # 直接保存到项目中
+            self._project.subtitle_font = settings["font"]
+            self._project.subtitle_font_size = settings["font_size"]
+            self._project.subtitle_font_color = settings["font_color"]
+            self._project.subtitle_bg_color = settings["bg_color"]
+            self._project.subtitle_bg_opacity = settings["bg_opacity"]
+            self._project.subtitle_position = settings.get("position", "bottom")
+            self._project.subtitle_offset_x = settings.get("offset_x", 0.5)
+            self._project.subtitle_offset_y = settings.get("offset_y", 0.9)
 
     def _on_export_video(self):
         if not self._project or not self._export_service:
@@ -418,15 +372,6 @@ class NarrateExportPage(QFrame):
             return
 
         self._project.enable_subtitle = self._subtitle_check.isChecked()
-        self._project.subtitle_font = self._font_combo.currentText()
-        self._project.subtitle_font_size = int(self._font_size_combo.currentText())
-        self._project.subtitle_font_color = self._font_color.name()
-        self._project.subtitle_bg_color = self._bg_color.name()
-        self._project.subtitle_bg_opacity = self._bg_opacity_slider.value()
-        self._project.subtitle_position = self._position_combo.currentData()
-        self._project.subtitle_offset_x = getattr(self, "_subtitle_offset_x", 0.5)
-        self._project.subtitle_offset_y = getattr(self, "_subtitle_offset_y", 0.9)
-        logger.info(f"字幕位置设置: pos_data={self._position_combo.currentData()}, subtitle_position={self._project.subtitle_position}, offset=({self._project.subtitle_offset_x}, {self._project.subtitle_offset_y})")
 
         self._card_container.hide()
         self._progress_container.show()

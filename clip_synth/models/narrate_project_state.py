@@ -31,6 +31,17 @@ class NarrateProjectState:
     subtitle_offset_x: float = 0.5
     subtitle_offset_y: float = 0.9
     subtitle_font: str = "Microsoft YaHei"
+    
+    # 移除字幕功能
+    enable_remove_subtitle: bool = False
+    
+    # 遮罩区域设置（百分比）
+    mask_x: float = 0.2
+    mask_y: float = 0.85
+    mask_width: float = 0.6
+    mask_height: float = 0.1
+    mask_blur_radius: int = 20
+    mask_feather: int = 5  # 羽化值
 
     def is_all_videos_ready(self) -> bool:
         for video_state in self.videos:
