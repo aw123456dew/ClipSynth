@@ -46,6 +46,8 @@ class DatabaseManager:
                 conn.execute(text("ALTER TABLE settings ADD COLUMN doubao_app_id VARCHAR(255) DEFAULT ''"))
             if "doubao_token" not in columns:
                 conn.execute(text("ALTER TABLE settings ADD COLUMN doubao_token VARCHAR(1024) DEFAULT ''"))
+            if "tts_params" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN tts_params TEXT DEFAULT ''"))
             
             conn.commit()
 

@@ -299,7 +299,8 @@ class NarrateExportService:
                 # 生成字幕（如果启用）
                 subtitle_path = None
                 if enable_subtitle and timestamps:
-                    sentences = SubtitleService.merge_words_to_sentences(timestamps, max_chars=20)
+                    reference = script.get("narration_script", "") or script.get("text", "") or ""
+                    sentences = SubtitleService.merge_words_to_sentences(timestamps, reference_text=reference)
                     if sentences:
                         subtitle_path = str(sub_dir / f"sub_{i:04d}.srt")
                         srt_content = SubtitleService.generate_srt(sentences, clip_start_time=0.0)

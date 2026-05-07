@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import json
 
 from sqlalchemy import String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -21,6 +22,7 @@ class SettingsModel(Base):
     doubao_secret_key: Mapped[str] = mapped_column(String(512), default="")
     doubao_app_id: Mapped[str] = mapped_column(String(255), default="")
     doubao_token: Mapped[str] = mapped_column(String(1024), default="")
+    tts_params: Mapped[str] = mapped_column(Text, default="")
 
 
 @dataclass
@@ -84,6 +86,7 @@ class AppSettings:
     vision_model: AIModelSettings = field(default_factory=AIModelSettings)
     draft_output_dir: str = ""
     doubao_voice: DoubaoVoiceSettings = field(default_factory=DoubaoVoiceSettings)
+    tts_params: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -91,6 +94,7 @@ class AppSettings:
             "vision_model": self.vision_model.to_dict(),
             "draft_output_dir": self.draft_output_dir,
             "doubao_voice": self.doubao_voice.to_dict(),
+            "tts_params": self.tts_params,
         }
 
     @classmethod
@@ -100,4 +104,5 @@ class AppSettings:
             vision_model=AIModelSettings.from_dict(data.get("vision_model", {})),
             draft_output_dir=data.get("draft_output_dir", ""),
             doubao_voice=DoubaoVoiceSettings.from_dict(data.get("doubao_voice", {})),
+            tts_params=data.get("tts_params", ""),
         )

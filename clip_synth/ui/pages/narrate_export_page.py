@@ -33,7 +33,7 @@ logger = logging.getLogger("clip_synth.narrate_export")
 
 class ExportWorker(QThread):
     progress = Signal(str)
-    finished = Signal(str)
+    export_finished = Signal(str)
     error = Signal(str)
 
     def __init__(self, service: NarrateExportService, project: NarrateProjectState, parent=None):
@@ -49,7 +49,7 @@ class ExportWorker(QThread):
                 progress_callback=lambda msg, pct: self.progress.emit(msg),
             )
             self._output_path = output_path
-            self.finished.emit(output_path)
+            self.export_finished.emit(output_path)
         except Exception as e:
             logger.error(f"导出失败: {e}", exc_info=True)
             self.error.emit(str(e))
@@ -141,6 +141,7 @@ class NarrateExportPage(QFrame):
         self._export_service: NarrateExportService | None = None
         self._settings_service = settings_service
         self._worker: ExportWorker | None = None
+        self._jianying_worker: JianYingExportWorker | None = None
         self.setObjectName("narrateExportPage")
         self._setup_ui()
 
@@ -156,6 +157,24 @@ class NarrateExportPage(QFrame):
         self._card_container.show()
         self._progress_container.hide()
         self._result_container.hide()
+
+    def _cleanup_workers(self):
+        if self._worker is not None:
+            self._worker.cancel()
+            self._worker.quit()
+            self._worker.wait(2000)
+            self._worker.deleteLater()
+            self._worker = None
+        if self._jianying_worker is not None:
+            self._jianying_worker.cancel()
+            self._jianying_worker.quit()
+            self._jianying_worker.wait(2000)
+            self._jianying_worker.deleteLater()
+            self._jianying_worker = None
+
+    def hideEvent(self, event):
+        self._cleanup_workers()
+        super().hideEvent(event)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -378,9 +397,10 @@ class NarrateExportPage(QFrame):
         self._progress_container.show()
         self._progress_label.setText("准备导出...")
 
+        self._cleanup_workers()
         self._worker = ExportWorker(self._export_service, self._project)
         self._worker.progress.connect(self._on_export_progress)
-        self._worker.finished.connect(self._on_export_finished)
+        self._worker.export_finished.connect(self._on_export_finished)
         self._worker.error.connect(self._on_export_error)
         self._worker.start()
 
@@ -406,7 +426,8 @@ class NarrateExportPage(QFrame):
         config = AppConfig()
         output_dir = str(config.export_dir)
         os.makedirs(output_dir, exist_ok=True)
-        
+
+        self._cleanup_workers()
         self._jianying_worker = JianYingExportWorker(jianying_service, self._project, output_dir)
         self._jianying_worker.progress.connect(self._on_export_progress)
         self._jianying_worker.export_finished.connect(self._on_jianying_export_finished)

@@ -828,7 +828,7 @@ class VideoDedupPage(QFrame):
             advanced_params=advanced_params,
         )
         self._worker.progress.connect(self._on_process_progress)
-        self._worker.finished.connect(self._on_process_finished)
+        self._worker.dedup_finished.connect(self._on_process_finished)
         self._worker.error.connect(self._on_process_error)
         self._worker.start()
 

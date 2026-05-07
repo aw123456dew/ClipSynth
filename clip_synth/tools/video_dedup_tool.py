@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class DedupWorker(QThread):
     progress = Signal(int, str)
-    finished = Signal(str)
+    dedup_finished = Signal(str)
     error = Signal(str)
 
     def __init__(
@@ -92,7 +92,7 @@ class DedupWorker(QThread):
                 logger.info("视频处理完成: %s -> %s", video_path, output_path)
 
             self.progress.emit(100, "所有视频处理完成")
-            self.finished.emit(self._output_dir)
+            self.dedup_finished.emit(self._output_dir)
         except Exception as e:
             logger.error("处理失败: %s", str(e), exc_info=True)
             self.error.emit(str(e))

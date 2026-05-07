@@ -1,3 +1,4 @@
+import json
 import logging
 
 from PySide6.QtCore import Qt, Signal
@@ -160,10 +161,12 @@ DOUBAO_LANGUAGE_OPTIONS = {
 class VoiceSelectionPage(QFrame):
     ready_for_next = Signal(bool)
 
-    def __init__(self, parent=None):
+    def __init__(self, settings_service=None, parent=None):
         super().__init__(parent)
+        self._settings_service = settings_service
         self.setObjectName("voiceSelectionPage")
         self._setup_ui()
+        self._load_params()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -312,6 +315,15 @@ class VoiceSelectionPage(QFrame):
         layout.addWidget(params_group)
         layout.addStretch()
 
+        self._voice_combo.currentIndexChanged.connect(self._on_params_changed)
+        self._style_combo.currentIndexChanged.connect(self._on_params_changed)
+        self._lang_combo.currentIndexChanged.connect(self._on_params_changed)
+        self._rate_slider.valueChanged.connect(self._on_params_changed)
+        self._pitch_slider.valueChanged.connect(self._on_params_changed)
+        self._volume_slider.valueChanged.connect(self._on_params_changed)
+        self._silence_slider.valueChanged.connect(self._on_params_changed)
+        self._tts_combo.currentIndexChanged.connect(self._on_params_changed)
+
     def _on_rate_changed(self, value: int) -> None:
         self._rate_label.setText(f"{value / 10:.1f}")
 
@@ -338,4 +350,53 @@ class VoiceSelectionPage(QFrame):
             "volume": self._volume_slider.value() / 10,
             "silence": self._silence_slider.value() / 10,
         }
+
+    def _on_params_changed(self):
+        """任意配音参数变更时自动保存"""
+        self._save_params()
+
+    def _save_params(self):
+        """保存当前配音参数到全局设置"""
+        if self._settings_service is None:
+            return
+        try:
+            settings = self._settings_service.load()
+            params = {
+                "voice_type": self._voice_combo.currentData(),
+                "emotion": self._style_combo.currentData(),
+                "language": self._lang_combo.currentData(),
+                "rate": self._rate_slider.value(),
+                "pitch": self._pitch_slider.value(),
+                "volume": self._volume_slider.value(),
+                "silence": self._silence_slider.value(),
+            }
+            settings.tts_params = json.dumps(params)
+            self._settings_service.save(settings)
+        except Exception as e:
+            logger.warning("保存配音参数失败: %s", e)
+
+    def _load_params(self):
+        """从全局设置加载上次使用的配音参数"""
+        if self._settings_service is None:
+            return
+        try:
+            settings = self._settings_service.load()
+            if not settings.tts_params:
+                return
+            params = json.loads(settings.tts_params)
+            idx = self._voice_combo.findData(params.get("voice_type", ""))
+            if idx >= 0:
+                self._voice_combo.setCurrentIndex(idx)
+            idx = self._style_combo.findData(params.get("emotion", ""))
+            if idx >= 0:
+                self._style_combo.setCurrentIndex(idx)
+            idx = self._lang_combo.findData(params.get("language", ""))
+            if idx >= 0:
+                self._lang_combo.setCurrentIndex(idx)
+            self._rate_slider.setValue(params.get("rate", 10))
+            self._pitch_slider.setValue(params.get("pitch", 10))
+            self._volume_slider.setValue(params.get("volume", 10))
+            self._silence_slider.setValue(params.get("silence", 1))
+        except Exception as e:
+            logger.warning("加载配音参数失败: %s", e)
 

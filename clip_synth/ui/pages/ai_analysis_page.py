@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnalysisWorker(QThread):
-    finished = Signal(list)
+    analysis_finished = Signal(list)
     error = Signal(str)
     progress = Signal(int, str)
 
@@ -56,7 +56,7 @@ class AnalysisWorker(QThread):
                         progress_callback=self._on_progress,
                     )
                 )
-                self.finished.emit(segments)
+                self.analysis_finished.emit(segments)
             finally:
                 try:
                     loop.run_until_complete(self._service.close())
@@ -561,7 +561,7 @@ class AiAnalysisPage(QFrame):
         )
 
         self._worker = AnalysisWorker(video_path, subtitle_path, self._analysis_service, mode)
-        self._worker.finished.connect(self._on_analysis_finished)
+        self._worker.analysis_finished.connect(self._on_analysis_finished)
         self._worker.error.connect(self._on_analysis_error)
         self._worker.progress.connect(self._on_analysis_progress)
         self._worker.start()

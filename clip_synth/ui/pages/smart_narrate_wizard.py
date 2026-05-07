@@ -27,7 +27,7 @@ logger = logging.getLogger("clip_synth.smart_narrate_wizard")
 
 class TTSTaskWorker(QThread):
     progress = Signal(str)
-    finished = Signal()
+    tts_finished = Signal()
     error = Signal(str)
 
     def __init__(
@@ -94,7 +94,7 @@ class TTSTaskWorker(QThread):
                 self._audio_paths.append(audio_info)
 
             self.progress.emit("配音生成完成")
-            self.finished.emit()
+            self.tts_finished.emit()
         except Exception as e:
             logger.error(f"TTS生成异常: {e}", exc_info=True)
             self.error.emit(str(e))
@@ -226,14 +226,14 @@ class SmartNarrateWizard(QFrame):
         self._stack.addWidget(self._method_page)
 
         from clip_synth.ui.pages.voice_selection_page import VoiceSelectionPage
-
-        self._voice_page = VoiceSelectionPage()
-        self._stack.addWidget(self._voice_page)
-
-        from clip_synth.ui.pages.narrate_export_page import NarrateExportPage
         from clip_synth.services.settings_service import SettingsService
 
         self._settings_service = SettingsService(self._db_manager) if self._db_manager else None
+        self._voice_page = VoiceSelectionPage(settings_service=self._settings_service)
+        self._stack.addWidget(self._voice_page)
+
+        from clip_synth.ui.pages.narrate_export_page import NarrateExportPage
+
         self._export_page = NarrateExportPage(self._settings_service)
         self._stack.addWidget(self._export_page)
 
@@ -393,10 +393,7 @@ class SmartNarrateWizard(QFrame):
             self._g_nav_ok()
             return
 
-        from clip_synth.services.settings_service import SettingsService
-
-        settings_service = SettingsService(self._db_manager)
-        app_settings = settings_service.load()
+        app_settings = self._settings_service.load()
         doubao_settings = app_settings.doubao_voice
 
         if not doubao_settings.is_configured:
@@ -430,7 +427,7 @@ class SmartNarrateWizard(QFrame):
             output_dir=project_dir,
         )
         self._tts_worker.progress.connect(self._on_tts_progress)
-        self._tts_worker.finished.connect(self._on_tts_finished)
+        self._tts_worker.tts_finished.connect(self._on_tts_finished)
         self._tts_worker.error.connect(self._on_tts_error)
         self._tts_worker.start()
 

@@ -423,7 +423,7 @@ class ClippingAnalysisService:
                     prompt=prompt,
                     system_prompt=CLIPPING_SYSTEM_PROMPT,
                     temperature=0.3,
-                    timeout=120,
+                    timeout=600,
                 )
                 logger.info("AI片段选择返回: %s", response[:500])
             except Exception as e:
@@ -500,7 +500,7 @@ class ClippingAnalysisService:
                     prompt=polish_prompt,
                     system_prompt=POLISH_NARRATION_SYSTEM_PROMPT,
                     temperature=0.7,
-                    timeout=180,
+                    timeout=600,
                 )
                 logger.info("AI文案润色返回: %s", response[:300])
             except Exception as e:
@@ -594,7 +594,7 @@ class ClippingAnalysisService:
                     prompt=prompt,
                     system_prompt=NARRATION_SYSTEM_PROMPT,
                     temperature=0.7,
-                    timeout=180,
+                    timeout=600,
                 )
                 logger.info("AI解说文案生成返回: %s", response[:300])
             except Exception as e:

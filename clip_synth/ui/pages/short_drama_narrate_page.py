@@ -196,6 +196,10 @@ class NarrateProjectCard(QFrame):
                 return
         self._thumbnail_label.setText("解说项目")
 
+    def set_thumbnail(self, thumbnail_path: str) -> None:
+        self._thumbnail_path = thumbnail_path
+        self._update_thumbnail()
+
     def _on_check_toggled(self, checked: bool) -> None:
         self._checked = checked
         self.setProperty("selected", checked)
@@ -326,6 +330,16 @@ class ShortDramaNarratePage(QFrame):
         )
         if file_paths:
             self.start_narrate_wizard.emit((file_paths, dialog.project_name, dialog.cover_path))
+
+    def refresh_project_cover(self, project_id: str) -> None:
+        """刷新指定项目的封面（由后台封面提取完成后调用）"""
+        project = self._narrate_project_state_service.load_project(project_id)
+        if not project or not project.cover_path:
+            return
+        for card in self._cards:
+            if card._project_id == project_id:
+                card.set_thumbnail(project.cover_path)
+                break
 
     def _on_open_narrate_project(self, project_id: str) -> None:
         self.open_narrate_project.emit(project_id)

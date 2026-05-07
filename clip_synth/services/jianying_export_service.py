@@ -189,7 +189,8 @@ def _generate_srt(scripts_data: List[dict], audio_files: List[dict], output_dir:
             time_offset += audio_duration
             continue
 
-        sentences = SubtitleService.merge_words_to_sentences(timestamps, max_chars=20)
+        reference = script.get("narration_script", "") or script.get("text", "") or ""
+        sentences = SubtitleService.merge_words_to_sentences(timestamps, reference_text=reference)
         if sentences:
             srt_content = SubtitleService.generate_srt(sentences, clip_start_time=time_offset)
             srt_sections.append(srt_content.strip())

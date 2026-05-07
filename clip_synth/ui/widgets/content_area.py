@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 class CoverExtractorWorker(QThread):
     """异步提取视频封面的工作线程"""
-    finished = Signal(str)  # 提取成功时返回封面路径
+    cover_finished = Signal(str)  # 提取成功时返回封面路径
     failed = Signal()        # 提取失败
     
     def __init__(self, video_path: str, parent=None):
@@ -38,7 +38,7 @@ class CoverExtractorWorker(QThread):
         """执行封面提取"""
         cover_path = self._extract_first_frame(self._video_path)
         if cover_path:
-            self.finished.emit(cover_path)
+            self.cover_finished.emit(cover_path)
         else:
             self.failed.emit()
     
@@ -112,6 +112,8 @@ class PlaceholderPage(QFrame):
 
 
 class ContentArea(QFrame):
+    cover_extracted = Signal(str)  # 封面提取完成，通知刷新项目卡片
+
     def __init__(
         self,
         settings_service: SettingsService,
@@ -126,6 +128,7 @@ class ContentArea(QFrame):
         self._db_manager = db_manager
         self._project_state_service = project_state_service
         self._narrate_project_state_service = narrate_project_state_service or NarrateProjectStateService()
+        self._cover_worker: CoverExtractorWorker | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -146,6 +149,7 @@ class ContentArea(QFrame):
         self._narrate_page = ShortDramaNarratePage(self._narrate_project_state_service)
         self._narrate_page.start_narrate_wizard.connect(self.switch_to_narrate_wizard)
         self._narrate_page.open_narrate_project.connect(self.open_narrate_project)
+        self.cover_extracted.connect(self._narrate_page.refresh_project_cover)
         self._stack.addWidget(self._narrate_page)
         self._pages["short_drama_narrate"] = self._stack.count() - 1
 
@@ -240,19 +244,13 @@ class ContentArea(QFrame):
 
         video_paths, project_name, cover_path = data
 
-        # 先检查缓存中是否已有封面，避免不必要的等待
-        cached_cover = None
-        if not cover_path and video_paths:
-            cache_dir = Path(__file__).resolve().parent.parent.parent / "cache" / "covers"
-            video_name = Path(video_paths[0]).stem
-            safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in video_name)
-            cached_cover_path = cache_dir / f"{safe_name}_cover.jpg"
-            if cached_cover_path.exists():
-                cover_path = str(cached_cover_path)
-
         project = self._narrate_project_state_service.create_project(
             video_paths, name=project_name, cover_path=cover_path,
         )
+
+        # 没有上传封面时，异步提取视频第一帧作为封面（全局后台运行，不阻塞UI）
+        if not cover_path and video_paths:
+            self._async_extract_cover(video_paths[0], project.id)
         vision_ai = self._create_vision_ai_service()
         text_ai = self._create_ai_service()
         wizard_page = SmartNarrateWizard(
@@ -263,10 +261,6 @@ class ContentArea(QFrame):
         wizard_page.cancelled.connect(self._on_narrate_wizard_cancelled)
         self._stack.addWidget(wizard_page)
         self._stack.setCurrentIndex(self._stack.count() - 1)
-
-        # 异步提取封面（不阻塞UI）
-        if not cover_path and video_paths:
-            self._async_extract_cover(video_paths[0], project.id)
 
     def open_narrate_project(self, project_id: str) -> None:
         from clip_synth.ui.pages.smart_narrate_wizard import SmartNarrateWizard
@@ -330,11 +324,14 @@ class ContentArea(QFrame):
             sender.deleteLater()
     
     def _async_extract_cover(self, video_path: str, project_id: str) -> None:
-        """异步提取视频封面，提取完成后更新项目"""
-        if hasattr(self, '_cover_worker') and self._cover_worker is not None:
+        """异步提取视频封面，全局后台运行，不随页面切换停止"""
+        if self._cover_worker is not None:
+            self._cover_worker.quit()
+            self._cover_worker.wait(2000)
             self._cover_worker.deleteLater()
         self._cover_worker = CoverExtractorWorker(video_path)
-        self._cover_worker.finished.connect(lambda cover_path: self._on_cover_extracted(cover_path, project_id))
+        self._cover_worker.cover_finished.connect(
+            lambda cover_path, pid=project_id: self._on_cover_extracted(cover_path, pid))
         self._cover_worker.failed.connect(lambda: logger.debug("封面提取失败"))
         self._cover_worker.start()
     
@@ -346,5 +343,6 @@ class ContentArea(QFrame):
                 project.cover_path = cover_path
                 self._narrate_project_state_service.save_project(project)
                 logger.info("异步更新项目封面: %s", project_id)
+                self.cover_extracted.emit(project_id)
         except Exception as e:
             logger.error("更新项目封面失败: %s", e)

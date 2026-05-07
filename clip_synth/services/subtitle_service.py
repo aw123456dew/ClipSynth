@@ -1,7 +1,8 @@
 import json
 import logging
 import os
-from typing import Dict, List, Optional
+import re
+from typing import List, Optional
 
 logger = logging.getLogger("clip_synth.subtitle_service")
 
@@ -16,21 +17,96 @@ class SubtitleService:
         return char in punct_set
 
     @staticmethod
-    def merge_words_to_sentences(words: List[dict], max_chars: int = 20, max_pause: float = 0.3) -> List[dict]:
+    def _is_latin_word(word: str) -> bool:
+        """判断是否为拉丁字母组成的单词（英文等）"""
+        if not word:
+            return False
+        if re.match(r'^[a-zA-Z]+$', word):
+            return True
+        if re.match(r"^[a-zA-Z]+['-][a-zA-Z]+$", word):
+            return True
+        return False
+
+    @staticmethod
+    def _normalize_word(word: str) -> str:
+        """标准化单词用于比较：转小写、去两端标点"""
+        return word.strip('.,!?;:()"\'，。！？；：""''（）【】《》…— ').lower()
+
+    @staticmethod
+    def _is_cjk_char(ch: str) -> bool:
+        """判断是否为中日韩文字或泰文"""
+        cp = ord(ch)
+        return (
+            (0x4E00 <= cp <= 0x9FFF) or  # CJK统一汉字
+            (0x3040 <= cp <= 0x309F) or  # 日文平假名
+            (0x30A0 <= cp <= 0x30FF) or  # 日文片假名
+            (0x0E00 <= cp <= 0x0E7F)     # 泰文
+        )
+
+    @staticmethod
+    def _infer_granularity(words: List[dict]) -> str:
+        """推断TTS返回的粒度: 'char'（单字）或 'word'（单词）"""
+        if not words:
+            return "word"
+        char_count = sum(1 for w in words if len(w.get("word", "")) == 1)
+        return "char" if char_count > len(words) * 0.5 else "word"
+
+    @staticmethod
+    def _parse_reference(reference_text: str, granularity: str) -> List[dict]:
+        """将解说文案解析为条目序列"""
+        punct_set = set("，。！？、；：""''（）【】《》——…·～〝〟,.!?;:()[]{}""''<>")
+        entries = []
+        if granularity == "word":
+            for token in reference_text.split():
+                # 拆分连字符连接的单词，如 "cause-and-effect" → ["cause", "and", "effect"]
+                parts = token.split('-')
+                for i, part in enumerate(parts):
+                    clean = part.strip('.,!?;:()"\'，。！？；：""''（）【】《》…— ')
+                    if not clean:
+                        continue
+                    should_break = False
+                    if i == len(parts) - 1:
+                        trailing = part[len(clean):] if len(part) > len(clean) else ""
+                        should_break = bool(trailing)
+                    entries.append({
+                        "clean": clean,
+                        "should_break": should_break,
+                    })
+        else:
+            for ch in reference_text:
+                if ch in punct_set:
+                    if entries:
+                        entries[-1]["should_break"] = True
+                else:
+                    entries.append({
+                        "clean": ch,
+                        "should_break": False,
+                    })
+        return entries
+
+    @staticmethod
+    def merge_words_to_sentences(words: List[dict], max_pause: float = 0.3, reference_text: str = "") -> List[dict]:
         """
-        将单个字合并为句子，根据标点符号断句并去除标点
-        :param words: [{"word": "字", "start": 0.0, "end": 0.1}, ...]
-        :param max_chars: 单行字幕最大字数
-        :param max_pause: 超过此间隔(秒)视为句子断开
-        :return: [{"text": "句子", "start": 0.0, "end": 0.5}, ...]
+        将TTS返回的字序列合并为字幕句子。
+        当提供解说文案时：
+          - 以文案为唯一标准，对比TTS字符是否在文案中出现
+          - 只有匹配文案的字符才保留，多余字符（如sp、sil等）自动丢弃
+          - 按文案中的标点符号断句
+        无解说文案时退化为原有行为（按max_pause断句）。
         """
         if not words:
             return []
+
+        granularity = SubtitleService._infer_granularity(words) if reference_text else None
+        ref_entries = SubtitleService._parse_reference(reference_text, granularity) if reference_text else None
+        ref_idx = 0
+        max_lookahead = 3
 
         sentences = []
         current_chars = []
         current_start = None
         current_end = None
+        prev_was_latin = False
 
         for word in words:
             char = word.get("word", "")
@@ -40,25 +116,48 @@ class SubtitleService:
             if not char:
                 continue
 
-            # 标点符号作为断句点，不加入文本
-            if SubtitleService._is_punctuation(char):
-                if current_chars:
-                    sentences.append({
-                        'text': ''.join(current_chars),
-                        'start': current_start,
-                        'end': current_end or end,
-                    })
-                    current_chars = []
-                    current_start = None
-                    current_end = None
-                continue
+            should_break = False
+            word_matched = False
 
-            # 检查是否需要断开
+            if ref_entries is not None:
+                tts_norm = SubtitleService._normalize_word(char)
+                for offset in range(max_lookahead + 1):
+                    idx = ref_idx + offset
+                    if idx >= len(ref_entries):
+                        break
+                    entry = ref_entries[idx]
+                    ref_norm = entry["clean"].lower()
+                    if tts_norm == ref_norm:
+                        should_break = entry["should_break"]
+                        ref_idx = idx + 1
+                        word_matched = True
+                        break
+                    # 处理撇号缩写词：TTS 的 "Ryan" 匹配文案的 "Ryan's"
+                    if tts_norm + "'" == ref_norm[:len(tts_norm) + 1]:
+                        should_break = entry["should_break"]
+                        ref_idx = idx + 1
+                        word_matched = True
+                        break
+                if not word_matched:
+                    continue
+            else:
+                if SubtitleService._is_punctuation(char):
+                    if current_chars:
+                        sentences.append({
+                            'text': ''.join(current_chars),
+                            'start': current_start,
+                            'end': current_end or end,
+                        })
+                        current_chars = []
+                        current_start = None
+                        current_end = None
+                        prev_was_latin = False
+                    continue
+
+            is_latin = SubtitleService._is_latin_word(char)
             is_long_pause = current_end is not None and (start - current_end) > max_pause
-            current_text_length = len(current_chars)
-            is_too_long = current_text_length > 0 and (current_text_length + len(char) > max_chars)
 
-            if (is_long_pause or is_too_long) and current_chars:
+            if is_long_pause and current_chars:
                 sentences.append({
                     'text': ''.join(current_chars),
                     'start': current_start,
@@ -67,12 +166,27 @@ class SubtitleService:
                 current_chars = []
                 current_start = start
                 current_end = end
-            else:
-                if current_start is None:
-                    current_start = start
-                current_end = end
+                prev_was_latin = False
 
+            if current_start is None:
+                current_start = start
+            current_end = end
+
+            if current_chars and prev_was_latin and is_latin:
+                current_chars.append(' ')
             current_chars.append(char)
+            prev_was_latin = is_latin
+
+            if should_break:
+                sentences.append({
+                    'text': ''.join(current_chars),
+                    'start': current_start,
+                    'end': end
+                })
+                current_chars = []
+                current_start = None
+                current_end = None
+                prev_was_latin = False
 
         if current_chars:
             sentences.append({

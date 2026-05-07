@@ -24,7 +24,7 @@ logger = logging.getLogger("clip_synth.export_page")
 
 class ExportWorker(QThread):
     progress = Signal(float)
-    finished = Signal(str)
+    export_finished = Signal(str)
     error = Signal(str)
 
     def __init__(
@@ -50,7 +50,7 @@ class ExportWorker(QThread):
                     progress_callback=lambda p: self.progress.emit(p),
                 )
             )
-            self.finished.emit(str(output_path))
+            self.export_finished.emit(str(output_path))
         except Exception as e:
             self.error.emit(str(e))
         finally:
@@ -240,7 +240,7 @@ class ExportPage(QFrame):
         project_name = self._project.name if self._project else "未命名"
         self._worker = ExportWorker(self._export_service, project_name, segments)
         self._worker.progress.connect(self._on_export_progress)
-        self._worker.finished.connect(self._on_export_finished)
+        self._worker.export_finished.connect(self._on_export_finished)
         self._worker.error.connect(self._on_export_error)
         self._worker.start()
 

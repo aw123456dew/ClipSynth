@@ -29,7 +29,7 @@ logger = logging.getLogger("clip_synth.clipping_method")
 
 
 class ClippingAnalysisWorker(QThread):
-    finished = Signal(list)
+    analysis_finished = Signal(list)
     error = Signal(str)
 
     def __init__(
@@ -52,7 +52,7 @@ class ClippingAnalysisWorker(QThread):
                 result = loop.run_until_complete(
                     self._service.analyze(self._segments_by_video, self._style_key)
                 )
-                self.finished.emit(result)
+                self.analysis_finished.emit(result)
             finally:
                 try:
                     loop.run_until_complete(self._service.close())
@@ -69,7 +69,7 @@ class ClippingAnalysisWorker(QThread):
 
 
 class NarrationGenerationWorker(QThread):
-    finished = Signal(list)
+    narration_finished = Signal(list)
     error = Signal(str)
 
     def __init__(
@@ -104,7 +104,7 @@ class NarrationGenerationWorker(QThread):
                         self._original_sound_ratio,
                     )
                 )
-                self.finished.emit(result)
+                self.narration_finished.emit(result)
             finally:
                 try:
                     loop.run_until_complete(self._service.close())
@@ -618,6 +618,8 @@ class ClippingMethodPage(QFrame):
         self._project.narration_scripts = []
         self._style_combo.setEnabled(True)
         self._params_widget.show()
+        self._generate_narration_btn.setEnabled(True)
+        self._generate_narration_btn.setText(" 生成解说文案 ")
         self._generate_narration_btn.show()
         self._update_ready_state()
 
@@ -674,7 +676,7 @@ class ClippingMethodPage(QFrame):
             self._analysis_service, segments_by_video, subtitles_by_video, style_key,
             language, ratio, self,
         )
-        self._narration_worker.finished.connect(self._on_narration_finished)
+        self._narration_worker.narration_finished.connect(self._on_narration_finished)
         self._narration_worker.error.connect(self._on_narration_error)
         self._narration_worker.start()
 
@@ -745,6 +747,8 @@ class ClippingMethodPage(QFrame):
             error_label.setWordWrap(True)
             self._narration_results_layout.insertWidget(0, error_label)
             self._narration_results_widget.show()
+
+        self._update_ready_state()
 
     def _on_narration_error(self, error_msg: str):
         self._narration_loading.hide()

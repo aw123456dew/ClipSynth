@@ -32,6 +32,7 @@ class SettingsService:
                     app_id=row.doubao_app_id,
                     token=row.doubao_token,
                 ),
+                tts_params=row.tts_params or "",
             )
         finally:
             session.close()
@@ -55,6 +56,7 @@ class SettingsService:
             row.doubao_secret_key = settings.doubao_voice.secret_key
             row.doubao_app_id = settings.doubao_voice.app_id
             row.doubao_token = settings.doubao_voice.token
+            row.tts_params = settings.tts_params
 
             session.commit()
         finally:
