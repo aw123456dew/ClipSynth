@@ -186,6 +186,25 @@ def _generate_srt(scripts_data: List[dict], audio_files: List[dict], output_dir:
         audio_idx += 1
 
         audio_duration = audio_info.get("duration", 0) or _get_media_duration(audio_info.get("path", "") or audio_info.get("audio_path", ""))
+        
+        # 检查是否有用户上传的字幕文件（自定义配音时）
+        uploaded_subtitle = audio_info.get("subtitle_path", "")
+        if uploaded_subtitle and os.path.exists(uploaded_subtitle):
+            # 使用用户上传的字幕文件，不需要验证解说文案
+            logger.info("_generate_srt | 片段%d: 使用用户上传的字幕文件: %s", audio_idx - 1, uploaded_subtitle)
+            with open(uploaded_subtitle, "r", encoding="utf-8") as f:
+                srt_content = f.read()
+            
+            # 解析用户上传的SRT并调整时间偏移
+            sentences = SubtitleService.parse_srt(srt_content)
+            if sentences:
+                adjusted_srt = SubtitleService.generate_srt(sentences, clip_start_time=time_offset)
+                srt_sections.append(adjusted_srt.strip())
+                logger.info("_generate_srt | 片段%d: 从上传的SRT解析到%d条字幕", audio_idx - 1, len(sentences))
+            time_offset += audio_duration
+            continue
+        
+        # 使用TTS生成的时间戳生成字幕（原有逻辑）
         timestamps = audio_info.get("timestamps", [])
 
         if not timestamps:
@@ -447,7 +466,7 @@ class JianYingExportService:
                         clip_path,
                     ]
                     _run_cmd(cut_cmd, f"裁剪解说片段 {i+1}（延长到音频时长）")
-                
+
                 clip_videos.append((clip_path, content_type, audio_path, audio_duration))
 
         if not clip_videos:

@@ -275,6 +275,7 @@ class NarrateExportService:
                 audio_path = None
                 audio_duration = 0.0
                 timestamps = []
+                audio_info = None
                 if audio_idx < len(audio_files):
                     audio_info = audio_files[audio_idx]
                     candidate = audio_info.get("path", "")
@@ -289,23 +290,31 @@ class NarrateExportService:
                         f"解说片段 {i+1} 缺少配音文件，请检查音频文件后再试"
                     )
 
-                raw_duration = _get_media_duration(raw_path)
-                diff = audio_duration - raw_duration
-
                 # 获取视频分辨率
                 video_res = _get_video_resolution(raw_path)
                 video_width, video_height = video_res
 
+                raw_duration = _get_media_duration(raw_path)
+                diff = audio_duration - raw_duration
+
                 # 生成字幕（如果启用）
                 subtitle_path = None
-                if enable_subtitle and timestamps:
-                    reference = script.get("narration_script", "") or script.get("text", "") or ""
-                    sentences = SubtitleService.merge_words_to_sentences(timestamps, reference_text=reference)
-                    if sentences:
-                        subtitle_path = str(sub_dir / f"sub_{i:04d}.srt")
-                        srt_content = SubtitleService.generate_srt(sentences, clip_start_time=0.0)
-                        SubtitleService.save_srt(srt_content, subtitle_path)
-                        logger.info(f"生成字幕文件: {subtitle_path}")
+                if enable_subtitle:
+                    # 检查是否有用户上传的字幕文件（自定义配音时）
+                    uploaded_subtitle = audio_info.get("subtitle_path", "") if audio_info else ""
+                    if uploaded_subtitle and os.path.exists(uploaded_subtitle):
+                        # 使用用户上传的字幕文件，不需要验证解说文案
+                        subtitle_path = uploaded_subtitle
+                        logger.info(f"使用用户上传的字幕文件: {subtitle_path}")
+                    elif timestamps:
+                        # 使用TTS生成的时间戳生成字幕
+                        reference = script.get("narration_script", "") or script.get("text", "") or ""
+                        sentences = SubtitleService.merge_words_to_sentences(timestamps, reference_text=reference)
+                        if sentences:
+                            subtitle_path = str(sub_dir / f"sub_{i:04d}.srt")
+                            srt_content = SubtitleService.generate_srt(sentences, clip_start_time=0.0)
+                            SubtitleService.save_srt(srt_content, subtitle_path)
+                            logger.info(f"生成字幕文件: {subtitle_path}")
 
                 # 构建 drawtext 滤镜（像水印文字一样直接叠加）
                 sub_filter = None
@@ -316,6 +325,16 @@ class NarrateExportService:
                     if position not in ("top", "middle", "bottom"):
                         position = "bottom"
                     custom_position = f"custom:{offset_x}:{offset_y}"
+                    
+                    # 如果是用户上传的字幕文件，从SRT解析sentences
+                    uploaded_subtitle = audio_info.get("subtitle_path", "") if audio_info else ""
+                    if uploaded_subtitle and os.path.exists(uploaded_subtitle):
+                        # 从用户上传的SRT文件解析字幕内容
+                        with open(subtitle_path, "r", encoding="utf-8") as f:
+                            srt_content = f.read()
+                        sentences = SubtitleService.parse_srt(srt_content)
+                        logger.info(f"从上传的SRT文件解析到 {len(sentences)} 条字幕")
+                    
                     drawtext_filter = SubtitleService.build_drawtext_filter(
                         sentences,
                         clip_start_time=0.0,

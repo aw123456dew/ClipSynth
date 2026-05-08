@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from clip_synth.ui.widgets.custom_voiceover_list import CustomVoiceoverList
+
 logger = logging.getLogger("clip_synth.voice_selection")
 
 DOUBAO_VOICE_OPTIONS = {
@@ -164,9 +166,25 @@ class VoiceSelectionPage(QFrame):
     def __init__(self, settings_service=None, parent=None):
         super().__init__(parent)
         self._settings_service = settings_service
+        self._scripts: list = []
+        self._original_sound_ratio: int = 0
         self.setObjectName("voiceSelectionPage")
         self._setup_ui()
         self._load_params()
+
+    def set_scripts(self, scripts: list, original_sound_ratio: int = 0):
+        self._scripts = scripts
+        self._original_sound_ratio = original_sound_ratio
+        self._voiceover_list.set_scripts(scripts, original_sound_ratio)
+
+    def load_custom_state(self, custom_items: list):
+        """恢复自定义配音的已上传状态"""
+        idx = self._tts_combo.findData("custom")
+        if idx >= 0:
+            self._tts_combo.setCurrentIndex(idx)
+        if custom_items:
+            self._voiceover_list.load_items(custom_items)
+            self._voiceover_list.set_scripts(self._scripts, self._original_sound_ratio)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -184,13 +202,15 @@ class VoiceSelectionPage(QFrame):
 
         self._tts_combo = QComboBox()
         self._tts_combo.addItem("豆包语音", "doubao")
+        self._tts_combo.addItem("自定义配音", "custom")
         self._tts_combo.setObjectName("ttsEngineCombo")
         tts_layout.addWidget(self._tts_combo)
         layout.addWidget(tts_group)
 
-        params_group = QGroupBox("配音参数")
-        params_group.setObjectName("voiceParamsGroup")
-        params_layout = QVBoxLayout(params_group)
+        # 配音参数组（豆包语音使用）
+        self._params_group = QGroupBox("配音参数")
+        self._params_group.setObjectName("voiceParamsGroup")
+        params_layout = QVBoxLayout(self._params_group)
         params_layout.setContentsMargins(24, 24, 24, 24)
         params_layout.setSpacing(20)
 
@@ -312,7 +332,13 @@ class VoiceSelectionPage(QFrame):
 
         params_layout.addLayout(sliders_layout)
 
-        layout.addWidget(params_group)
+        layout.addWidget(self._params_group)
+
+        # 自定义配音列表
+        self._voiceover_list = CustomVoiceoverList()
+        self._voiceover_list.hide()
+        layout.addWidget(self._voiceover_list, 1)
+
         layout.addStretch()
 
         self._voice_combo.currentIndexChanged.connect(self._on_params_changed)
@@ -322,7 +348,17 @@ class VoiceSelectionPage(QFrame):
         self._pitch_slider.valueChanged.connect(self._on_params_changed)
         self._volume_slider.valueChanged.connect(self._on_params_changed)
         self._silence_slider.valueChanged.connect(self._on_params_changed)
+        self._tts_combo.currentIndexChanged.connect(self._on_tts_engine_changed)
         self._tts_combo.currentIndexChanged.connect(self._on_params_changed)
+
+    def _on_tts_engine_changed(self):
+        engine = self._tts_combo.currentData()
+        is_custom = (engine == "custom")
+        self._params_group.setVisible(not is_custom)
+        self._voiceover_list.setVisible(is_custom)
+        if is_custom:
+            self._voiceover_list.set_scripts(self._scripts, self._original_sound_ratio)
+        self.ready_for_next.emit(True)
 
     def _on_rate_changed(self, value: int) -> None:
         self._rate_label.setText(f"{value / 10:.1f}")
@@ -337,7 +373,7 @@ class VoiceSelectionPage(QFrame):
         self._silence_label.setText(f"{value / 10:.1f}")
 
     def get_settings(self) -> dict:
-        return {
+        settings = {
             "tts_engine": self._tts_combo.currentData(),
             "voice_type": self._voice_combo.currentData(),
             "voice_name": self._voice_combo.currentText(),
@@ -350,6 +386,17 @@ class VoiceSelectionPage(QFrame):
             "volume": self._volume_slider.value() / 10,
             "silence": self._silence_slider.value() / 10,
         }
+        if self._tts_combo.currentData() == "custom":
+            settings["custom_items"] = self._voiceover_list.get_items()
+        return settings
+
+    def is_custom_voiceover_ready(self) -> bool:
+        """检查自定义配音是否已全部上传"""
+        return self._voiceover_list.is_all_uploaded()
+
+    def get_missing_custom_items(self) -> list:
+        """获取未上传完整的项目信息"""
+        return self._voiceover_list.get_missing_items()
 
     def _on_params_changed(self):
         """任意配音参数变更时自动保存"""

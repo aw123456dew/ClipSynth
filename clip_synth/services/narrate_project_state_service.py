@@ -69,6 +69,8 @@ class NarrateProjectStateService:
             "ai_analysis_results": project.ai_analysis_results,
             "narration_scripts": project.narration_scripts,
             "audio_files": project.audio_files,
+            "tts_engine": project.tts_engine,
+            "custom_audio_files": project.custom_audio_files,
             "created_at": project.created_at,
             "updated_at": project.updated_at,
         }
@@ -146,6 +148,8 @@ class NarrateProjectStateService:
                 ai_analysis_results=data.get("ai_analysis_results", []),
                 narration_scripts=data.get("narration_scripts", []),
                 audio_files=data.get("audio_files", []),
+                tts_engine=data.get("tts_engine", "doubao"),
+                custom_audio_files=data.get("custom_audio_files", []),
                 created_at=data.get("created_at", time.time()),
                 updated_at=data.get("updated_at", time.time()),
             )

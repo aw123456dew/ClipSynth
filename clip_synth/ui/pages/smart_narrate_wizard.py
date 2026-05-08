@@ -282,6 +282,27 @@ class SmartNarrateWizard(QFrame):
     def _sync_ui(self) -> None:
         self._stack.setCurrentIndex(self._current_step)
         self._update_step_indicators()
+        self._init_page_data()
+
+    def _init_page_data(self):
+        if self._current_step == 3:
+            self._voice_page.set_scripts(self._project.narration_scripts, self._project.original_sound_ratio)
+            if self._project.tts_engine == "custom":
+                self._voice_page.load_custom_state(self._project.custom_audio_files)
+        elif self._current_step == 4:
+            if self._project.tts_engine == "custom" and self._project.custom_audio_files:
+                audio_files = []
+                for item in self._project.custom_audio_files:
+                    audio_files.append({
+                        "path": item.get("audio_path", ""),
+                        "audio_path": item.get("audio_path", ""),
+                        "text": item.get("text", ""),
+                        "subtitle_path": item.get("subtitle_path", ""),
+                        "timestamps": [],
+                    })
+                self._project.audio_files = audio_files
+                self._save_project()
+            self._export_page.set_project(self._project, self._export_service)
         self._update_nav_buttons()
 
     def _update_step_indicators(self):
@@ -359,6 +380,46 @@ class SmartNarrateWizard(QFrame):
                 self._save_project()
                 self._advance()
             elif self._current_step == 3:
+                # 如果使用自定义配音，检查是否所有配音和字幕都已上传
+                if self._project.tts_engine == "custom":
+                    if not self._voice_page.is_custom_voiceover_ready():
+                        missing_items = self._voice_page.get_missing_custom_items()
+                        message = "<html><head/><body>"
+                        message += "<p style='margin-bottom: 12px; font-size: 14px;'>请先上传完整的配音和字幕文件：</p>"
+                        message += "<ul style='margin-left: 20px; font-size: 13px;'>"
+                        for item in missing_items:
+                            message += f"<li style='margin-bottom: 4px;'>{item}</li>"
+                        message += "</ul>"
+                        message += "</body></html>"
+                        
+                        msg_box = QMessageBox(self)
+                        msg_box.setIcon(QMessageBox.Warning)
+                        msg_box.setWindowTitle("提示")
+                        msg_box.setText(message)
+                        msg_box.setStyleSheet("""
+                            QMessageBox {
+                                background-color: #0f1320;
+                                color: #c8d6e5;
+                                font-family: 'Microsoft YaHei';
+                            }
+                            QMessageBox QLabel {
+                                color: #c8d6e5;
+                            }
+                            QMessageBox QPushButton {
+                                background-color: #3b82f6;
+                                color: white;
+                                border: none;
+                                border-radius: 4px;
+                                padding: 8px 24px;
+                                min-width: 80px;
+                            }
+                            QMessageBox QPushButton:hover {
+                                background-color: #2563eb;
+                            }
+                        """)
+                        msg_box.exec()
+                        return
+                
                 if self._project.narration_scripts:
                     self._on_generate_tts()
                 else:
@@ -369,6 +430,23 @@ class SmartNarrateWizard(QFrame):
             self._g_nav_ok()
 
     def _on_generate_tts(self):
+        voice_settings = self._voice_page.get_settings()
+        tts_engine = voice_settings.get("tts_engine", "doubao")
+
+        if tts_engine == "custom":
+            custom_items = voice_settings.get("custom_items", [])
+            self._project.tts_engine = "custom"
+            self._project.custom_audio_files = custom_items
+            self._project.audio_files = []
+            self._generated_audio_files = []
+            self._save_project()
+            logger.info("自定义配音: %d条", len(custom_items))
+            self._status_label.setText("自定义配音已就绪")
+            self._g_nav_ok()
+            self._advance()
+            self._status_label.hide()
+            return
+
         old_audio = self._project.audio_files
         for path in old_audio:
             try:

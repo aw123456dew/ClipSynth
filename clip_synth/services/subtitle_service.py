@@ -287,6 +287,83 @@ class SubtitleService:
         return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
     @staticmethod
+    def _from_srt_time(srt_time: str) -> float:
+        """将SRT时间格式转换为秒"""
+        # 格式: HH:MM:SS,mmm
+        try:
+            parts = srt_time.strip().split(':')
+            if len(parts) == 3:
+                hours = int(parts[0])
+                minutes = int(parts[1])
+                sec_part = parts[2].split(',')
+                secs = int(sec_part[0])
+                millis = int(sec_part[1]) if len(sec_part) > 1 else 0
+                return hours * 3600 + minutes * 60 + secs + millis / 1000
+        except Exception as e:
+            logger.error(f"解析SRT时间失败: {srt_time}, 错误: {e}")
+        return 0.0
+
+    @staticmethod
+    def parse_srt(srt_content: str) -> List[dict]:
+        """
+        解析SRT字幕内容
+        :param srt_content: SRT格式字符串
+        :return: [{"text": "句子", "start": 0.0, "end": 0.5}, ...]
+        """
+        sentences = []
+        lines = srt_content.strip().split('\n')
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line:
+                i += 1
+                continue
+            
+            # 尝试解析序号
+            if line.isdigit():
+                try:
+                    # 序号行
+                    i += 1
+                    if i >= len(lines):
+                        break
+                    
+                    # 时间行
+                    time_line = lines[i].strip()
+                    if '--> ' in time_line:
+                        start_str, end_str = time_line.split('--> ')
+                        start_time = SubtitleService._from_srt_time(start_str)
+                        end_time = SubtitleService._from_srt_time(end_str)
+                        i += 1
+                        
+                        # 字幕文本（可能跨多行）
+                        text_lines = []
+                        while i < len(lines):
+                            text_line = lines[i].strip()
+                            if text_line.isdigit() or (i + 1 < len(lines) and '-->' in lines[i + 1]):
+                                break
+                            if text_line:
+                                text_lines.append(text_line)
+                            i += 1
+                        
+                        text = '\n'.join(text_lines)
+                        if text:
+                            sentences.append({
+                                "text": text,
+                                "start": start_time,
+                                "end": end_time,
+                            })
+                    else:
+                        i += 1
+                except Exception as e:
+                    logger.error(f"解析SRT失败: {e}")
+                    i += 1
+            else:
+                i += 1
+        
+        logger.debug(f"parse_srt | 解析到 {len(sentences)} 条字幕")
+        return sentences
+
+    @staticmethod
     def save_srt(content: str, file_path: str) -> bool:
         """保存SRT文件"""
         try:
