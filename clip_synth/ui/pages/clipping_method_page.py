@@ -476,6 +476,7 @@ class ClippingMethodPage(QFrame):
         self._lang_combo.addItem("中文", "zh")
         self._lang_combo.addItem("英文", "en")
         self._lang_combo.addItem("泰文", "th")
+        self._lang_combo.addItem("印尼文", "id")
         params_layout.addWidget(self._lang_combo)
 
         ratio_title = QLabel("原声片段比例")

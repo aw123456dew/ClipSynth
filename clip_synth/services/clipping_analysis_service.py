@@ -173,7 +173,7 @@ def _build_narration_prompt(
     original_sound_ratio: int = 0,
 ) -> str:
     """构建用于生成解说文案的提示词"""
-    lang_names = {"zh": "中文", "en": "英文", "th": "泰文"}
+    lang_names = {"zh": "中文", "en": "英文", "th": "泰文", "id": "印尼文"}
     lang_name = lang_names.get(language, "中文")
     
     lines = [
@@ -632,13 +632,14 @@ class ClippingAnalysisService:
 
 def _build_polish_prompt(narration_results: List[dict], language: str) -> str:
     """构建润色提示词"""
-    lang_names = {"zh": "中文", "en": "英文", "th": "泰文"}
+    lang_names = {"zh": "中文", "en": "英文", "th": "泰文", "id": "印尼文"}
     lang_name = lang_names.get(language, "中文")
 
     lang_config = {
         "zh": {"name": "中文", "natural_speed": 3},
         "en": {"name": "英文", "natural_speed": 3},
         "th": {"name": "泰文", "natural_speed": 3},
+        "id": {"name": "印尼文", "natural_speed": 3},
     }
     config = lang_config.get(language, lang_config["zh"])
 
