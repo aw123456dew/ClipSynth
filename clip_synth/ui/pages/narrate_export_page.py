@@ -149,6 +149,10 @@ class NarrateExportPage(QFrame):
         self._project = project
         self._export_service = export_service
         self._reset_ui()
+        self._subtitle_check.setChecked(getattr(project, "enable_subtitle", False))
+        self._on_subtitle_toggle(self._subtitle_check.isChecked())
+        self._remove_subtitle_check.setChecked(getattr(project, "enable_remove_subtitle", False))
+        self._on_remove_subtitle_toggle(self._remove_subtitle_check.isChecked())
 
     def set_settings_service(self, settings_service: SettingsService):
         self._settings_service = settings_service
@@ -392,6 +396,7 @@ class NarrateExportPage(QFrame):
             return
 
         self._project.enable_subtitle = self._subtitle_check.isChecked()
+        self._project.enable_remove_subtitle = self._remove_subtitle_check.isChecked()
 
         self._card_container.hide()
         self._progress_container.show()
@@ -414,6 +419,8 @@ class NarrateExportPage(QFrame):
             from clip_synth.ui.components.toast import show_toast
             show_toast(self, "系统配置服务未初始化", "error", duration=3000)
             return
+        
+        self._project.enable_subtitle = self._subtitle_check.isChecked()
         
         self._card_container.hide()
         self._progress_container.show()

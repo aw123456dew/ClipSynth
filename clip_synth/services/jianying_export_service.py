@@ -95,11 +95,14 @@ def _get_video_resolution(path: str) -> tuple:
     flags = 0
     if hasattr(subprocess, "CREATE_NO_WINDOW"):
         flags = subprocess.CREATE_NO_WINDOW
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, creationflags=flags)
-    if result.returncode == 0:
-        parts = result.stdout.strip().split(",")
-        if len(parts) == 2:
-            return int(parts[0]), int(parts[1])
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, creationflags=flags)
+        if result.returncode == 0:
+            parts = result.stdout.strip().split(",")
+            if len(parts) == 2:
+                return int(parts[0]), int(parts[1])
+    except Exception as e:
+        logger.warning("获取视频分辨率失败: %s", str(e))
     return 1920, 1080
 
 
@@ -186,14 +189,23 @@ def _generate_srt(scripts_data: List[dict], audio_files: List[dict], output_dir:
         timestamps = audio_info.get("timestamps", [])
 
         if not timestamps:
+            logger.info("_generate_srt | 片段%d: 无时间戳, time_offset += %.2f", audio_idx - 1, audio_duration)
             time_offset += audio_duration
             continue
 
         reference = script.get("narration_script", "") or script.get("text", "") or ""
+        logger.info("_generate_srt | 片段%d: timestamps=%d, reference=%s",
+                     audio_idx - 1, len(timestamps), reference[:80])
+        logger.info("_generate_srt | 片段%d: TTS前30词=%s",
+                     audio_idx - 1, [t.get("word", "") for t in timestamps[:30]])
         sentences = SubtitleService.merge_words_to_sentences(timestamps, reference_text=reference)
         if sentences:
             srt_content = SubtitleService.generate_srt(sentences, clip_start_time=time_offset)
+            logger.info("_generate_srt | 片段%d: 生成%d条字幕, SRT前500字符=\n%s",
+                         audio_idx - 1, len(sentences), srt_content[:500])
             srt_sections.append(srt_content.strip())
+        else:
+            logger.info("_generate_srt | 片段%d: merge_words_to_sentences 返回空列表!", audio_idx - 1)
 
         time_offset += audio_duration
 
@@ -218,6 +230,7 @@ def _generate_srt(scripts_data: List[dict], audio_files: List[dict], output_dir:
         f.write("\n".join(renumbered))
 
     logger.info(f"字幕文件已生成: {srt_path}")
+    logger.info("_generate_srt | 字幕生成结果: %s, srt_sections=%d", srt_path, len(srt_sections))
     return srt_path
 
 
@@ -442,7 +455,11 @@ class JianYingExportService:
 
         # ========== 第2步：生成字幕文件 ==========
         subtitle_path = None
-        if getattr(project, "enable_subtitle", False) and project.narration_scripts:
+        enable_subtitle_val = getattr(project, "enable_subtitle", False)
+        logger.info("字幕生成检查: enable_subtitle=%s, narraction_scripts=%d, audio_files=%d",
+                     enable_subtitle_val, len(project.narration_scripts) if project.narration_scripts else 0,
+                     len(audio_files) if audio_files else 0)
+        if enable_subtitle_val and project.narration_scripts:
             if progress_callback:
                 progress_callback("正在生成字幕...", 65)
             subtitle_path = _generate_srt(scripts, audio_files, output_dir)
@@ -509,7 +526,10 @@ class JianYingExportService:
 
         # 导入字幕
         if subtitle_path and os.path.exists(subtitle_path):
+            logger.info("导入字幕到剪映草稿: %s", subtitle_path)
             script.import_srt(subtitle_path, track_name="字幕轨道", time_offset="0s")
+        else:
+            logger.info("跳过导入字幕: subtitle_path=%s, exists=%s", subtitle_path, os.path.exists(subtitle_path) if subtitle_path else "N/A")
 
         # 保存草稿
         if progress_callback:

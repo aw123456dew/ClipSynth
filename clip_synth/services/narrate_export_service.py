@@ -413,22 +413,8 @@ class NarrateExportService:
                         ]
                     _run_cmd(overlay_cmd, f"配音扩展 {i+1}")
                 else:
-                    speed = raw_duration / audio_duration
-                    if speed > 1.0:
-                        speed_path = str(raw_dir / f"speed_{i:04d}.mp4")
-                        speed_cmd = [
-                            "ffmpeg", "-y",
-                            "-i", raw_path,
-                            "-filter:v", f"setpts={1.0/speed}*PTS",
-                            "-an",
-                            "-c:v", "libx264",
-                            "-preset", "ultrafast",
-                            "-crf", "23",
-                            speed_path,
-                        ]
-                        _run_cmd(speed_cmd, f"加速片段 {i+1}")
-                        input_video_path = speed_path
-                    else:
+                    if audio_duration <= 0 or raw_duration <= 0:
+                        logger.warning("片段 %d: 时长信息无效 (raw=%.2f, audio=%.2f)，跳过加速处理", i + 1, raw_duration, audio_duration)
                         mute_path = str(raw_dir / f"mute_{i:04d}.mp4")
                         mute_cmd = [
                             "ffmpeg", "-y",
@@ -439,6 +425,33 @@ class NarrateExportService:
                         ]
                         _run_cmd(mute_cmd, f"静音 {i+1}")
                         input_video_path = mute_path
+                    else:
+                        speed = raw_duration / audio_duration
+                        if speed > 1.0:
+                            speed_path = str(raw_dir / f"speed_{i:04d}.mp4")
+                            speed_cmd = [
+                                "ffmpeg", "-y",
+                                "-i", raw_path,
+                                "-filter:v", f"setpts={1.0/speed}*PTS",
+                                "-an",
+                                "-c:v", "libx264",
+                                "-preset", "ultrafast",
+                                "-crf", "23",
+                                speed_path,
+                            ]
+                            _run_cmd(speed_cmd, f"加速片段 {i+1}")
+                            input_video_path = speed_path
+                        else:
+                            mute_path = str(raw_dir / f"mute_{i:04d}.mp4")
+                            mute_cmd = [
+                                "ffmpeg", "-y",
+                                "-i", raw_path,
+                                "-c:v", "copy",
+                                "-an",
+                                mute_path,
+                            ]
+                            _run_cmd(mute_cmd, f"静音 {i+1}")
+                            input_video_path = mute_path
 
                     # 添加滤镜（模糊遮罩 + 字幕）
                     if final_filter:

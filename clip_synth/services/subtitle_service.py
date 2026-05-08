@@ -33,17 +33,6 @@ class SubtitleService:
         return word.strip('.,!?;:()"\'，。！？；：""''（）【】《》…— ').lower()
 
     @staticmethod
-    def _is_cjk_char(ch: str) -> bool:
-        """判断是否为中日韩文字或泰文"""
-        cp = ord(ch)
-        return (
-            (0x4E00 <= cp <= 0x9FFF) or  # CJK统一汉字
-            (0x3040 <= cp <= 0x309F) or  # 日文平假名
-            (0x30A0 <= cp <= 0x30FF) or  # 日文片假名
-            (0x0E00 <= cp <= 0x0E7F)     # 泰文
-        )
-
-    @staticmethod
     def _infer_granularity(words: List[dict]) -> str:
         """推断TTS返回的粒度: 'char'（单字）或 'word'（单词）"""
         if not words:
@@ -74,7 +63,7 @@ class SubtitleService:
                     })
         else:
             for ch in reference_text:
-                if ch in punct_set:
+                if ch in punct_set or ch == " ":
                     if entries:
                         entries[-1]["should_break"] = True
                 else:
@@ -98,7 +87,57 @@ class SubtitleService:
             return []
 
         granularity = SubtitleService._infer_granularity(words) if reference_text else None
-        ref_entries = SubtitleService._parse_reference(reference_text, granularity) if reference_text else None
+        ref_entries = SubtitleService._parse_reference(reference_text, granularity) if reference_text and granularity else None
+
+        logger.debug("merge_words_to_sentences | granularity=%s | ref_entries=%d | reference_text=%s | tts_words=%s",
+                     granularity, len(ref_entries) if ref_entries else 0,
+                     reference_text[:100] if reference_text else "",
+                     [w.get("word", "") for w in words[:20]])
+
+        special_markers = {"sp", "spn", "sil", "silb", "sile", "silence", "pause", "pau", "breath", "#", "<sil>", "[sil]"}
+
+        # CJK/泰语专用路径：不逐字匹配文案，而是按文案空格比例在TTS序列中断句
+        if ref_entries is not None and any(ord(ch) > 0x0E00 for ch in reference_text):
+            paragraphs = [p for p in reference_text.split() if p.strip()]
+            if len(paragraphs) > 1:
+                ref_char_total = sum(len(p) for p in paragraphs)
+                break_char_indices = []
+                char_accum = 0
+                for p in paragraphs[:-1]:
+                    char_accum += len(p)
+                    break_char_indices.append(char_accum)
+
+                valid_words = [(i, w) for i, w in enumerate(words) if w.get("word", "") and w["word"].lower() not in special_markers]
+                total_tts = len(valid_words)
+
+                if total_tts > 0:
+                    sentences = []
+                    start_idx = 0
+                    for break_char_idx in break_char_indices:
+                        tts_break = round(break_char_idx / ref_char_total * total_tts)
+                        if tts_break <= start_idx:
+                            tts_break = start_idx + 1
+                        if tts_break > total_tts:
+                            tts_break = total_tts
+                        segment = valid_words[start_idx:tts_break]
+                        if segment:
+                            sentences.append({
+                                "text": "".join(w[1]["word"] for w in segment),
+                                "start": segment[0][1]["start"],
+                                "end": segment[-1][1]["end"],
+                            })
+                        start_idx = tts_break
+                    if start_idx < total_tts:
+                        segment = valid_words[start_idx:]
+                        sentences.append({
+                            "text": "".join(w[1]["word"] for w in segment),
+                            "start": segment[0][1]["start"],
+                            "end": segment[-1][1]["end"],
+                        })
+
+                    logger.debug("merge_words_to_sentences | CJK/Thai按空格断句: %d段 -> %d条字幕", len(paragraphs), len(sentences))
+                    return sentences
+
         ref_idx = 0
         max_lookahead = 3
 
@@ -107,6 +146,7 @@ class SubtitleService:
         current_start = None
         current_end = None
         prev_was_latin = False
+        dropped_count = 0
 
         for word in words:
             char = word.get("word", "")
@@ -139,8 +179,23 @@ class SubtitleService:
                         word_matched = True
                         break
                 if not word_matched:
+                    dropped_count += 1
+                    if dropped_count <= 5:
+                        logger.debug("merge_words_to_sentences | 丢弃字符=%s tts_norm=%s ref_idx=%d", char, tts_norm, ref_idx)
                     continue
             else:
+                if char == " ":
+                    if current_chars:
+                        sentences.append({
+                            'text': ''.join(current_chars),
+                            'start': current_start,
+                            'end': current_end or end,
+                        })
+                        current_chars = []
+                        current_start = None
+                        current_end = None
+                        prev_was_latin = False
+                    continue
                 if SubtitleService._is_punctuation(char):
                     if current_chars:
                         sentences.append({
@@ -152,6 +207,8 @@ class SubtitleService:
                         current_start = None
                         current_end = None
                         prev_was_latin = False
+                    continue
+                if char.lower() in {"sp", "spn", "sil", "silb", "sile", "silence", "pause", "pau", "breath", "#", "<sil>", "[sil]"}:
                     continue
 
             is_latin = SubtitleService._is_latin_word(char)
@@ -194,6 +251,9 @@ class SubtitleService:
                 'start': current_start,
                 'end': current_end
             })
+
+        logger.debug("merge_words_to_sentences | 结果: %d条字幕, 丢弃%d字符, sentences=%s",
+                     len(sentences), dropped_count, [s["text"][:30] for s in sentences])
 
         return sentences
 

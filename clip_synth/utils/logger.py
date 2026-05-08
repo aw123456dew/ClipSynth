@@ -1,10 +1,21 @@
 import logging
 import sys
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
+
+
+def _get_log_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).parent
+        return exe_dir / "logs"
+    return Path.home() / ".clip_synth" / "logs"
 
 
 def setup_logger(name: str = "clip_synth", log_dir: Path | None = None) -> logging.Logger:
     logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger
+
     logger.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter(
@@ -17,13 +28,20 @@ def setup_logger(name: str = "clip_synth", log_dir: Path | None = None) -> loggi
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    if log_dir is not None:
+    if getattr(sys, "frozen", False):
+        if log_dir is None:
+            log_dir = _get_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(
-            log_dir / "clip_synth.log", encoding="utf-8"
+        log_path = log_dir / "clip_synth.log"
+        file_handler = TimedRotatingFileHandler(
+            log_path,
+            when="midnight",
+            backupCount=1,
+            encoding="utf-8",
         )
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
+        logger.info(f"日志目录: {log_dir}")
 
     return logger

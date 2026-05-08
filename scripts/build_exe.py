@@ -37,6 +37,7 @@ DIST_DIR = PROJECT_ROOT / "dist"
 BUILD_DIR = PROJECT_ROOT / "build"
 
 FFMPEG_FILENAME = "ffmpeg.exe"
+FFPROBE_FILENAME = "ffprobe.exe"
 DEFAULT_ICON_PATH = PROJECT_ROOT / "clip_synth/resources/icons/icon.jpg"
 
 
@@ -245,13 +246,20 @@ def run_pyinstaller(
 
 
 def copy_ffmpeg_to_dist(ffmpeg_path: str, exe_name: str) -> None:
-    """将 ffmpeg.exe 复制到打包输出目录"""
+    """将 ffmpeg.exe 和 ffprobe.exe 复制到打包输出目录"""
     dist_exe_dir = DIST_DIR / exe_name
     dist_exe_dir.mkdir(parents=True, exist_ok=True)
     dist_ffmpeg = dist_exe_dir / FFMPEG_FILENAME
 
     shutil.copy2(ffmpeg_path, dist_ffmpeg)
     logger.info("ffmpeg 已复制到: %s", dist_ffmpeg)
+
+    ffmpeg_dir = os.path.dirname(ffmpeg_path)
+    ffprobe_src = os.path.join(ffmpeg_dir, FFPROBE_FILENAME)
+    if os.path.isfile(ffprobe_src):
+        dist_ffprobe = dist_exe_dir / FFPROBE_FILENAME
+        shutil.copy2(ffprobe_src, dist_ffprobe)
+        logger.info("ffprobe 已复制到: %s", dist_ffprobe)
 
     size_mb = os.path.getsize(dist_ffmpeg) / (1024 * 1024)
     logger.info("ffmpeg 大小: %.1f MB", size_mb)
@@ -271,8 +279,14 @@ def verify_bundle(exe_name: str) -> None:
         logger.error("打包失败：未找到 ffmpeg.exe: %s", ffmpeg_path)
         sys.exit(1)
 
+    ffprobe_path = dist_exe_dir / FFPROBE_FILENAME
+    if not ffprobe_path.exists():
+        logger.error("打包失败：未找到 ffprobe.exe: %s", ffprobe_path)
+        sys.exit(1)
+
     exe_size_mb = os.path.getsize(exe_path) / (1024 * 1024)
     ffmpeg_size_mb = os.path.getsize(ffmpeg_path) / (1024 * 1024)
+    ffprobe_size_mb = os.path.getsize(ffprobe_path) / (1024 * 1024)
     total_items = len(list(dist_exe_dir.iterdir()))
 
     logger.info("=" * 60)
@@ -280,6 +294,7 @@ def verify_bundle(exe_name: str) -> None:
     logger.info("  输出目录: %s", dist_exe_dir)
     logger.info("  主程序: %s (%.1f MB)", exe_path, exe_size_mb)
     logger.info("  ffmpeg: %.1f MB", ffmpeg_size_mb)
+    logger.info("  ffprobe: %.1f MB", ffprobe_size_mb)
     logger.info("  文件总数: %d", total_items)
     logger.info("=" * 60)
 
