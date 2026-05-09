@@ -138,6 +138,7 @@ class SmartClippingProjectState:
     clipping_style: str = "emotional"
     narration_language: str = "zh"
     original_sound_ratio: int = 0
+    narration_speed: int = 3  # 目标语速（字/秒）
     ai_analysis_results: List[dict] = field(default_factory=list)
     narration_scripts: List[dict] = field(default_factory=list)
     created_at: float = field(default_factory=lambda: 0.0)

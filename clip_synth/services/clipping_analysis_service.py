@@ -478,6 +478,7 @@ class ClippingAnalysisService:
         self,
         narration_results: List[dict],
         language: str = "zh",
+        narration_speed: int = 3,
         max_retries: int = 3,
     ) -> List[dict]:
         """
@@ -486,12 +487,13 @@ class ClippingAnalysisService:
         Args:
             narration_results: 初代解说文案列表
             language: "zh" | "en" | "th"
+            narration_speed: 目标语速（字/秒）
             max_retries: AI返回格式异常时的最大重试次数
 
         Returns:
             润色后的解说文案列表
         """
-        polish_prompt = _build_polish_prompt(narration_results, language)
+        polish_prompt = _build_polish_prompt(narration_results, language, narration_speed)
 
         last_error = None
         for attempt in range(max_retries):
@@ -529,6 +531,7 @@ class ClippingAnalysisService:
         style_key: str,
         language: str = "zh",
         original_sound_ratio: int = 0,
+        narration_speed: int = 3,
         max_retries: int = 3,
     ) -> List[dict]:
         """
@@ -540,6 +543,7 @@ class ClippingAnalysisService:
             style_key: "emotional" | "humorous" | "logical" | "fast_paced"
             language: "zh" | "en" | "th"
             original_sound_ratio: 0-70, 原声片段比例
+            narration_speed: 目标语速（字/秒）
             max_retries: AI返回格式异常时的最大重试次数
 
         Returns:
@@ -607,7 +611,7 @@ class ClippingAnalysisService:
                 narration_scripts = _post_process_scripts(narration_scripts)
                 logger.info("成功解析 %d 条解说文案", len(narration_scripts))
 
-                polished_results = await self.polish_narration(narration_scripts, language)
+                polished_results = await self.polish_narration(narration_scripts, language, narration_speed)
                 if polished_results and polished_results != narration_scripts:
                     for item in narration_scripts:
                         if item.get("content_type") != "narration":
@@ -630,22 +634,14 @@ class ClippingAnalysisService:
         raise ValueError(error_msg) from last_error
 
 
-def _build_polish_prompt(narration_results: List[dict], language: str) -> str:
+def _build_polish_prompt(narration_results: List[dict], language: str, narration_speed: int = 3) -> str:
     """构建润色提示词"""
     lang_names = {"zh": "中文", "en": "英文", "th": "泰文", "id": "印尼文"}
     lang_name = lang_names.get(language, "中文")
 
-    lang_config = {
-        "zh": {"name": "中文", "natural_speed": 3},
-        "en": {"name": "英文", "natural_speed": 3},
-        "th": {"name": "泰文", "natural_speed": 3},
-        "id": {"name": "印尼文", "natural_speed": 3},
-    }
-    config = lang_config.get(language, lang_config["zh"])
-
     lines = [
         f"解说语言：{lang_name}",
-        f"自然语速参考：{config['natural_speed']}字/秒",
+        f"目标语速：{narration_speed}字/秒",
         "",
         "请对以下解说文案进行润色，使其朗读时长精确匹配对应片段的时长。",
         "润色时需计算当前文案的字数和语速，再根据片段时长调整到合适长度。",
@@ -668,12 +664,12 @@ def _build_polish_prompt(narration_results: List[dict], language: str) -> str:
         duration = end_sec - start_sec
         char_count = len(narration_script)
         current_speed = char_count / duration if duration > 0 else 0
-        target_chars = int(duration * config["natural_speed"])
+        target_chars = int(duration * narration_speed)
 
         lines.append(f"{i+1}. [解说片段] {start_time}-{end_time} (时长{duration}秒)")
         lines.append(f"   故事梗概：{story_summary}")
         lines.append(f"   原始文案（{char_count}字）：{narration_script}")
-        lines.append(f"   当前语速：{current_speed:.1f}字/秒 | 目标语速：{config['natural_speed']}字/秒")
+        lines.append(f"   当前语速：{current_speed:.1f}字/秒 | 目标语速：{narration_speed}字/秒")
         lines.append(f"   目标字数：约{target_chars}字")
         lines.append("")
 
@@ -690,7 +686,7 @@ POLISH_NARRATION_SYSTEM_PROMPT = """\
 
 你的工作流程：
 1. 分析原始文案的字数，计算当前语速（字数/片段时长）
-2. 根据目标语速（中文4字/秒，英文8字/秒，泰文5字/秒）计算应保留的字数
+2. 根据提示词中指定的目标语速计算应保留的字数
 3. 精简或扩写文案，使润色后的文案能在片段时长内自然读完
 
 要求：

@@ -248,9 +248,10 @@ class ContentArea(QFrame):
             video_paths, name=project_name, cover_path=cover_path,
         )
 
-        # 没有上传封面时，异步提取视频第一帧作为封面（全局后台运行，不阻塞UI）
+        # 没有上传封面时，异步提取视频第一帧作为封面
         if not cover_path and video_paths:
             self._async_extract_cover(video_paths[0], project.id)
+
         vision_ai = self._create_vision_ai_service()
         text_ai = self._create_ai_service()
         wizard_page = SmartNarrateWizard(
@@ -311,11 +312,13 @@ class ContentArea(QFrame):
     def _on_narrate_wizard_finished(self) -> None:
         self._remove_wizard_from_stack()
         self._narrate_page._load_projects()
+        self._narrate_page.sync_all_covers()
         self.switch_to("short_drama_narrate")
 
     def _on_narrate_wizard_cancelled(self) -> None:
         self._remove_wizard_from_stack()
         self._narrate_page._load_projects()
+        self._narrate_page.sync_all_covers()
         self.switch_to("short_drama_narrate")
 
     def _remove_wizard_from_stack(self) -> None:

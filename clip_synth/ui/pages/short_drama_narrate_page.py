@@ -341,6 +341,13 @@ class ShortDramaNarratePage(QFrame):
                 card.set_thumbnail(project.cover_path)
                 break
 
+    def sync_all_covers(self) -> None:
+        """从磁盘同步所有项目封面，确保异步提取的封面能更新到已创建的卡片上"""
+        for card in self._cards:
+            project = self._narrate_project_state_service.load_project(card._project_id)
+            if project and project.cover_path and project.cover_path != card._thumbnail_path:
+                card.set_thumbnail(project.cover_path)
+
     def _on_open_narrate_project(self, project_id: str) -> None:
         self.open_narrate_project.emit(project_id)
 

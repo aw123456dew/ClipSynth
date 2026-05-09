@@ -325,7 +325,7 @@ class SmartNarrateWizard(QFrame):
 
         if self._current_step == self._total_steps - 1:
             self._next_btn.hide()
-            self._finish_btn.hide()
+            self._finish_btn.show()
         else:
             self._next_btn.show()
             self._finish_btn.hide()

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -80,6 +81,7 @@ class NarrationGenerationWorker(QThread):
         style_key: str,
         language: str = "zh",
         original_sound_ratio: int = 0,
+        narration_speed: int = 3,
         parent=None,
     ):
         super().__init__(parent)
@@ -89,6 +91,7 @@ class NarrationGenerationWorker(QThread):
         self._style_key = style_key
         self._language = language
         self._original_sound_ratio = original_sound_ratio
+        self._narration_speed = narration_speed
 
     def run(self):
         try:
@@ -102,6 +105,7 @@ class NarrationGenerationWorker(QThread):
                         self._style_key,
                         self._language,
                         self._original_sound_ratio,
+                        self._narration_speed,
                     )
                 )
                 self.narration_finished.emit(result)
@@ -493,6 +497,17 @@ class ClippingMethodPage(QFrame):
         self._ratio_combo.addItem("70%", 70)
         params_layout.addWidget(self._ratio_combo)
 
+        speed_title = QLabel("目标语速（字/秒）")
+        speed_title.setObjectName("aiStyleTitle")
+        params_layout.addWidget(speed_title)
+
+        self._speed_spin = QSpinBox()
+        self._speed_spin.setObjectName("styleCombo")
+        self._speed_spin.setRange(1, 20)
+        self._speed_spin.setValue(self._project.narration_speed)
+        self._speed_spin.setSuffix(" 字/秒")
+        params_layout.addWidget(self._speed_spin)
+
         if self._project.clipping_style:
             idx = self._style_combo.findData(self._project.clipping_style)
             if idx >= 0:
@@ -634,6 +649,7 @@ class ClippingMethodPage(QFrame):
     def save_state(self):
         self._project.clipping_style = self._style_combo.currentData()
         self._project.narration_language = self._lang_combo.currentData()
+        self._project.narration_speed = self._speed_spin.value()
         self._project.original_sound_ratio = self._ratio_combo.currentData()
         self._project.narration_scripts = self._narration_results
 
@@ -669,13 +685,14 @@ class ClippingMethodPage(QFrame):
 
         language = self._lang_combo.currentData()
         ratio = self._ratio_combo.currentData()
+        speed = self._speed_spin.value()
 
         segments_by_video = self._collect_segments_by_video()
         subtitles_by_video = self._collect_subtitles_by_video()
 
         self._narration_worker = NarrationGenerationWorker(
             self._analysis_service, segments_by_video, subtitles_by_video, style_key,
-            language, ratio, self,
+            language, ratio, speed, self,
         )
         self._narration_worker.narration_finished.connect(self._on_narration_finished)
         self._narration_worker.error.connect(self._on_narration_error)
