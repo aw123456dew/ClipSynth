@@ -1,5 +1,4 @@
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -22,9 +21,8 @@ class NarrateNewProjectDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("新建解说项目")
-        self.setFixedSize(420, 360)
+        self.setFixedSize(420, 220)
         self.setObjectName("newProjectDialog")
-        self._cover_path: str | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -45,38 +43,10 @@ class NarrateNewProjectDialog(QDialog):
         self._name_input.setPlaceholderText("请输入项目名称")
         layout.addWidget(self._name_input)
 
-        cover_label = QLabel("项目封面（可选）")
-        cover_label.setObjectName("dialogFieldLabel")
-        layout.addWidget(cover_label)
-
-        cover_row = QHBoxLayout()
-        cover_row.setSpacing(12)
-
-        self._cover_preview = QLabel()
-        self._cover_preview.setObjectName("dialogCoverPreview")
-        self._cover_preview.setFixedSize(120, 68)
-        self._cover_preview.setAlignment(Qt.AlignCenter)
-        self._cover_preview.setText("无封面")
-        cover_row.addWidget(self._cover_preview)
-
-        cover_btn_layout = QVBoxLayout()
-        cover_btn_layout.setSpacing(8)
-
-        self._upload_cover_btn = QPushButton("上传封面")
-        self._upload_cover_btn.setObjectName("dialogUploadCoverBtn")
-        self._upload_cover_btn.clicked.connect(self._on_upload_cover)
-        cover_btn_layout.addWidget(self._upload_cover_btn)
-
-        self._clear_cover_btn = QPushButton("清除封面")
-        self._clear_cover_btn.setObjectName("dialogClearCoverBtn")
-        self._clear_cover_btn.clicked.connect(self._on_clear_cover)
-        self._clear_cover_btn.setVisible(False)
-        cover_btn_layout.addWidget(self._clear_cover_btn)
-
-        cover_btn_layout.addStretch()
-        cover_row.addLayout(cover_btn_layout)
-        cover_row.addStretch()
-        layout.addLayout(cover_row)
+        desc_label = QLabel("封面将自动从视频第一帧提取")
+        desc_label.setObjectName("dialogFieldHint")
+        desc_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        layout.addWidget(desc_label)
 
         layout.addStretch()
 
@@ -95,34 +65,10 @@ class NarrateNewProjectDialog(QDialog):
 
         layout.addLayout(btn_row)
 
-    def _on_upload_cover(self) -> None:
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择封面图片", "", "图片文件 (*.png *.jpg *.jpeg *.bmp);;所有文件 (*.*)"
-        )
-        if file_path:
-            self._cover_path = file_path
-            pixmap = QPixmap(file_path)
-            if not pixmap.isNull():
-                self._cover_preview.setPixmap(
-                    pixmap.scaled(120, 68, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                )
-                self._cover_preview.setScaledContents(True)
-            self._clear_cover_btn.setVisible(True)
-
-    def _on_clear_cover(self) -> None:
-        self._cover_path = None
-        self._cover_preview.setPixmap(QPixmap())
-        self._cover_preview.setText("无封面")
-        self._clear_cover_btn.setVisible(False)
-
     @property
     def project_name(self) -> str:
         name = self._name_input.text().strip()
         return name if name else "解说项目"
-
-    @property
-    def cover_path(self) -> str | None:
-        return self._cover_path
 
 
 class NarrateProjectCard(QFrame):
@@ -329,7 +275,7 @@ class ShortDramaNarratePage(QFrame):
             "视频文件 (*.mp4 *.avi *.mov *.mkv);;所有文件 (*.*)",
         )
         if file_paths:
-            self.start_narrate_wizard.emit((file_paths, dialog.project_name, dialog.cover_path))
+            self.start_narrate_wizard.emit((file_paths, dialog.project_name, None))
 
     def refresh_project_cover(self, project_id: str) -> None:
         """刷新指定项目的封面（由后台封面提取完成后调用）"""
