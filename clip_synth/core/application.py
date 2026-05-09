@@ -3,6 +3,7 @@ import sys
 
 import qasync
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from clip_synth.core.database import DatabaseManager
@@ -43,6 +44,11 @@ class Application:
         self._qt_app.setApplicationName("ClipSynth")
         self._qt_app.setOrganizationName("ClipSynth")
         self._qt_app.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
+
+        # 设置应用图标（标题栏 + 任务栏）
+        icon_path = get_resource_path("clip_synth/resources/icons/icon.ico")
+        if os.path.exists(icon_path):
+            self._qt_app.setWindowIcon(QIcon(icon_path))
 
         self._load_stylesheet()
 

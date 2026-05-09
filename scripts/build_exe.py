@@ -210,6 +210,8 @@ def run_pyinstaller(
 
     data_files = [
         (str(PROJECT_ROOT / "clip_synth/resources/styles/main.qss"), "clip_synth/resources/styles"),
+        (str(PROJECT_ROOT / "clip_synth/resources/icons/icon.ico"), "clip_synth/resources/icons"),
+        (str(PROJECT_ROOT / "clip_synth/resources/icons/icon.jpg"), "clip_synth/resources/icons"),
     ]
     
     try:

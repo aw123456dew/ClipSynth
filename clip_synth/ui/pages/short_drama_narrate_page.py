@@ -43,11 +43,6 @@ class NarrateNewProjectDialog(QDialog):
         self._name_input.setPlaceholderText("请输入项目名称")
         layout.addWidget(self._name_input)
 
-        desc_label = QLabel("封面将自动从视频第一帧提取")
-        desc_label.setObjectName("dialogFieldHint")
-        desc_label.setStyleSheet("color: #64748b; font-size: 12px;")
-        layout.addWidget(desc_label)
-
         layout.addStretch()
 
         btn_row = QHBoxLayout()
