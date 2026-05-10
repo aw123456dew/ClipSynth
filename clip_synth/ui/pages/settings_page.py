@@ -2,6 +2,7 @@ import logging
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -19,6 +20,7 @@ from clip_synth.models.settings import AIModelSettings, AppSettings, DoubaoVoice
 from clip_synth.services.ai_service import AIModelConfig, AIService
 from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.components.toast import show_toast
+from clip_synth.utils.gpu_accel import detect_gpu, set_gpu_accel_enabled
 
 logger = logging.getLogger("clip_synth.settings")
 
@@ -276,6 +278,44 @@ class SettingsPage(QFrame):
 
         scroll_layout.addWidget(draft_group)
 
+        gpu_group = QGroupBox("硬件加速")
+        gpu_group.setObjectName("gpuGroup")
+        gpu_layout = QVBoxLayout(gpu_group)
+        gpu_layout.setContentsMargins(16, 24, 16, 16)
+        gpu_layout.setSpacing(12)
+
+        self._gpu_check = QCheckBox("启用 GPU 硬件加速（视频编码）")
+        self._gpu_check.setChecked(self._settings.gpu_accel_enabled)
+        self._gpu_check.setStyleSheet("""
+            QCheckBox {
+                color: #cbd5e1;
+                font-size: 14px;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+                border: 2px solid #475569;
+                border-radius: 4px;
+                background-color: #0f1320;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #3b82f6;
+                border-color: #3b82f6;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #6366f1;
+            }
+        """)
+        gpu_layout.addWidget(self._gpu_check)
+
+        self._gpu_status_label = QLabel()
+        self._gpu_status_label.setObjectName("gpuStatusLabel")
+        self._update_gpu_status()
+        gpu_layout.addWidget(self._gpu_status_label)
+
+        scroll_layout.addWidget(gpu_group)
+
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
@@ -303,16 +343,37 @@ class SettingsPage(QFrame):
         self._vision_model_group.update_settings(self._settings.vision_model)
         self._doubao_voice_group.update_settings(self._settings.doubao_voice)
         self._draft_path_input.setText(self._settings.draft_output_dir)
+        self._gpu_check.setChecked(self._settings.gpu_accel_enabled)
+        self._update_gpu_status()
 
     def _on_save_settings(self) -> None:
         self._settings.text_model = self._text_model_group.collect_settings()
         self._settings.vision_model = self._vision_model_group.collect_settings()
         self._settings.doubao_voice = self._doubao_voice_group.collect_settings()
         self._settings.draft_output_dir = self._draft_path_input.text().strip()
+        self._settings.gpu_accel_enabled = self._gpu_check.isChecked()
 
         self._settings_service.save(self._settings)
+        set_gpu_accel_enabled(self._settings.gpu_accel_enabled)
         show_toast(self, "系统配置已保存成功", "success")
         self.settings_changed.emit()
+
+    def _update_gpu_status(self) -> None:
+        gpu = detect_gpu()
+        gpu_type = gpu["type"]
+        if gpu_type == "nvidia":
+            self._gpu_status_label.setText("检测到 NVIDIA GPU — 将使用 NVENC 编码器")
+            self._gpu_status_label.setStyleSheet("color: #34d399; font-size: 12px;")
+        elif gpu_type == "amd":
+            self._gpu_status_label.setText("检测到 AMD GPU — 将使用 AMF 编码器")
+            self._gpu_status_label.setStyleSheet("color: #34d399; font-size: 12px;")
+        elif gpu_type == "intel":
+            self._gpu_status_label.setText("检测到 Intel 核显 — 将使用 QSV 编码器")
+            self._gpu_status_label.setStyleSheet("color: #34d399; font-size: 12px;")
+        else:
+            self._gpu_status_label.setText("未检测到支持硬件加速的 GPU，将使用 CPU 编码")
+            self._gpu_status_label.setStyleSheet("color: #f87171; font-size: 12px;")
+            self._gpu_check.setEnabled(False)
 
     @property
     def settings(self) -> AppSettings:

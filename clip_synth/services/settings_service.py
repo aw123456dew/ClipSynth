@@ -33,6 +33,7 @@ class SettingsService:
                     token=row.doubao_token,
                 ),
                 tts_params=row.tts_params or "",
+                gpu_accel_enabled=bool(row.gpu_accel_enabled),
             )
         finally:
             session.close()
@@ -57,6 +58,7 @@ class SettingsService:
             row.doubao_app_id = settings.doubao_voice.app_id
             row.doubao_token = settings.doubao_voice.token
             row.tts_params = settings.tts_params
+            row.gpu_accel_enabled = settings.gpu_accel_enabled
 
             session.commit()
         finally:

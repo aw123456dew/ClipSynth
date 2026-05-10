@@ -8,6 +8,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from clip_synth.utils.gpu_accel import apply_gpu_encoder_to_cmd
+
 logger = logging.getLogger(__name__)
 
 
@@ -490,6 +492,7 @@ class DedupWorker(QThread):
         return cmd
 
     def _run_ffmpeg(self, cmd: list[str]) -> None:
+        apply_gpu_encoder_to_cmd(cmd)
         flags = 0
         if hasattr(subprocess, "CREATE_NO_WINDOW"):
             flags = subprocess.CREATE_NO_WINDOW

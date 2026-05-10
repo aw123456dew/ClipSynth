@@ -7,8 +7,10 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from clip_synth.core.database import DatabaseManager
+from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.main_window import MainWindow
 from clip_synth.utils.ffmpeg_helper import add_ffmpeg_to_path, get_resource_path
+from clip_synth.utils.gpu_accel import set_gpu_accel_enabled
 from clip_synth.utils.logger import setup_logger
 
 
@@ -54,6 +56,10 @@ class Application:
 
         self._db_manager = DatabaseManager()
         self._db_manager.initialize()
+
+        settings_service = SettingsService(self._db_manager)
+        app_settings = settings_service.load()
+        set_gpu_accel_enabled(app_settings.gpu_accel_enabled)
 
         self._main_window = MainWindow(self._db_manager)
         self._main_window.show()

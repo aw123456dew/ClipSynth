@@ -163,6 +163,11 @@ class ContentArea(QFrame):
 
     def switch_to(self, page_key: str) -> None:
         if page_key in self._pages:
+            if page_key == "short_drama_mix":
+                self._mix_page._load_projects()
+            elif page_key == "short_drama_narrate":
+                self._narrate_page._load_projects()
+                self._narrate_page.sync_all_covers()
             self._stack.setCurrentIndex(self._pages[page_key])
 
     def switch_to_project_wizard(self, data) -> None:
@@ -301,24 +306,18 @@ class ContentArea(QFrame):
 
     def _on_wizard_finished(self) -> None:
         self._remove_wizard_from_stack()
-        self._mix_page._load_projects()
         self.switch_to("short_drama_mix")
 
     def _on_wizard_cancelled(self) -> None:
         self._remove_wizard_from_stack()
-        self._mix_page._load_projects()
         self.switch_to("short_drama_mix")
 
     def _on_narrate_wizard_finished(self) -> None:
         self._remove_wizard_from_stack()
-        self._narrate_page._load_projects()
-        self._narrate_page.sync_all_covers()
         self.switch_to("short_drama_narrate")
 
     def _on_narrate_wizard_cancelled(self) -> None:
         self._remove_wizard_from_stack()
-        self._narrate_page._load_projects()
-        self._narrate_page.sync_all_covers()
         self.switch_to("short_drama_narrate")
 
     def _remove_wizard_from_stack(self) -> None:

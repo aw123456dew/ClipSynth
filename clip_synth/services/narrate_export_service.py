@@ -6,6 +6,7 @@ from typing import Callable, Dict, List, Optional
 
 from clip_synth.models.narrate_project_state import NarrateProjectState
 from clip_synth.services.subtitle_service import SubtitleService
+from clip_synth.utils.gpu_accel import apply_gpu_encoder_to_cmd
 
 logger = logging.getLogger("clip_synth.narrate_export_service")
 
@@ -79,6 +80,7 @@ def _time_to_seconds(t: str) -> float:
 
 
 def _run_cmd(cmd: List[str], action: str = "处理") -> None:
+    apply_gpu_encoder_to_cmd(cmd)
     logger.info(f"[ffmpeg] {action}: {' '.join(cmd)}")
     flags = 0
     if hasattr(subprocess, "CREATE_NO_WINDOW"):

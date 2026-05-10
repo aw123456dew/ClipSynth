@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -230,9 +231,11 @@ class ShortDramaNarratePage(QFrame):
     def _load_projects(self) -> None:
         while self._grid_layout.count():
             item = self._grid_layout.takeAt(0)
-            if item and item.widget():
-                item.widget().setParent(None)
-                item.widget().deleteLater()
+            if item:
+                widget = item.widget()
+                if widget:
+                    widget.setParent(None)
+                    widget.deleteLater()
 
         self._cards.clear()
         idx = 0

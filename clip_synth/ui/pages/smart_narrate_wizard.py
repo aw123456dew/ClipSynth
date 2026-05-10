@@ -548,4 +548,7 @@ class SmartNarrateWizard(QFrame):
         self.cancelled.emit()
 
     def _save_project(self):
+        saved = self._narrate_project_state_service.load_project(self._project.id)
+        if saved and saved.cover_path and not self._project.cover_path:
+            self._project.cover_path = saved.cover_path
         self._narrate_project_state_service.save_project(self._project)

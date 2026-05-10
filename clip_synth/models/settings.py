@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import json
 
-from sqlalchemy import String, Text
+from sqlalchemy import Boolean, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from clip_synth.core.database import Base
@@ -23,6 +23,7 @@ class SettingsModel(Base):
     doubao_app_id: Mapped[str] = mapped_column(String(255), default="")
     doubao_token: Mapped[str] = mapped_column(String(1024), default="")
     tts_params: Mapped[str] = mapped_column(Text, default="")
+    gpu_accel_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 @dataclass
@@ -87,6 +88,7 @@ class AppSettings:
     draft_output_dir: str = ""
     doubao_voice: DoubaoVoiceSettings = field(default_factory=DoubaoVoiceSettings)
     tts_params: str = ""
+    gpu_accel_enabled: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -95,6 +97,7 @@ class AppSettings:
             "draft_output_dir": self.draft_output_dir,
             "doubao_voice": self.doubao_voice.to_dict(),
             "tts_params": self.tts_params,
+            "gpu_accel_enabled": self.gpu_accel_enabled,
         }
 
     @classmethod
@@ -105,4 +108,5 @@ class AppSettings:
             draft_output_dir=data.get("draft_output_dir", ""),
             doubao_voice=DoubaoVoiceSettings.from_dict(data.get("doubao_voice", {})),
             tts_params=data.get("tts_params", ""),
+            gpu_accel_enabled=data.get("gpu_accel_enabled", False),
         )

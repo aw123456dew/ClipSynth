@@ -2,6 +2,8 @@ import logging
 import subprocess
 from pathlib import Path
 
+from clip_synth.utils.gpu_accel import apply_gpu_encoder_to_cmd
+
 logger = logging.getLogger("clip_synth.video_preprocessor")
 
 
@@ -50,6 +52,7 @@ class VideoPreprocessor:
         ]
 
         try:
+            apply_gpu_encoder_to_cmd(cmd)
             kwargs = {}
             if hasattr(subprocess, "CREATE_NO_WINDOW"):
                 kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
