@@ -161,6 +161,14 @@ class ContentArea(QFrame):
         self._stack.addWidget(self._settings_page)
         self._pages["settings"] = self._stack.count() - 1
 
+        from clip_synth.ui.pages.short_drama_narrate_v2_page import ShortDramaNarrateV2Page
+        self._narrate_v2_page = ShortDramaNarrateV2Page(self._narrate_project_state_service)
+        self._narrate_v2_page.start_wizard.connect(self.switch_to_narrate_v2_wizard)
+        self._narrate_v2_page.open_project.connect(self.open_narrate_v2_project)
+        self.cover_extracted.connect(self._narrate_v2_page.refresh_project_cover)
+        self._stack.addWidget(self._narrate_v2_page)
+        self._pages["short_drama_narrate_v2"] = self._stack.count() - 1
+
     def switch_to(self, page_key: str) -> None:
         if page_key in self._pages:
             if page_key == "short_drama_mix":
@@ -168,6 +176,9 @@ class ContentArea(QFrame):
             elif page_key == "short_drama_narrate":
                 self._narrate_page._load_projects()
                 self._narrate_page.sync_all_covers()
+            elif page_key == "short_drama_narrate_v2":
+                self._narrate_v2_page._load_projects()
+                self._narrate_v2_page.sync_all_covers()
             self._stack.setCurrentIndex(self._pages[page_key])
 
     def switch_to_project_wizard(self, data) -> None:
@@ -319,6 +330,51 @@ class ContentArea(QFrame):
     def _on_narrate_wizard_cancelled(self) -> None:
         self._remove_wizard_from_stack()
         self.switch_to("short_drama_narrate")
+
+    def switch_to_narrate_v2_wizard(self, data) -> None:
+        from clip_synth.ui.pages.narrate_v2.narrate_v2_wizard import NarrateV2Wizard
+
+        video_paths, project_name = data
+
+        project = self._narrate_project_state_service.create_project(
+            video_paths, name=project_name, version=2,
+        )
+        if video_paths:
+            self._async_extract_cover(video_paths[0], project.id)
+
+        wizard_page = NarrateV2Wizard(
+            project.id, project_name, video_paths, self._settings_service,
+            self._narrate_project_state_service,
+        )
+        wizard_page.finished.connect(self._on_narrate_v2_wizard_finished)
+        wizard_page.cancelled.connect(self._on_narrate_v2_wizard_cancelled)
+        self._stack.addWidget(wizard_page)
+        self._stack.setCurrentIndex(self._stack.count() - 1)
+
+    def open_narrate_v2_project(self, project_id: str) -> None:
+        from clip_synth.ui.pages.narrate_v2.narrate_v2_wizard import NarrateV2Wizard
+
+        project = self._narrate_project_state_service.load_project(project_id)
+        if not project:
+            return
+
+        video_paths = [v.video_path for v in project.videos]
+        wizard_page = NarrateV2Wizard(
+            project.id, project.name, video_paths, self._settings_service,
+            self._narrate_project_state_service,
+        )
+        wizard_page.finished.connect(self._on_narrate_v2_wizard_finished)
+        wizard_page.cancelled.connect(self._on_narrate_v2_wizard_cancelled)
+        self._stack.addWidget(wizard_page)
+        self._stack.setCurrentIndex(self._stack.count() - 1)
+
+    def _on_narrate_v2_wizard_finished(self) -> None:
+        self._remove_wizard_from_stack()
+        self.switch_to("short_drama_narrate_v2")
+
+    def _on_narrate_v2_wizard_cancelled(self) -> None:
+        self._remove_wizard_from_stack()
+        self.switch_to("short_drama_narrate_v2")
 
     def _remove_wizard_from_stack(self) -> None:
         sender = self.sender()

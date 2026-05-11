@@ -248,7 +248,7 @@ class SettingsPage(QFrame):
         scroll_layout.addWidget(self._vision_model_group)
 
         self._doubao_voice_group = DoubaoVoiceConfigGroup(
-            "豆包语音配置",
+            "火山引擎配置",
             self._settings.doubao_voice,
         )
         scroll_layout.addWidget(self._doubao_voice_group)

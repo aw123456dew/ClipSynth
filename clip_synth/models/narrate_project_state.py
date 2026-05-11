@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from clip_synth.models.project_state import VideoProjectState
 
@@ -12,6 +12,8 @@ class NarrateProjectState:
     cover_path: Optional[str] = None
     videos: List[VideoProjectState] = field(default_factory=list)
     current_step: int = 0
+    version: int = 1
+    extra_data: Dict[str, Any] = field(default_factory=dict)
     clipping_style: str = "emotional"
     narration_language: str = "zh"
     original_sound_ratio: int = 0

@@ -29,6 +29,7 @@ class NarrateProjectStateService:
         video_paths: list[str],
         name: Optional[str] = None,
         cover_path: Optional[str] = None,
+        version: int = 1,
     ) -> NarrateProjectState:
         from uuid import uuid4
         project_id = str(uuid4())
@@ -45,12 +46,13 @@ class NarrateProjectStateService:
             cover_path=cover_path,
             videos=videos,
             current_step=0,
+            version=version,
             created_at=time.time(),
             updated_at=time.time(),
         )
 
         self.save_project(project)
-        logger.info(f"创建新解说项目: {project_name} (ID: {project_id})")
+        logger.info(f"创建新解说项目: {project_name} (ID: {project_id}, version={version})")
         return project
 
     def save_project(self, project: NarrateProjectState) -> None:
@@ -63,6 +65,8 @@ class NarrateProjectStateService:
             "cover_path": project.cover_path,
             "videos": [],
             "current_step": project.current_step,
+            "version": project.version,
+            "extra_data": project.extra_data,
             "clipping_style": project.clipping_style,
             "narration_language": project.narration_language,
             "original_sound_ratio": project.original_sound_ratio,
@@ -152,6 +156,8 @@ class NarrateProjectStateService:
                 audio_files=data.get("audio_files", []),
                 tts_engine=data.get("tts_engine", "doubao"),
                 custom_audio_files=data.get("custom_audio_files", []),
+                version=data.get("version", 1),
+                extra_data=data.get("extra_data", {}),
                 created_at=data.get("created_at", time.time()),
                 updated_at=data.get("updated_at", time.time()),
             )
@@ -171,6 +177,9 @@ class NarrateProjectStateService:
                 projects.append(project)
         projects.sort(key=lambda p: p.updated_at, reverse=True)
         return projects
+
+    def list_projects_by_version(self, version: int) -> list[NarrateProjectState]:
+        return [p for p in self.list_projects() if p.version == version]
 
     def delete_project(self, project_id: str) -> bool:
         file_path = self._get_project_file_path(project_id)

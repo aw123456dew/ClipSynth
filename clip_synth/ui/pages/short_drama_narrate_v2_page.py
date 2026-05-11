@@ -1,7 +1,7 @@
+import logging
+
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox,
     QDialog,
     QFileDialog,
     QFrame,
@@ -16,12 +16,15 @@ from PySide6.QtWidgets import (
 )
 
 from clip_synth.services.narrate_project_state_service import NarrateProjectStateService
+from clip_synth.ui.pages.short_drama_narrate_page import NarrateProjectCard
+
+logger = logging.getLogger("clip_synth.narrate_v2")
 
 
-class NarrateNewProjectDialog(QDialog):
+class NarrateV2NewProjectDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("新建解说项目")
+        self.setWindowTitle("新建解说项目 V2")
         self.setFixedSize(420, 220)
         self.setObjectName("newProjectDialog")
         self._setup_ui()
@@ -31,7 +34,7 @@ class NarrateNewProjectDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        title_label = QLabel("新建解说项目")
+        title_label = QLabel("新建解说项目 V2")
         title_label.setObjectName("dialogTitle")
         layout.addWidget(title_label)
 
@@ -43,6 +46,11 @@ class NarrateNewProjectDialog(QDialog):
         self._name_input.setObjectName("dialogNameInput")
         self._name_input.setPlaceholderText("请输入项目名称")
         layout.addWidget(self._name_input)
+
+        desc_label = QLabel("封面将自动从视频第一帧提取")
+        desc_label.setObjectName("dialogFieldHint")
+        desc_label.setStyleSheet("color: #64748b; font-size: 12px;")
+        layout.addWidget(desc_label)
 
         layout.addStretch()
 
@@ -67,105 +75,9 @@ class NarrateNewProjectDialog(QDialog):
         return name if name else "解说项目"
 
 
-class NarrateProjectCard(QFrame):
-    selected_changed = Signal(str, bool)
+class ShortDramaNarrateV2Page(QFrame):
+    start_wizard = Signal(list)
     open_project = Signal(str)
-
-    def __init__(
-        self,
-        name: str,
-        thumbnail_path: str | None = None,
-        project_id: str | None = None,
-        parent: QWidget | None = None,
-    ):
-        super().__init__(parent)
-        self._project_name = name
-        self._thumbnail_path = thumbnail_path
-        self._project_id = project_id
-        self._checked = False
-        self.setObjectName("projectCard")
-        self.setCursor(Qt.PointingHandCursor)
-        self._setup_ui()
-
-    def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.setAlignment(Qt.AlignCenter)
-
-        thumbnail_container = QFrame()
-        thumbnail_container.setObjectName("cardThumbnail")
-        thumbnail_container.setFixedSize(200, 280)
-
-        thumb_layout = QVBoxLayout(thumbnail_container)
-        thumb_layout.setContentsMargins(0, 0, 0, 0)
-        thumb_layout.setAlignment(Qt.AlignCenter)
-
-        self._thumbnail_label = QLabel()
-        self._thumbnail_label.setObjectName("cardThumbnailImage")
-        self._thumbnail_label.setAlignment(Qt.AlignCenter)
-        self._thumbnail_label.setFixedSize(200, 280)
-
-        self._update_thumbnail()
-
-        thumb_layout.addWidget(self._thumbnail_label)
-
-        self._check_box = QCheckBox(thumbnail_container)
-        self._check_box.setObjectName("cardCheckBox")
-        self._check_box.toggled.connect(self._on_check_toggled)
-        self._check_box.move(166, 8)
-        self._check_box.raise_()
-
-        name_label = QLabel(self._project_name)
-        name_label.setObjectName("cardName")
-        name_label.setAlignment(Qt.AlignCenter)
-        name_label.setWordWrap(True)
-        name_label.setFixedWidth(200)
-        name_label.setMinimumHeight(40)
-
-        layout.addWidget(thumbnail_container)
-        layout.addSpacing(8)
-        layout.addWidget(name_label)
-
-    def _update_thumbnail(self) -> None:
-        if self._thumbnail_path:
-            pixmap = QPixmap(self._thumbnail_path)
-            if not pixmap.isNull():
-                self._thumbnail_label.setPixmap(
-                    pixmap.scaled(200, 280, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                )
-                self._thumbnail_label.setScaledContents(True)
-                return
-        self._thumbnail_label.setText("解说项目")
-
-    def set_thumbnail(self, thumbnail_path: str) -> None:
-        self._thumbnail_path = thumbnail_path
-        self._update_thumbnail()
-
-    def _on_check_toggled(self, checked: bool) -> None:
-        self._checked = checked
-        self.setProperty("selected", checked)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self.selected_changed.emit(self._project_id, checked)
-
-    def set_checked(self, checked: bool) -> None:
-        self._check_box.setChecked(checked)
-
-    def is_checked(self) -> bool:
-        return self._check_box.isChecked()
-
-    def mousePressEvent(self, event):  # noqa: N802
-        if self._project_id:
-            self.open_project.emit(self._project_id)
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
-
-class ShortDramaNarratePage(QFrame):
-    start_narrate_wizard = Signal(list)
-    open_narrate_project = Signal(str)
 
     def __init__(
         self,
@@ -188,7 +100,7 @@ class ShortDramaNarratePage(QFrame):
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(24, 16, 24, 16)
 
-        title_label = QLabel("视频解说")
+        title_label = QLabel("视频解说 V2")
         title_label.setObjectName("mixTitle")
         toolbar_layout.addWidget(title_label)
 
@@ -204,10 +116,10 @@ class ShortDramaNarratePage(QFrame):
         self._delete_btn.clicked.connect(self._on_delete_selected)
         toolbar_layout.addWidget(self._delete_btn)
 
-        self._new_project_btn = QPushButton("新增项目")
-        self._new_project_btn.setObjectName("mixNewProjectBtn")
-        self._new_project_btn.clicked.connect(self._on_new_project)
-        toolbar_layout.addWidget(self._new_project_btn)
+        new_project_btn = QPushButton("新增项目")
+        new_project_btn.setObjectName("mixNewProjectBtn")
+        new_project_btn.clicked.connect(self._on_new_project)
+        toolbar_layout.addWidget(new_project_btn)
 
         layout.addWidget(toolbar)
 
@@ -240,15 +152,14 @@ class ShortDramaNarratePage(QFrame):
         self._cards.clear()
         idx = 0
 
-        projects = self._narrate_project_state_service.list_projects_by_version(1)
+        projects = self._narrate_project_state_service.list_projects_by_version(2)
         for project in projects:
             card = NarrateProjectCard(
                 name=project.name,
                 thumbnail_path=project.cover_path,
                 project_id=project.id,
             )
-            card.open_project.connect(self._on_open_narrate_project)
-            card.selected_changed.connect(self._on_card_selection_changed)
+            card.open_project.connect(self.open_project.emit)
             self._cards.append(card)
             row = idx // 4
             col = idx % 4
@@ -261,8 +172,23 @@ class ShortDramaNarratePage(QFrame):
             empty_label.setAlignment(Qt.AlignCenter)
             self._grid_layout.addWidget(empty_label, 0, 0, 1, 4)
 
+    def refresh_project_cover(self, project_id: str) -> None:
+        project = self._narrate_project_state_service.load_project(project_id)
+        if not project or not project.cover_path:
+            return
+        for card in self._cards:
+            if card._project_id == project_id:
+                card.set_thumbnail(project.cover_path)
+                break
+
+    def sync_all_covers(self) -> None:
+        for card in self._cards:
+            project = self._narrate_project_state_service.load_project(card._project_id)
+            if project and project.cover_path and project.cover_path != card._thumbnail_path:
+                card.set_thumbnail(project.cover_path)
+
     def _on_new_project(self) -> None:
-        dialog = NarrateNewProjectDialog(self)
+        dialog = NarrateV2NewProjectDialog(self)
         if dialog.exec() != QDialog.Accepted:
             return
 
@@ -273,27 +199,7 @@ class ShortDramaNarratePage(QFrame):
             "视频文件 (*.mp4 *.avi *.mov *.mkv);;所有文件 (*.*)",
         )
         if file_paths:
-            self.start_narrate_wizard.emit((file_paths, dialog.project_name, None))
-
-    def refresh_project_cover(self, project_id: str) -> None:
-        """刷新指定项目的封面（由后台封面提取完成后调用）"""
-        project = self._narrate_project_state_service.load_project(project_id)
-        if not project or not project.cover_path:
-            return
-        for card in self._cards:
-            if card._project_id == project_id:
-                card.set_thumbnail(project.cover_path)
-                break
-
-    def sync_all_covers(self) -> None:
-        """从磁盘同步所有项目封面，确保异步提取的封面能更新到已创建的卡片上"""
-        for card in self._cards:
-            project = self._narrate_project_state_service.load_project(card._project_id)
-            if project and project.cover_path and project.cover_path != card._thumbnail_path:
-                card.set_thumbnail(project.cover_path)
-
-    def _on_open_narrate_project(self, project_id: str) -> None:
-        self.open_narrate_project.emit(project_id)
+            self.start_wizard.emit([file_paths, dialog.project_name])
 
     def _on_select_all(self) -> None:
         all_selected = all(card.is_checked() for card in self._cards)
@@ -317,11 +223,3 @@ class ShortDramaNarratePage(QFrame):
 
         self._select_all_btn.setText("全选")
         self._load_projects()
-
-    def _on_card_selection_changed(self, project_id: str, checked: bool) -> None:
-        selected_count = sum(1 for card in self._cards if card.is_checked())
-        if selected_count > 0:
-            all_count = len(self._cards)
-            self._select_all_btn.setText("取消全选" if selected_count == all_count else "全选")
-        else:
-            self._select_all_btn.setText("全选")

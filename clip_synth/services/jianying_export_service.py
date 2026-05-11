@@ -365,6 +365,10 @@ class JianYingExportService:
                     video_path = vs.video_path
                     break
             if not video_path:
+                merged_path = project.extra_data.get("merged_video_path", "")
+                if merged_path and os.path.exists(merged_path):
+                    video_path = merged_path
+            if not video_path:
                 logger.warning(f"无法找到片段 {i+1} 对应的视频，跳过")
                 continue
 

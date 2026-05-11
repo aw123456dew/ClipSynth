@@ -51,6 +51,15 @@ QMenu::separator {
     margin: 4px 8px;
 }
 
+QMenu::section {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 16px 2px 16px;
+    background-color: transparent;
+    border: none;
+}
+
 /* ===== Status Bar ===== */
 QStatusBar {
     background-color: #0d111f;
@@ -593,6 +602,32 @@ QLineEdit::placeholder {
     color: #4a5a7a;
     font-size: 14px;
     padding: 60px 0;
+}
+
+#videoListWidget {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    font-size: 14px;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 8px;
+    outline: none;
+}
+
+#videoListWidget::item {
+    padding: 10px 12px;
+    border-radius: 4px;
+    min-height: 36px;
+    border-bottom: 1px solid #1e293b;
+}
+
+#videoListWidget::item:hover {
+    background-color: #1a1f2e;
+}
+
+#videoListWidget::item:selected {
+    background-color: transparent;
+    color: #e2e8f0;
 }
 
 /* ===== Project Card ===== */
@@ -2295,8 +2330,12 @@ QLineEdit::placeholder {
 }
 
 #voiceCombo::down-arrow, #styleCombo::down-arrow, #langCombo::down-arrow {
-    image: none;
-    border: none;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #94a3b8;
+    margin-right: 8px;
 }
 
 #voiceCombo QAbstractItemView, #styleCombo QAbstractItemView, #langCombo QAbstractItemView {
@@ -3208,4 +3247,232 @@ QSlider::sub-page:horizontal {
 #uploadSubtitleBtn {
     color: #a78bfa;
     border-color: #8b5cf6;
+}
+
+
+/* ===== Recognition Progress Bar ===== */
+#recognitionProgressBar {
+    background-color: #0a0f1a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    text-align: center;
+    color: #e2e8f0;
+    font-size: 12px;
+    min-height: 24px;
+    max-height: 24px;
+}
+
+#recognitionProgressBar::chunk {
+    background-color: #3b82f6;
+    border-radius: 5px;
+}
+
+/* ===== Speaker Cards (Character Recognition V2) ===== */
+#speakerCard {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+
+#speakerCardHeader {
+    background-color: transparent;
+}
+
+#speakerAliasInput {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 13px;
+    min-height: 22px;
+}
+
+#speakerAliasInput:focus {
+    border-color: #6366f1;
+}
+
+#speakerAliasInput:hover {
+    border-color: #475569;
+}
+
+#speakerTextList {
+    background-color: transparent;
+    color: #e2e8f0;
+    font-size: 13px;
+    border: none;
+    padding: 0 8px 8px 8px;
+    outline: none;
+}
+
+#speakerTextList::item {
+    border-bottom: 1px solid #1a2744;
+    padding: 4px 0;
+}
+
+#speakerTextList::item:hover {
+    background-color: #1a1f2e;
+    border-radius: 6px;
+}
+
+#speakerTextItem {
+    background-color: transparent;
+    border-radius: 6px;
+    min-height: 36px;
+}
+
+#speakerTextItem:hover {
+    background-color: #1a1f2e;
+}
+
+#speakerTextEdit {
+    color: #e2e8f0;
+    font-size: 13px;
+    background: transparent;
+    border: none;
+    padding: 2px 4px;
+}
+
+#speakerTextEdit:focus {
+    background-color: #1a1f2e;
+    border: 1px solid #6366f1;
+    border-radius: 4px;
+}
+
+#segmentPreviewBtn {
+    background-color: #1e293b;
+    color: #60a5fa;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 12px;
+    min-width: 50px;
+}
+
+#segmentPreviewBtn:hover {
+    background-color: #1a2744;
+    border-color: #6366f1;
+}
+
+#roleAliasPopup {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+
+#roleAliasBtn {
+    background-color: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 4px 14px;
+    font-size: 12px;
+    min-height: 22px;
+}
+
+#roleAliasBtn:hover {
+    background-color: #1a2744;
+    border-color: #6366f1;
+    color: #ffffff;
+}
+
+/* ===== Generate Script Page (V2) ===== */
+#scriptInputPanel {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 16px;
+}
+
+#scriptConfigPanel {
+    background-color: transparent;
+}
+
+#scriptTextEdit, #scriptRequirementEdit {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 13px;
+    selection-background-color: #1a3a6b;
+}
+
+#scriptTextEdit:focus, #scriptRequirementEdit:focus {
+    border-color: #6366f1;
+}
+
+/* ===== Video Preview Dialog ===== */
+#videoPreviewDialog {
+    background-color: #0a0f1a;
+}
+
+#previewVideoWidget {
+    background-color: #000000;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+}
+
+#previewControlBtn {
+    background-color: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    padding: 6px 14px;
+    font-size: 12px;
+    min-width: 60px;
+}
+
+#previewControlBtn:hover {
+    background-color: #1a2744;
+    border-color: #6366f1;
+}
+
+#previewSlider {
+    background-color: transparent;
+    min-height: 16px;
+}
+
+#previewSlider::groove:horizontal {
+    background-color: #1a2340;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#previewSlider::handle:horizontal {
+    background-color: #6366f1;
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+}
+
+#previewSlider::sub-page:horizontal {
+    background-color: #3b82f6;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#generateScriptBtn {
+    background-color: #3b82f6;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#generateScriptBtn:hover {
+    background-color: #2563eb;
+}
+
+#generateScriptBtn:pressed {
+    background-color: #1d4ed8;
+}
+
+#generateScriptBtn:disabled {
+    background-color: #1e293b;
+    color: #64748b;
 }
