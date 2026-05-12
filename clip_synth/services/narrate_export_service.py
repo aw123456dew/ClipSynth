@@ -143,6 +143,57 @@ def _get_video_resolution(path: str) -> tuple[int, int]:
     return 1920, 1080
 
 
+def _ensure_merged_video(project: NarrateProjectState) -> str | None:
+    """确保合并视频存在，如果不存在则用原始视频重新合并"""
+    merged_path = project.extra_data.get("merged_video_path", "")
+    if merged_path and os.path.exists(merged_path):
+        logger.info("合并视频已存在: %s", merged_path)
+        return merged_path
+
+    if not merged_path:
+        projects_cache_dir = Path(__file__).resolve().parent.parent.parent / "cache" / "projects"
+        merged_path = str(projects_cache_dir / project.id / "merged.mp4")
+        logger.info("推断合并视频路径: %s", merged_path)
+        if os.path.exists(merged_path):
+            project.extra_data["merged_video_path"] = merged_path
+            return merged_path
+
+    video_paths = [vs.video_path for vs in project.videos if vs.video_path and os.path.exists(vs.video_path)]
+    if not video_paths:
+        logger.warning("没有可用的原始视频用于合并")
+        return None
+
+    logger.info("合并视频 %s 不存在，重新合并 %d 个视频", merged_path, len(video_paths))
+    out_dir = os.path.dirname(merged_path)
+    os.makedirs(out_dir, exist_ok=True)
+
+    if len(video_paths) == 1:
+        import shutil
+        shutil.copy2(video_paths[0], merged_path)
+        logger.info("单个视频，直接复制到: %s", merged_path)
+    else:
+        concat_file = os.path.join(out_dir, "concat.txt")
+        try:
+            with open(concat_file, "w", encoding="utf-8") as f:
+                for p in video_paths:
+                    f.write(f"file '{Path(p).resolve()}'\n")
+            cmd = [
+                "ffmpeg", "-f", "concat", "-safe", "0",
+                "-i", concat_file,
+                "-c", "copy", "-y", merged_path,
+            ]
+            _run_cmd(cmd, "合并视频")
+        finally:
+            if os.path.exists(concat_file):
+                os.unlink(concat_file)
+
+    if os.path.exists(merged_path):
+        project.extra_data["merged_video_path"] = merged_path
+        logger.info("合并视频已生成: %s", merged_path)
+        return merged_path
+    return None
+
+
 class NarrateExportService:
     def __init__(self, output_dir: str):
         self._output_dir = Path(output_dir)
@@ -205,6 +256,9 @@ class NarrateExportService:
 
         total = len(scripts)
         try:
+            # 确保合并视频存在，如果缺失则自动重新合并
+            _merged_video_path = _ensure_merged_video(project)
+
             # ---- 第1遍：从原视频按时间戳裁剪出所有片段（保留原声） ----
             if progress_callback:
                 progress_callback("正在裁剪片段...", 5.0)
@@ -215,13 +269,11 @@ class NarrateExportService:
 
                 video_path = seg_video_map.get(script.get("segment_id", ""))
                 if not video_path:
+                    video_path = _merged_video_path
+                if not video_path:
                     for vs in project.videos:
                         video_path = vs.video_path
                         break
-                if not video_path:
-                    merged_path = project.extra_data.get("merged_video_path", "")
-                    if merged_path and os.path.exists(merged_path):
-                        video_path = merged_path
                 if not video_path:
                     raise RuntimeError("无法找到片段对应的视频")
 
@@ -389,6 +441,8 @@ class NarrateExportService:
                 if diff > 0.5:
                     extend_path = str(raw_dir / f"ext_{i:04d}.mp4")
                     video_path = seg_video_map.get(script.get("segment_id", ""))
+                    if not video_path:
+                        video_path = _merged_video_path
                     if not video_path:
                         for vs in project.videos:
                             video_path = vs.video_path

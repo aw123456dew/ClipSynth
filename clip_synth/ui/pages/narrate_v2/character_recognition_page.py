@@ -2,7 +2,7 @@ import json
 import logging
 from collections import defaultdict
 
-from PySide6.QtCore import Qt, QByteArray, QMimeData, Signal
+from PySide6.QtCore import Qt, QByteArray, QMimeData, Signal, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -31,17 +31,20 @@ PRESET_ROLES = [
 
 
 class RoleAliasPopup(QFrame):
-    def __init__(self, parent=None):
+    def __init__(self, input_widget, parent=None):
         super().__init__(parent)
+        self._input_widget = input_widget
         self.setObjectName("roleAliasPopup")
-        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
         self._setup_ui()
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(12, 8, 12, 8)
-        main_layout.setSpacing(8)
+        main_layout.setSpacing(6)
 
         for category, roles in PRESET_ROLES:
             cat_label = QLabel(category)
@@ -61,32 +64,66 @@ class RoleAliasPopup(QFrame):
             main_layout.addLayout(row)
 
     def _select_role(self, role: str):
-        parent_input = self.parent()
-        if isinstance(parent_input, RoleAliasInput):
-            parent_input.setText(role)
+        self._input_widget.setText(role)
+        self._input_widget.setFocus()
         self.close()
 
 
 class RoleAliasInput(QLineEdit):
-    def mousePressEvent(self, event):
-        popup = RoleAliasPopup(self)
-        popup.adjustSize()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._popup = None
+        self.setReadOnly(False)
+        self.setFocusPolicy(Qt.StrongFocus)
 
-        parent_pos = self.mapToGlobal(self.rect().bottomLeft())
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        self.setFocus()
+        self.selectAll()
+        QTimer.singleShot(0, self._show_popup)
+
+    def _show_popup(self):
+        if self._popup is not None:
+            try:
+                self._popup.close()
+            except RuntimeError:
+                pass
+            self._popup = None
+
+        self._popup = RoleAliasPopup(self, None)
+        self._popup.destroyed.connect(self._on_popup_destroyed)
+        self._popup.adjustSize()
+
+        pos = self.mapToGlobal(self.rect().bottomLeft())
         screen = self.screen()
         if screen:
             screen_geo = screen.availableGeometry()
-            popup_right = parent_pos.x() + popup.width()
+            popup_right = pos.x() + self._popup.width()
             if popup_right > screen_geo.right():
-                parent_pos.setX(screen_geo.right() - popup.width())
-            popup_bottom = parent_pos.y() + popup.height()
+                pos.setX(max(screen_geo.left(), screen_geo.right() - self._popup.width()))
+            popup_bottom = pos.y() + self._popup.height()
             if popup_bottom > screen_geo.bottom():
-                parent_pos.setY(self.mapToGlobal(self.rect().topLeft()).y() - popup.height())
+                pos.setY(self.mapToGlobal(self.rect().topLeft()).y() - self._popup.height())
 
-        popup.move(parent_pos)
-        popup.show()
+        self._popup.move(pos)
+        self._popup.show()
 
-        super().mousePressEvent(event)
+    def _on_popup_destroyed(self):
+        self._popup = None
+
+    def focusOutEvent(self, event):
+        QTimer.singleShot(100, self._check_popup)
+        super().focusOutEvent(event)
+
+    def _check_popup(self):
+        if self._popup is not None and not self.hasFocus():
+            pw = self._popup
+            if pw is not None and pw.isVisible():
+                try:
+                    pw.close()
+                except RuntimeError:
+                    pass
+            self._popup = None
 
 
 class EditableTextEdit(QLineEdit):

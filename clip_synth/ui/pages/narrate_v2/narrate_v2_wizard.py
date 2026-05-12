@@ -137,6 +137,7 @@ class NarrateV2Wizard(QFrame):
         self._restore_saved_state()
         self._update_step_indicators()
         self._update_nav_buttons()
+        self._save_current_state()
 
     def _restore_saved_state(self):
         project = self._narrate_project_state_service.load_project(self._project_id)
@@ -150,11 +151,11 @@ class NarrateV2Wizard(QFrame):
         saved_script = project.extra_data.get("script_content", "")
         saved_segments = project.extra_data.get("script_segments", [])
 
-        if saved_script:
-            self._script_page.set_script_content(saved_script)
-
-        if saved_segments:
-            self._script_page._segments = saved_segments
+        logger.info("恢复项目状态: saved_step=%s, saved_segments_count=%s, has_rearranged=%s, has_recognition=%s, has_script=%s",
+                     saved_step, len(saved_segments) if saved_segments else 0,
+                     "yes" if rearranged else "no",
+                     "yes" if saved_data else "no",
+                     "yes" if saved_script else "no")
 
         if rearranged:
             self._recognition_result = saved_data
@@ -172,8 +173,11 @@ class NarrateV2Wizard(QFrame):
                     card._alias_input.setText(alias)
 
         if 0 <= saved_step < self._total_steps:
-            if saved_step >= 2 and saved_segments:
-                self._setup_voice()
+            if saved_step >= 2:
+                self._configure_script_page()
+                if saved_segments:
+                    self._apply_saved_script(saved_script, saved_segments)
+                    self._setup_voice()
             if saved_step >= 3 and saved_segments:
                 self._setup_export()
             self._current_step = saved_step
@@ -181,11 +185,19 @@ class NarrateV2Wizard(QFrame):
             return
 
         if saved_script or saved_segments:
+            self._configure_script_page()
+            self._apply_saved_script(saved_script, saved_segments)
             self._current_step = 2
             self._stack.setCurrentIndex(2)
         elif saved_data:
             self._current_step = 1
             self._stack.setCurrentIndex(1)
+
+    def _apply_saved_script(self, script_content: str, segments: list):
+        if script_content:
+            self._script_page.set_script_content(script_content)
+        if segments:
+            self._script_page._segments = segments
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -324,16 +336,12 @@ class NarrateV2Wizard(QFrame):
     def _on_subtitle_done(self, result: dict):
         if self._current_step == 0:
             self._recognition_result = result
-            project = self._narrate_project_state_service.load_project(self._project_id)
-            if project:
-                project.extra_data["recognition_result"] = result
-                project.extra_data["saved_step"] = 1
-                self._narrate_project_state_service.save_project(project)
             self._character_page.load_recognition_data(result)
             self._current_step = 1
             self._stack.setCurrentIndex(self._current_step)
             self._update_step_indicators()
             self._update_nav_buttons()
+            self._save_current_state()
 
     def _on_prev(self):
         if self._current_step > 0:
@@ -341,35 +349,36 @@ class NarrateV2Wizard(QFrame):
             self._stack.setCurrentIndex(self._current_step)
             self._update_step_indicators()
             self._update_nav_buttons()
+            self._save_current_state()
 
     def _on_next(self):
         if self._current_step < self._total_steps - 1:
             if self._current_step == 1:
-                settings = self._settings_service.load()
-                text_config = settings.text_model
-                ai_config = AIModelConfig(
-                    model_name=text_config.model_name,
-                    api_key=text_config.api_key,
-                    base_url=text_config.base_url,
-                )
-                self._script_page.configure(
-                    ai_config,
-                    self._character_page.get_utterances(),
-                    self._character_page.get_speaker_aliases(),
-                )
-            if self._current_step == 2 and not self._script_page.is_script_valid():
-                QMessageBox.warning(
-                    self,
-                    "提示",
-                    "请先点击「开始生成解说文案」按钮生成文案，或确认输入框中有正确的 JSON 数据再继续。",
-                )
-                return
+                self._configure_script_page()
             if self._current_step == 2:
+                valid, msg = self._script_page.validate_script()
+                if not valid:
+                    QMessageBox.warning(self, "解说文案验证失败", msg)
+                    return
                 self._setup_voice()
             if self._current_step == 3:
                 self._on_generate_tts()
                 return
             self._advance()
+
+    def _configure_script_page(self):
+        settings = self._settings_service.load()
+        text_config = settings.text_model
+        ai_config = AIModelConfig(
+            model_name=text_config.model_name,
+            api_key=text_config.api_key,
+            base_url=text_config.base_url,
+        )
+        self._script_page.configure(
+            ai_config,
+            self._character_page.get_utterances(),
+            self._character_page.get_speaker_aliases(),
+        )
 
     def _advance(self):
         if self._current_step < self._total_steps - 1:
@@ -377,9 +386,13 @@ class NarrateV2Wizard(QFrame):
             self._stack.setCurrentIndex(self._current_step)
             self._update_step_indicators()
             self._update_nav_buttons()
+            self._save_current_state()
 
     def _setup_voice(self):
         segments = self._script_page.get_script_segments()
+        if not segments:
+            self._script_page.validate_script()
+            segments = self._script_page.get_script_segments()
         scripts = []
         for seg in segments:
             script_text = seg.get("script", "")
@@ -432,9 +445,41 @@ class NarrateV2Wizard(QFrame):
             return
 
         segments = self._script_page.get_script_segments()
+        logger.info("生成配音: get_script_segments 返回 %d 个片段", len(segments) if segments else 0)
+
+        if segments:
+            logger.info("第一个片段 keys=%s, 样例=%s", list(segments[0].keys()) if isinstance(segments[0], dict) else "N/A", str(segments[0])[:200])
+
+        if not segments:
+            logger.info("片段为空，尝试 validate_script 解析编辑器内容")
+            valid, msg = self._script_page.validate_script()
+            if not valid:
+                logger.warning("validate_script 失败: %s", msg)
+                QMessageBox.warning(self, "解说文案验证失败", msg)
+                return
+            segments = self._script_page.get_script_segments()
+            logger.info("validate_script 后获取到 %d 个片段", len(segments) if segments else 0)
+        elif not any(seg.get("script", "").strip() for seg in segments):
+            logger.info("片段存在但缺少 script 字段，强制从编辑器重新解析")
+            valid, msg = self._script_page.validate_script()
+            if not valid:
+                logger.warning("validate_script 失败: %s", msg)
+                QMessageBox.warning(self, "解说文案验证失败", msg)
+                return
+            segments = self._script_page.get_script_segments()
+            logger.info("重新解析后获取到 %d 个片段", len(segments) if segments else 0)
+
+        if segments:
+            logger.info("第一个片段样例: %s", str(segments[0])[:200])
+            empty_script_count = sum(1 for seg in segments if not seg.get("script", "").strip())
+            logger.info("片段中 script 字段为空的数量: %d / %d", empty_script_count, len(segments))
+
         scripts = [{"text": seg.get("script", "")} for seg in segments if seg.get("script", "").strip()]
+        logger.info("过滤后有效文案数: %d", len(scripts))
         if not scripts:
-            logger.error("没有解说文案，无法生成配音")
+            logger.warning("没有有效的解说文案片段. 当前 _current_step=%d, _segments=%s",
+                           self._current_step, str(segments)[:300] if segments else "None")
+            QMessageBox.warning(self, "没有解说文案", "解说文案片段中没有有效的 script 文本，请返回上一步检查解说文案内容。")
             return
 
         settings = self._settings_service.load()
@@ -477,10 +522,6 @@ class NarrateV2Wizard(QFrame):
 
     def _on_tts_finished(self):
         self._generated_audio_files = self._tts_worker.get_audio_paths() if self._tts_worker else []
-        project = self._narrate_project_state_service.load_project(self._project_id)
-        if project:
-            project.audio_files = self._generated_audio_files
-            self._narrate_project_state_service.save_project(project)
 
         self._status_label.setText("配音生成完成！")
         self._next_btn.setEnabled(True)
@@ -488,6 +529,7 @@ class NarrateV2Wizard(QFrame):
         self._status_label.hide()
 
         self._setup_export()
+        self._save_current_state()
         self._advance()
 
     def _on_tts_error(self, error_msg: str):
@@ -522,12 +564,19 @@ class NarrateV2Wizard(QFrame):
         project = self._narrate_project_state_service.load_project(self._project_id)
         if not project:
             return
+        project.current_step = self._current_step
         project.extra_data["saved_step"] = self._current_step
+        if self._recognition_result:
+            project.extra_data["recognition_result"] = self._recognition_result
         project.extra_data["speaker_aliases"] = self._character_page.get_speaker_aliases()
         project.extra_data["rearranged_utterances"] = {
             "utterances": self._character_page.get_utterances(),
             "merged_video_path": self._character_page._merged_video_path,
         }
         project.extra_data["script_content"] = self._script_page.get_script_content()
-        project.extra_data["script_segments"] = self._script_page.get_script_segments()
+        script_segments = self._script_page.get_script_segments()
+        if script_segments and any(seg.get("script", "").strip() for seg in script_segments):
+            project.extra_data["script_segments"] = script_segments
+        if self._generated_audio_files:
+            project.audio_files = self._generated_audio_files
         self._narrate_project_state_service.save_project(project)
