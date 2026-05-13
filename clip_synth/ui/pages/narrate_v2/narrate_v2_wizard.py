@@ -579,4 +579,7 @@ class NarrateV2Wizard(QFrame):
             project.extra_data["script_segments"] = script_segments
         if self._generated_audio_files:
             project.audio_files = self._generated_audio_files
+        # 保存分集模式状态
+        project.episode_mode = self._script_page._episode_mode
+        project.episode_count = len(self._script_page._episodes)
         self._narrate_project_state_service.save_project(project)

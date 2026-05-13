@@ -48,6 +48,11 @@ class NarrateProjectState:
     mask_blur_radius: int = 20
     mask_feather: int = 5  # 羽化值
 
+    # 分集模式
+    episode_mode: bool = False
+    episode_count: int = 1
+    episode_summaries: List[str] = field(default_factory=list)
+
     def is_all_videos_ready(self) -> bool:
         for video_state in self.videos:
             if not video_state.is_all_types_selected():
