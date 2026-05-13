@@ -114,7 +114,7 @@ class SubtitleRecognitionService:
                 params=params,
                 data=audio_bytes,
                 headers=headers,
-                timeout=60,
+                timeout=None,
             )
             logger.info("VC 提交响应状态码: %s", resp.status_code)
             logger.info("VC 提交响应内容: %s", resp.text[:2000])
@@ -152,7 +152,7 @@ class SubtitleRecognitionService:
                 QUERY_URL,
                 params=params,
                 headers=headers,
-                timeout=30,
+                timeout=None,
             )
             return resp.json()
         except requests.RequestException as e:
