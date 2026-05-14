@@ -58,6 +58,11 @@ DURATIONS = [
     "5分钟以上",
 ]
 
+ORIGINAL_SOUND_OPTIONS = [
+    "关闭",
+    "开启",
+]
+
 _STYLE_PROMPT_MAP = {
     "轻松口语化": EASY_TALK_SYSTEM_PROMPT,
     "平铺叙事": PLAIN_NARRATION_SYSTEM_PROMPT,
@@ -247,6 +252,13 @@ class GenerateScriptPage(QFrame):
             self._duration_combo.addItem(d)
         right_layout.addWidget(self._duration_combo)
 
+        right_layout.addWidget(_section_label("是否开启原声"))
+        self._original_sound_combo = QComboBox()
+        self._original_sound_combo.setObjectName("styleCombo")
+        for opt in ORIGINAL_SOUND_OPTIONS:
+            self._original_sound_combo.addItem(opt)
+        right_layout.addWidget(self._original_sound_combo)
+
         right_layout.addWidget(_section_label("附加要求"))
         self._requirement_input = QPlainTextEdit()
         self._requirement_input.setObjectName("scriptRequirementEdit")
@@ -406,9 +418,11 @@ class GenerateScriptPage(QFrame):
         system_prompt = _STYLE_PROMPT_MAP.get(style, SHORT_DRAMA_SYSTEM_PROMPT)
         perspective = self._perspective_combo.currentText()
         extra = self._requirement_input.toPlainText()
+        enable_original_sound = self._original_sound_combo.currentText() == "开启"
 
         script_prompt = build_script_generation_prompt(
             self._utterances, self._speaker_aliases, segments, perspective, extra,
+            enable_original_sound=enable_original_sound,
         )
         logger.info("解说文 prompt 长度=%d", len(script_prompt))
 
@@ -453,6 +467,7 @@ class GenerateScriptPage(QFrame):
         duration = self._duration_combo.currentText()
         perspective = self._perspective_combo.currentText()
         extra = self._requirement_input.toPlainText()
+        enable_original_sound = self._original_sound_combo.currentText() == "开启"
 
         self._episode_worker = EpisodeScriptWorker(
             episodes=self._episodes,
@@ -465,6 +480,7 @@ class GenerateScriptPage(QFrame):
             api_key=self._ai_config.api_key,
             base_url=self._ai_config.base_url,
             model_name=self._ai_config.model_name,
+            enable_original_sound=enable_original_sound,
         )
         self._episode_worker.episode_started.connect(self._on_episode_started)
         self._episode_worker.episode_chunk.connect(self._on_episode_chunk)

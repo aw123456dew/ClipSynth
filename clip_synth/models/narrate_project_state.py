@@ -53,6 +53,9 @@ class NarrateProjectState:
     episode_count: int = 1
     episode_summaries: List[str] = field(default_factory=list)
 
+    # 原声设置
+    enable_original_sound: bool = False
+
     def is_all_videos_ready(self) -> bool:
         for video_state in self.videos:
             if not video_state.is_all_types_selected():

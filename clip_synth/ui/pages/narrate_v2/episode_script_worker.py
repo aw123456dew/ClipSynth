@@ -149,9 +149,12 @@ def get_total_duration_seconds(utterances: list) -> float:
     return _ms_to_sec(end - start)
 
 
-EPISODE_SUMMARY_SYSTEM_PROMPT = """你是一位短剧剧情分析师。请用100字以内总结本集的主要剧情，
-包括：主要人物、核心冲突、关键转折。语言简洁，只陈述事实，不加评价。
-直接输出摘要文字，不要任何前缀或格式。"""
+EPISODE_SUMMARY_SYSTEM_PROMPT = """你是一位短剧剧情分析师。请用100字以内描述本集结尾的剧情状态，重点包括：
+1. 最后一个场景发生了什么（具体动作或对话）
+2. 主要人物当前所处的处境或情绪状态
+3. 尚未解决的悬念或冲突
+
+语言简洁，只陈述事实，不加评价。直接输出文字，不要任何前缀或格式。"""
 
 
 class EpisodeScriptWorker(QThread):
@@ -185,6 +188,7 @@ class EpisodeScriptWorker(QThread):
         api_key: str,
         base_url: str,
         model_name: str,
+        enable_original_sound: bool = False,
         parent=None,
     ):
         super().__init__(parent)
@@ -198,6 +202,7 @@ class EpisodeScriptWorker(QThread):
         self._api_key = api_key
         self._base_url = base_url
         self._model_name = model_name
+        self._enable_original_sound = enable_original_sound
         self._cancelled = False
         self._episode_summaries: list[str] = []  # 每集摘要，用于跨集连贯性
 
@@ -286,6 +291,7 @@ class EpisodeScriptWorker(QThread):
             self._extra_requirements,
             episode_index=ep_idx,
             episode_summary_prev=prev_summary,
+            enable_original_sound=self._enable_original_sound,
         )
         logger.info("第 %d 集: 发送解说文案请求 (prompt=%d 字)", ep_idx + 1, len(script_prompt))
 
@@ -323,11 +329,13 @@ class EpisodeScriptWorker(QThread):
         """生成本集剧情摘要，用于下一集的连贯性 prompt"""
         client = _create_client(self._api_key, self._base_url)
 
-        # 提取本集的解说文案作为摘要素材
+        # 提取本集最后几个片段的解说文案，重点关注结尾状态
         scripts = [seg.get("script", "") for seg in segments if seg.get("script", "").strip()]
-        script_text = "".join(scripts)[:1500]  # 限制长度
+        # 优先取最后 3 个片段，让摘要聚焦在结尾
+        tail_scripts = scripts[-3:] if len(scripts) > 3 else scripts
+        script_text = "".join(tail_scripts)[:1500]
 
-        summary_prompt = f"以下是本集的解说文案：\n\n{script_text}\n\n请用100字以内总结本集主要剧情。"
+        summary_prompt = f"以下是本集结尾部分的解说文案：\n\n{script_text}\n\n请描述本集结尾的剧情状态，供下一集开头自然衔接使用。"
 
         response = client.chat.completions.create(
             model=self._model_name,

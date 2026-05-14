@@ -227,6 +227,7 @@ class NarrateExportService:
         proc_dir.mkdir(parents=True, exist_ok=True)
         sub_dir.mkdir(parents=True, exist_ok=True)
         raw_list: List[str] = []
+        raw_script_indices: List[int] = []  # raw_list[j] 对应 scripts[raw_script_indices[j]]
         final_list: List[str] = []
 
         # 字幕设置
@@ -305,6 +306,7 @@ class NarrateExportService:
                 ]
                 _run_cmd(cut_cmd, f"裁剪片段 {i+1}")
                 raw_list.append(raw_path)
+                raw_script_indices.append(i)
 
             if not raw_list:
                 raise RuntimeError("没有有效的片段可导出")
@@ -314,16 +316,15 @@ class NarrateExportService:
                 progress_callback("正在处理片段...", 40.0)
 
             audio_idx = 0
-            for i, script in enumerate(scripts):
-                if i >= len(raw_list):
-                    break
+            for j, raw_path in enumerate(raw_list):
+                script_idx = raw_script_indices[j]
+                script = scripts[script_idx]
 
                 if progress_callback:
-                    progress_callback(f"处理第 {i+1}/{len(raw_list)} 个片段...", 40.0 + (i / len(raw_list)) * 45.0)
+                    progress_callback(f"处理第 {j+1}/{len(raw_list)} 个片段...", 40.0 + (j / len(raw_list)) * 45.0)
 
                 content_type = script.get("content_type", "narration")
-                raw_path = raw_list[i]
-                final_path = str(proc_dir / f"final_{i:04d}.mp4")
+                final_path = str(proc_dir / f"final_{j:04d}.mp4")
 
                 if content_type == "original_sound":
                     os.rename(raw_path, final_path)
@@ -345,7 +346,7 @@ class NarrateExportService:
 
                 if not audio_path:
                     raise RuntimeError(
-                        f"解说片段 {i+1} 缺少配音文件，请检查音频文件后再试"
+                        f"解说片段 {j+1} 缺少配音文件，请检查音频文件后再试"
                     )
 
                 # 获取视频分辨率
@@ -369,7 +370,7 @@ class NarrateExportService:
                         reference = script.get("narration_script", "") or script.get("text", "") or ""
                         sentences = SubtitleService.merge_words_to_sentences(timestamps, reference_text=reference)
                         if sentences:
-                            subtitle_path = str(sub_dir / f"sub_{i:04d}.srt")
+                            subtitle_path = str(sub_dir / f"sub_{j:04d}.srt")
                             srt_content = SubtitleService.generate_srt(sentences, clip_start_time=0.0)
                             SubtitleService.save_srt(srt_content, subtitle_path)
                             logger.info(f"生成字幕文件: {subtitle_path}")
@@ -439,7 +440,7 @@ class NarrateExportService:
                     final_filter = ",".join(filters)
 
                 if diff > 0.5:
-                    extend_path = str(raw_dir / f"ext_{i:04d}.mp4")
+                    extend_path = str(raw_dir / f"ext_{j:04d}.mp4")
                     video_path = seg_video_map.get(script.get("segment_id", ""))
                     if not video_path:
                         video_path = _merged_video_path
@@ -448,7 +449,6 @@ class NarrateExportService:
                             video_path = vs.video_path
                             break
                     raw_start = _normalize_time(script.get("start_time", "00:00:00"))
-                    start_sec = _time_to_seconds(raw_start)
                     extend_cmd = [
                         "ffmpeg", "-y",
                         "-ss", raw_start,
@@ -461,7 +461,7 @@ class NarrateExportService:
                         "-avoid_negative_ts", "make_zero",
                         extend_path,
                     ]
-                    _run_cmd(extend_cmd, f"扩展片段 {i+1}")
+                    _run_cmd(extend_cmd, f"扩展片段 {j+1}")
 
                     # 添加滤镜（模糊遮罩 + 字幕）
                     if final_filter:
@@ -490,11 +490,11 @@ class NarrateExportService:
                             "-shortest",
                             final_path,
                         ]
-                    _run_cmd(overlay_cmd, f"配音扩展 {i+1}")
+                    _run_cmd(overlay_cmd, f"配音扩展 {j+1}")
                 else:
                     if audio_duration <= 0 or raw_duration <= 0:
-                        logger.warning("片段 %d: 时长信息无效 (raw=%.2f, audio=%.2f)，跳过加速处理", i + 1, raw_duration, audio_duration)
-                        mute_path = str(raw_dir / f"mute_{i:04d}.mp4")
+                        logger.warning("片段 %d: 时长信息无效 (raw=%.2f, audio=%.2f)，跳过加速处理", j + 1, raw_duration, audio_duration)
+                        mute_path = str(raw_dir / f"mute_{j:04d}.mp4")
                         mute_cmd = [
                             "ffmpeg", "-y",
                             "-i", raw_path,
@@ -502,12 +502,12 @@ class NarrateExportService:
                             "-an",
                             mute_path,
                         ]
-                        _run_cmd(mute_cmd, f"静音 {i+1}")
+                        _run_cmd(mute_cmd, f"静音 {j+1}")
                         input_video_path = mute_path
                     else:
                         speed = raw_duration / audio_duration
                         if speed > 1.0:
-                            speed_path = str(raw_dir / f"speed_{i:04d}.mp4")
+                            speed_path = str(raw_dir / f"speed_{j:04d}.mp4")
                             speed_cmd = [
                                 "ffmpeg", "-y",
                                 "-i", raw_path,
@@ -518,10 +518,10 @@ class NarrateExportService:
                                 "-crf", "23",
                                 speed_path,
                             ]
-                            _run_cmd(speed_cmd, f"加速片段 {i+1}")
+                            _run_cmd(speed_cmd, f"加速片段 {j+1}")
                             input_video_path = speed_path
                         else:
-                            mute_path = str(raw_dir / f"mute_{i:04d}.mp4")
+                            mute_path = str(raw_dir / f"mute_{j:04d}.mp4")
                             mute_cmd = [
                                 "ffmpeg", "-y",
                                 "-i", raw_path,
@@ -529,7 +529,7 @@ class NarrateExportService:
                                 "-an",
                                 mute_path,
                             ]
-                            _run_cmd(mute_cmd, f"静音 {i+1}")
+                            _run_cmd(mute_cmd, f"静音 {j+1}")
                             input_video_path = mute_path
 
                     # 添加滤镜（模糊遮罩 + 字幕）
@@ -559,7 +559,7 @@ class NarrateExportService:
                             "-shortest",
                             final_path,
                         ]
-                    _run_cmd(overlay_cmd, f"配音合成 {i+1}")
+                    _run_cmd(overlay_cmd, f"配音合成 {j+1}")
 
                 final_list.append(final_path)
 

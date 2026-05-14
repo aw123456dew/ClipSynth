@@ -409,11 +409,13 @@ class NarrateV2Wizard(QFrame):
         narration_scripts = []
         for seg in segs:
             script_text = seg.get("script", "")
-            if script_text.strip():
+            content_type = seg.get("content_type", "narration")
+            if content_type == "original_sound" or script_text.strip():
                 narration_scripts.append({
                     "text": script_text,
                     "start_time": seg.get("start_time", "00:00:00.000"),
                     "end_time": seg.get("end_time", "00:00:00.000"),
+                    "content_type": content_type,
                 })
         project.narration_scripts = narration_scripts
         project.audio_files = self._generated_audio_files or project.audio_files
@@ -474,7 +476,11 @@ class NarrateV2Wizard(QFrame):
             empty_script_count = sum(1 for seg in segments if not seg.get("script", "").strip())
             logger.info("片段中 script 字段为空的数量: %d / %d", empty_script_count, len(segments))
 
-        scripts = [{"text": seg.get("script", "")} for seg in segments if seg.get("script", "").strip()]
+        scripts = [
+            {"text": seg.get("script", ""), "content_type": seg.get("content_type", "narration")}
+            for seg in segments
+            if seg.get("content_type", "narration") != "original_sound" and seg.get("script", "").strip()
+        ]
         logger.info("过滤后有效文案数: %d", len(scripts))
         if not scripts:
             logger.warning("没有有效的解说文案片段. 当前 _current_step=%d, _segments=%s",
