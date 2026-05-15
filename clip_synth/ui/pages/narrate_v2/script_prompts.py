@@ -131,7 +131,7 @@ SHORT_DRAMA_SYSTEM_PROMPT = """你是爆款短剧解说文案写手，专为抖�
 }
 - summary: 与输入中的片段简述保持一致即可
 - start_time / end_time: 与输入中的选中片段时间戳完全一致
-- script: 解说文案正文，已包含所有格式要求
+- script: 解说文案正文，已包含所有格式要求。该字段中严禁使用双引号单引号等其他标点符号，只能使用逗号跟句号
 - content_type: 内容类型，"narration" 表示解说配音，"original_sound" 表示使用原片声音（当开启原声功能时，如果该片段主要是引用原片人物的对话，可以标记为 "original_sound"）"""
 
 
@@ -227,7 +227,7 @@ EASY_TALK_SYSTEM_PROMPT = """你是一位亲和力满分的短视频解说员，
 }
 - summary: 与输入中的片段简述保持一致即可
 - start_time / end_time: 与输入中的选中片段时间戳完全一致
-- script: 解说文案正文，已包含所有格式要求
+- script: 解说文案正文，已包含所有格式要求。该字段中严禁使用双引号单引号等其他标点符号，只能使用逗号跟句号
 - content_type: 内容类型，"narration" 表示解说配音，"original_sound" 表示使用原片声音（当开启原声功能时，如果该片段主要是引用原片人物的对话，可以标记为 "original_sound"）"""
 
 
@@ -328,7 +328,7 @@ PLAIN_NARRATION_SYSTEM_PROMPT = """你是一位客观中立的纪录片解说员
 }
 - summary: 与输入中的片段简述保持一致即可
 - start_time / end_time: 与输入中的选中片段时间戳完全一致
-- script: 解说文案正文，已包含所有格式要求
+- script: 解说文案正文，已包含所有格式要求。该字段中严禁使用双引号单引号等其他标点符号，只能使用逗号跟句号
 - content_type: 内容类型，"narration" 表示解说配音，"original_sound" 表示使用原片声音（当开启原声功能时，如果该片段主要是引用原片人物的对话，可以标记为 "original_sound"）"""
 
 
@@ -431,7 +431,7 @@ SPICY_ROAST_SYSTEM_PROMPT = """你是一位毒舌幽默的短视频评论员，�
 }
 - summary: 与输入中的片段简述保持一致即可
 - start_time / end_time: 与输入中的选中片段时间戳完全一致
-- script: 解说文案正文，已包含所有格式要求
+- script: 解说文案正文，已包含所有格式要求。该字段中严禁使用双引号单引号等其他标点符号，只能使用逗号跟句号
 - content_type: 内容类型，"narration" 表示解说配音，"original_sound" 表示使用原片声音（当开启原声功能时，如果该片段主要是引用原片人物的对话，可以标记为 "original_sound"）"""
 
 
