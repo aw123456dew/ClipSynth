@@ -251,6 +251,7 @@ class NarrateV2Wizard(QFrame):
 
         self._subtitle_page = SubtitleRecognitionPage(self._video_paths, self._settings_service, self._project_id)
         self._subtitle_page.recognition_done.connect(self._on_subtitle_done)
+        self._subtitle_page.video_order_changed.connect(self._on_video_order_changed)
         self._stack.addWidget(self._subtitle_page)
 
         self._character_page = CharacterRecognitionPage()
@@ -332,6 +333,19 @@ class NarrateV2Wizard(QFrame):
             self._next_btn.show()
             self._finish_btn.hide()
             self._next_btn.setEnabled(True)
+
+    def _on_video_order_changed(self, new_order: list):
+        self._video_paths = new_order
+        project = self._narrate_project_state_service.load_project(self._project_id)
+        if project:
+            ordered_videos = []
+            for vp in new_order:
+                existing = next((v for v in project.videos if v.video_path == vp), None)
+                if existing:
+                    ordered_videos.append(existing)
+            if ordered_videos:
+                project.videos = ordered_videos
+                self._narrate_project_state_service.save_project(project)
 
     def _on_subtitle_done(self, result: dict):
         if self._current_step == 0:

@@ -2,6 +2,7 @@ import logging
 import os
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -22,17 +23,43 @@ from clip_synth.services.settings_service import SettingsService
 logger = logging.getLogger("clip_synth.narrate_v2")
 
 
+class ReorderableVideoList(QListWidget):
+    order_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QListWidget.InternalMove)
+        self.setSelectionMode(QListWidget.SingleSelection)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        super().dropEvent(event)
+        self.order_changed.emit()
+
+
 class SubtitleRecognitionPage(QFrame):
     recognition_done = Signal(dict)
+    video_order_changed = Signal(list)
 
     def __init__(self, video_paths: list, settings_service: SettingsService,
                  project_id: str = "", parent=None):
         super().__init__(parent)
-        self._video_paths = video_paths
+        self._video_paths = list(video_paths)
         self._settings_service = settings_service
         self._project_id = project_id
         self._worker = None
         self._setup_ui()
+
+    def _sync_video_paths_from_list(self):
+        new_paths = []
+        for i in range(self._video_list.count()):
+            item = self._video_list.item(i)
+            if item:
+                new_paths.append(item.toolTip())
+        self._video_paths = new_paths
+        self.video_order_changed.emit(list(self._video_paths))
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -43,20 +70,24 @@ class SubtitleRecognitionPage(QFrame):
         title.setObjectName("aiStyleTitle")
         layout.addWidget(title)
 
-        video_list = QListWidget()
-        video_list.setObjectName("videoListWidget")
-        video_list.setSelectionMode(QListWidget.NoSelection)
-        video_list.setFocusPolicy(Qt.NoFocus)
-        video_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        video_list.setMinimumHeight(200)
+        hint = QLabel("提示：可拖拽视频列表左侧空白区域调整顺序")
+        hint.setObjectName("dialogFieldHint")
+        hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        layout.addWidget(hint)
+
+        self._video_list = ReorderableVideoList()
+        self._video_list.setObjectName("videoListWidget")
+        self._video_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._video_list.setMinimumHeight(200)
 
         for video_path in self._video_paths:
             filename = os.path.basename(video_path)
             item = QListWidgetItem(f"  {filename}")
             item.setToolTip(video_path)
-            video_list.addItem(item)
+            self._video_list.addItem(item)
 
-        layout.addWidget(video_list, stretch=1)
+        self._video_list.order_changed.connect(self._sync_video_paths_from_list)
+        layout.addWidget(self._video_list, stretch=1)
 
         self._progress_bar = QProgressBar()
         self._progress_bar.setObjectName("recognitionProgressBar")

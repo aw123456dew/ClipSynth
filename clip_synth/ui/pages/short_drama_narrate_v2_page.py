@@ -1,4 +1,5 @@
 import logging
+import os
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -199,6 +200,7 @@ class ShortDramaNarrateV2Page(QFrame):
             "视频文件 (*.mp4 *.avi *.mov *.mkv);;所有文件 (*.*)",
         )
         if file_paths:
+            file_paths.sort(key=lambda p: os.path.basename(p).lower())
             self.start_wizard.emit([file_paths, dialog.project_name])
 
     def _on_select_all(self) -> None:
