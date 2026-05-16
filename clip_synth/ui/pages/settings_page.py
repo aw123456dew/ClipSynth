@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from clip_synth.models.settings import AIModelSettings, AppSettings, DoubaoVoiceSettings
+from clip_synth.models.settings import AIModelSettings, AppSettings, DoubaoVoiceSettings, TencentAsrSettings
 from clip_synth.services.ai_service import AIModelConfig, AIService
 from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.components.toast import show_toast
@@ -202,6 +202,52 @@ class DoubaoVoiceConfigGroup(QGroupBox):
         self._token_input.setText(settings.token)
 
 
+class TencentAsrConfigGroup(QGroupBox):
+    def __init__(
+        self,
+        title: str,
+        settings: TencentAsrSettings,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(title, parent)
+        self._settings = settings
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QFormLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 24, 16, 16)
+
+        self._secret_id_input = QLineEdit()
+        self._secret_id_input.setPlaceholderText("SecretId")
+        self._secret_id_input.setText(self._settings.secret_id)
+        layout.addRow("SecretId:", self._secret_id_input)
+
+        self._secret_key_input = QLineEdit()
+        self._secret_key_input.setPlaceholderText("SecretKey")
+        self._secret_key_input.setEchoMode(QLineEdit.Password)
+        self._secret_key_input.setText(self._settings.secret_key)
+        layout.addRow("SecretKey:", self._secret_key_input)
+
+        self._region_input = QLineEdit()
+        self._region_input.setPlaceholderText("ap-guangzhou")
+        self._region_input.setText(self._settings.region)
+        layout.addRow("Region:", self._region_input)
+
+    def collect_settings(self) -> TencentAsrSettings:
+        return TencentAsrSettings(
+            secret_id=self._secret_id_input.text().strip(),
+            secret_key=self._secret_key_input.text().strip(),
+            region=self._region_input.text().strip() or "ap-guangzhou",
+        )
+
+    def update_settings(self, settings: TencentAsrSettings) -> None:
+        self._settings = settings
+        self._secret_id_input.setText(settings.secret_id)
+        self._secret_key_input.setText(settings.secret_key)
+        self._region_input.setText(settings.region)
+
+
 class SettingsPage(QFrame):
     settings_changed = Signal()
 
@@ -252,6 +298,12 @@ class SettingsPage(QFrame):
             self._settings.doubao_voice,
         )
         scroll_layout.addWidget(self._doubao_voice_group)
+
+        self._tencent_asr_group = TencentAsrConfigGroup(
+            "腾讯云ASR配置",
+            self._settings.tencent_asr,
+        )
+        scroll_layout.addWidget(self._tencent_asr_group)
 
         draft_group = QGroupBox("剪映草稿地址")
         draft_group.setObjectName("draftGroup")
@@ -342,6 +394,7 @@ class SettingsPage(QFrame):
         self._text_model_group.update_settings(self._settings.text_model)
         self._vision_model_group.update_settings(self._settings.vision_model)
         self._doubao_voice_group.update_settings(self._settings.doubao_voice)
+        self._tencent_asr_group.update_settings(self._settings.tencent_asr)
         self._draft_path_input.setText(self._settings.draft_output_dir)
         self._gpu_check.setChecked(self._settings.gpu_accel_enabled)
         self._update_gpu_status()
@@ -350,6 +403,7 @@ class SettingsPage(QFrame):
         self._settings.text_model = self._text_model_group.collect_settings()
         self._settings.vision_model = self._vision_model_group.collect_settings()
         self._settings.doubao_voice = self._doubao_voice_group.collect_settings()
+        self._settings.tencent_asr = self._tencent_asr_group.collect_settings()
         self._settings.draft_output_dir = self._draft_path_input.text().strip()
         self._settings.gpu_accel_enabled = self._gpu_check.isChecked()
 

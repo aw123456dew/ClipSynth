@@ -24,6 +24,10 @@ class SettingsModel(Base):
     doubao_token: Mapped[str] = mapped_column(String(1024), default="")
     tts_params: Mapped[str] = mapped_column(Text, default="")
     gpu_accel_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    tencent_asr_secret_id: Mapped[str] = mapped_column(String(512), default="")
+    tencent_asr_secret_key: Mapped[str] = mapped_column(String(512), default="")
+    tencent_asr_region: Mapped[str] = mapped_column(String(64), default="ap-guangzhou")
+    asr_provider: Mapped[str] = mapped_column(String(32), default="volcengine")
 
 
 @dataclass
@@ -82,11 +86,39 @@ class DoubaoVoiceSettings:
 
 
 @dataclass
+class TencentAsrSettings:
+    secret_id: str = ""
+    secret_key: str = ""
+    region: str = "ap-guangzhou"
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.secret_id and self.secret_key)
+
+    def to_dict(self) -> dict:
+        return {
+            "secret_id": self.secret_id,
+            "secret_key": self.secret_key,
+            "region": self.region,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TencentAsrSettings":
+        return cls(
+            secret_id=data.get("secret_id", ""),
+            secret_key=data.get("secret_key", ""),
+            region=data.get("region", "ap-guangzhou"),
+        )
+
+
+@dataclass
 class AppSettings:
     text_model: AIModelSettings = field(default_factory=AIModelSettings)
     vision_model: AIModelSettings = field(default_factory=AIModelSettings)
     draft_output_dir: str = ""
     doubao_voice: DoubaoVoiceSettings = field(default_factory=DoubaoVoiceSettings)
+    tencent_asr: TencentAsrSettings = field(default_factory=TencentAsrSettings)
+    asr_provider: str = "volcengine"
     tts_params: str = ""
     gpu_accel_enabled: bool = False
 
@@ -96,6 +128,8 @@ class AppSettings:
             "vision_model": self.vision_model.to_dict(),
             "draft_output_dir": self.draft_output_dir,
             "doubao_voice": self.doubao_voice.to_dict(),
+            "tencent_asr": self.tencent_asr.to_dict(),
+            "asr_provider": self.asr_provider,
             "tts_params": self.tts_params,
             "gpu_accel_enabled": self.gpu_accel_enabled,
         }
@@ -107,6 +141,8 @@ class AppSettings:
             vision_model=AIModelSettings.from_dict(data.get("vision_model", {})),
             draft_output_dir=data.get("draft_output_dir", ""),
             doubao_voice=DoubaoVoiceSettings.from_dict(data.get("doubao_voice", {})),
+            tencent_asr=TencentAsrSettings.from_dict(data.get("tencent_asr", {})),
+            asr_provider=data.get("asr_provider", "volcengine"),
             tts_params=data.get("tts_params", ""),
             gpu_accel_enabled=data.get("gpu_accel_enabled", False),
         )

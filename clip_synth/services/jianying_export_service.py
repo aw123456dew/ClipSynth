@@ -160,6 +160,38 @@ def _run_cmd(cmd: List[str], action: str = "处理") -> None:
         raise RuntimeError(f"ffmpeg {action}失败: {error_msg}")
 
 
+def _run_cmd_soft(cmd: List[str], action: str = "处理") -> None:
+    logger.info(f"[ffmpeg] {action}: {' '.join(cmd)}")
+    flags = 0
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        flags = subprocess.CREATE_NO_WINDOW
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=False,
+        creationflags=flags,
+    )
+    _, stderr = proc.communicate()
+    if proc.returncode != 0:
+        error_msg = stderr.decode("utf-8", errors="replace").strip() or "未知错误"
+        raise RuntimeError(f"ffmpeg {action}失败: {error_msg}")
+
+
+def _has_video_stream(filepath: str) -> bool:
+    try:
+        flags = 0
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            flags = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", filepath],
+            capture_output=True, text=True, timeout=10, creationflags=flags,
+        )
+        return result.returncode == 0 and "video" in result.stdout.lower()
+    except Exception:
+        return False
+
+
 def _generate_srt(scripts_data: List[dict], audio_files: List[dict], output_dir: str) -> Optional[str]:
     """从音频文件的时间戳生成合并的SRT字幕文件"""
     from clip_synth.services.subtitle_service import SubtitleService
@@ -484,6 +516,18 @@ class JianYingExportService:
                 "-avoid_negative_ts", "make_zero",
                 seg_video,
             ], f"预裁剪 segment {seg_idx+1}")
+            if not _has_video_stream(seg_video):
+                logger.warning("GPU预裁剪 segment %d 无视频流，使用软件编码重试", seg_idx + 1)
+                _run_cmd_soft([
+                    "ffmpeg", "-y",
+                    "-ss", seg_start,
+                    "-i", video_path,
+                    "-t", str(seg_duration),
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                    "-c:a", "aac", "-b:a", "128k",
+                    "-avoid_negative_ts", "make_zero",
+                    seg_video,
+                ], f"预裁剪 segment {seg_idx+1} (软件重试)")
 
             video_offset = 0.0
             _is_last_narration = parts and parts[-1].get("type") == "narration"
@@ -585,14 +629,14 @@ class JianYingExportService:
 
             duration = actual_duration
 
-            video_segment = VideoSegment(clip_path, trange(f"{current_time}s", f"{duration}s"))
+            video_segment = VideoSegment(clip_path, trange(f"{current_time}s", f"{max(0.001, duration - 0.005)}s"))
             script.add_segment(video_segment, "视频轨道")
 
             if audio_path and os.path.exists(audio_path):
                 audio_dur = _get_video_duration(audio_path)
                 if audio_dur <= 0:
                     audio_dur = duration
-                audio_segment = AudioSegment(audio_path, trange(f"{current_time}s", f"{min(duration, audio_dur)}s"))
+                audio_segment = AudioSegment(audio_path, trange(f"{current_time}s", f"{max(0.001, min(duration, audio_dur) - 0.005)}s"))
                 script.add_segment(audio_segment, "音频轨道")
 
             current_time += duration
@@ -878,7 +922,7 @@ class JianYingExportService:
             # 添加到视频轨道
             video_segment = VideoSegment(
                 clip_path,
-                trange(f"{current_time}s", f"{duration}s")
+                trange(f"{current_time}s", f"{max(0.001, duration - 0.005)}s")
             )
             script.add_segment(video_segment, "视频轨道")
 
@@ -890,7 +934,7 @@ class JianYingExportService:
                     audio_duration = duration
                 audio_segment = AudioSegment(
                     audio_path,
-                    trange(f"{current_time}s", f"{min(duration, audio_duration)}s")
+                    trange(f"{current_time}s", f"{max(0.001, min(duration, audio_duration) - 0.005)}s")
                 )
                 script.add_segment(audio_segment, "音频轨道")
 

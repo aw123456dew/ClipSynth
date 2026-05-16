@@ -1,6 +1,11 @@
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -64,6 +69,269 @@ class RecognitionResult:
     task_id: str = ""
     error_code: int = 0
     error_message: str = ""
+
+
+@dataclass
+class TencentASRConfig:
+    secret_id: str = ""
+    secret_key: str = ""
+    region: str = "ap-guangzhou"
+    engine_model_type: str = "16k_zh_en"
+    channel_num: int = 1
+    res_text_format: int = 3
+    source_type: int = 1
+    speaker_diarization: int = 1
+    speaker_number: int = 0
+    sentence_max_length: int = 0
+    convert_num_mode: int = 1
+    filter_dirty: int = 0
+    filter_punc: int = 0
+    filter_modal: int = 0
+    polling_interval: float = 3.0
+    max_wait_time: float = 600.0
+
+
+BASIC_ONLY_ENGINES = frozenset({
+    "16k_multi_lang", "16k_ja", "16k_ko", "16k_vi", "16k_ms",
+    "16k_id", "16k_fil", "16k_th", "16k_pt", "16k_tr", "16k_ar",
+    "16k_es", "16k_hi", "16k_fr", "16k_zh_medical", "16k_de",
+})
+
+
+def _sign_tc3(secret_id, secret_key, service, host, action, payload, region):
+    algorithm = "TC3-HMAC-SHA256"
+    now = datetime.now(timezone.utc)
+    timestamp = int(now.timestamp())
+    date_str = now.strftime("%Y-%m-%d")
+
+    http_request_method = "POST"
+    canonical_uri = "/"
+    canonical_querystring = ""
+    ct = "application/json; charset=utf-8"
+    canonical_headers = f"content-type:{ct}\nhost:{host}\nx-tc-action:{action.lower()}\n"
+    signed_headers = "content-type;host;x-tc-action"
+    hashed_payload = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    canonical_request = f"{http_request_method}\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{hashed_payload}"
+
+    credential_scope = f"{date_str}/{service}/tc3_request"
+    hashed_canonical = hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+    string_to_sign = f"{algorithm}\n{timestamp}\n{credential_scope}\n{hashed_canonical}"
+
+    def _sign(key, msg):
+        return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
+
+    secret_date = _sign(("TC3" + secret_key).encode("utf-8"), date_str)
+    secret_service = _sign(secret_date, service)
+    secret_signing = _sign(secret_service, "tc3_request")
+    signature = hmac.new(secret_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    authorization = (
+        f"{algorithm} Credential={secret_id}/{credential_scope}, "
+        f"SignedHeaders={signed_headers}, Signature={signature}"
+    )
+
+    return {
+        "Authorization": authorization,
+        "Content-Type": ct,
+        "Host": host,
+        "X-TC-Action": action,
+        "X-TC-Timestamp": str(timestamp),
+        "X-TC-Version": "2019-06-14",
+        "X-TC-Region": region,
+    }
+
+
+class TencentASRService:
+    HOST = "asr.tencentcloudapi.com"
+    SERVICE = "asr"
+
+    def __init__(self, config: TencentASRConfig):
+        self._config = config
+
+    def recognize(self, audio_bytes: bytes) -> RecognitionResult:
+        task_id = self._create_task(audio_bytes)
+        if not task_id:
+            return RecognitionResult(
+                success=False,
+                error_message="提交任务失败",
+            )
+        return self._poll_result(task_id)
+
+    def _create_task(self, audio_bytes: bytes) -> Optional[int]:
+        data_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+        res_text_format = self._config.res_text_format
+        if self._config.engine_model_type in BASIC_ONLY_ENGINES:
+            res_text_format = 0
+
+        body = {
+            "EngineModelType": self._config.engine_model_type,
+            "ChannelNum": self._config.channel_num,
+            "ResTextFormat": res_text_format,
+            "SourceType": self._config.source_type,
+            "Data": data_base64,
+            "DataLen": len(audio_bytes),
+            "SpeakerDiarization": self._config.speaker_diarization,
+            "SpeakerNumber": self._config.speaker_number,
+            "ConvertNumMode": self._config.convert_num_mode,
+            "FilterDirty": self._config.filter_dirty,
+            "FilterPunc": self._config.filter_punc,
+            "FilterModal": self._config.filter_modal,
+        }
+
+        payload = json.dumps(body)
+        headers = _sign_tc3(
+            self._config.secret_id,
+            self._config.secret_key,
+            self.SERVICE,
+            self.HOST,
+            "CreateRecTask",
+            payload,
+            self._config.region,
+        )
+
+        try:
+            logger.info("腾讯ASR提交任务: engine=%s, data_len=%d", self._config.engine_model_type, len(audio_bytes))
+            resp = requests.post(
+                f"https://{self.HOST}/",
+                data=payload,
+                headers=headers,
+                timeout=30,
+            )
+            logger.info("腾讯ASR提交响应: status=%s, body=%s", resp.status_code, resp.text[:2000])
+            resp_data = resp.json()
+            response = resp_data.get("Response", {})
+            error = response.get("Error")
+            if error:
+                logger.error("腾讯ASR提交失败: %s", error)
+                return None
+            task_id = response.get("Data", {}).get("TaskId")
+            if task_id:
+                logger.info("腾讯ASR任务提交成功: task_id=%s", task_id)
+                return task_id
+            logger.error("腾讯ASR提交失败: 未获取到TaskId, 完整响应=%s", resp.text[:2000])
+            return None
+        except requests.RequestException as e:
+            logger.error("腾讯ASR提交请求异常: %s", str(e))
+            return None
+        except (ValueError, KeyError) as e:
+            logger.error("腾讯ASR提交响应解析失败: %s", str(e))
+            return None
+
+    def _query_task(self, task_id: int) -> dict:
+        payload = json.dumps({"TaskId": task_id})
+        headers = _sign_tc3(
+            self._config.secret_id,
+            self._config.secret_key,
+            self.SERVICE,
+            self.HOST,
+            "DescribeTaskStatus",
+            payload,
+            self._config.region,
+        )
+        try:
+            resp = requests.post(
+                f"https://{self.HOST}/",
+                data=payload,
+                headers=headers,
+                timeout=30,
+            )
+            return resp.json()
+        except requests.RequestException as e:
+            logger.error("腾讯ASR查询请求异常: %s", str(e))
+            return {}
+        except ValueError as e:
+            logger.error("腾讯ASR查询响应解析失败: %s", str(e))
+            return {}
+
+    def _poll_result(self, task_id: int) -> RecognitionResult:
+        start_time = time.time()
+
+        while True:
+            elapsed = time.time() - start_time
+            if elapsed > self._config.max_wait_time:
+                logger.error("腾讯ASR轮询超时: task_id=%s, elapsed=%.1fs", task_id, elapsed)
+                return RecognitionResult(
+                    success=False,
+                    task_id=str(task_id),
+                    error_message="识别超时",
+                )
+
+            time.sleep(self._config.polling_interval)
+            resp_data = self._query_task(task_id)
+            response = resp_data.get("Response", {})
+            error = response.get("Error")
+            if error:
+                logger.error("腾讯ASR查询返回错误: %s", error)
+                return RecognitionResult(
+                    success=False,
+                    task_id=str(task_id),
+                    error_message=error.get("Message", "查询失败"),
+                )
+
+            data = response.get("Data", {})
+            status = data.get("Status")
+            status_str = data.get("StatusStr", "")
+
+            logger.debug("腾讯ASR查询: task_id=%s, status=%s, status_str=%s", task_id, status, status_str)
+
+            if status == 0:  # waiting
+                continue
+            elif status == 1:  # doing
+                continue
+            elif status == 2:  # success
+                return self._parse_result(data, task_id)
+            elif status == 3:  # failed
+                return RecognitionResult(
+                    success=False,
+                    task_id=str(task_id),
+                    error_message=data.get("ErrorMsg", "识别失败"),
+                )
+
+    def _parse_result(self, data: dict, task_id: int) -> RecognitionResult:
+        result_detail = data.get("ResultDetail", []) or []
+        full_text = data.get("Result", "")
+
+        utterances = []
+        for detail in result_detail:
+            words_raw = detail.get("Words", []) or []
+            words = []
+            for w in words_raw:
+                words.append(WordInfo(
+                    text=w.get("Word", ""),
+                    start_time=w.get("OffsetStartMs", 0),
+                    end_time=w.get("OffsetEndMs", 0),
+                ))
+
+            speaker_id = detail.get("SpeakerId", 0)
+            speaker = f"说话人{speaker_id}" if speaker_id > 0 else ""
+
+            utterances.append(Utterance(
+                text=detail.get("FinalSentence", ""),
+                start_time=detail.get("StartMs", 0),
+                end_time=detail.get("EndMs", 0),
+                speaker=speaker,
+                words=words,
+            ))
+
+        if not utterances and full_text:
+            utterances.append(Utterance(
+                text=full_text.strip(),
+                start_time=0,
+                end_time=int(data.get("AudioDuration", 0) * 1000),
+                speaker="",
+                words=[],
+            ))
+
+        logger.info("腾讯ASR识别完成: task_id=%s, 文本长度=%d, 分句数=%d",
+                    task_id, len(full_text), len(utterances))
+
+        return RecognitionResult(
+            success=True,
+            text=full_text,
+            utterances=utterances,
+            task_id=str(task_id),
+        )
 
 
 class SubtitleRecognitionService:

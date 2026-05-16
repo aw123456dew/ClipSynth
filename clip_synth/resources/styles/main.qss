@@ -2303,7 +2303,7 @@ QLineEdit::placeholder {
     letter-spacing: 0.5px;
 }
 
-#voiceCombo, #styleCombo, #langCombo {
+#voiceCombo, #styleCombo, #langCombo, #asrProviderCombo {
     background-color: #0a0f1a;
     color: #e2e8f0;
     font-size: 14px;
@@ -2313,23 +2313,23 @@ QLineEdit::placeholder {
     min-height: 28px;
 }
 
-#voiceCombo:hover, #styleCombo:hover, #langCombo:hover {
+#voiceCombo:hover, #styleCombo:hover, #langCombo:hover, #asrProviderCombo:hover {
     border-color: #6366f1;
 }
 
-#voiceCombo:focus, #styleCombo:focus, #langCombo:focus {
+#voiceCombo:focus, #styleCombo:focus, #langCombo:focus, #asrProviderCombo:focus {
     border-color: #6366f1;
     background-color: #0c1322;
 }
 
-#voiceCombo::drop-down, #styleCombo::drop-down, #langCombo::drop-down {
+#voiceCombo::drop-down, #styleCombo::drop-down, #langCombo::drop-down, #asrProviderCombo::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: top right;
     width: 32px;
     border: none;
 }
 
-#voiceCombo::down-arrow, #styleCombo::down-arrow, #langCombo::down-arrow {
+#voiceCombo::down-arrow, #styleCombo::down-arrow, #langCombo::down-arrow, #asrProviderCombo::down-arrow {
     width: 0;
     height: 0;
     border-left: 5px solid transparent;
@@ -2338,7 +2338,7 @@ QLineEdit::placeholder {
     margin-right: 8px;
 }
 
-#voiceCombo QAbstractItemView, #styleCombo QAbstractItemView, #langCombo QAbstractItemView {
+#voiceCombo QAbstractItemView, #styleCombo QAbstractItemView, #langCombo QAbstractItemView, #asrProviderCombo QAbstractItemView {
     background-color: #0d111f;
     color: #e2e8f0;
     font-size: 13px;
@@ -2348,12 +2348,12 @@ QLineEdit::placeholder {
     outline: none;
 }
 
-#voiceCombo QAbstractItemView::item, #styleCombo QAbstractItemView::item, #langCombo QAbstractItemView::item {
+#voiceCombo QAbstractItemView::item, #styleCombo QAbstractItemView::item, #langCombo QAbstractItemView::item, #asrProviderCombo QAbstractItemView::item {
     padding: 8px 12px;
     border-radius: 4px;
 }
 
-#voiceCombo QAbstractItemView::item:hover, #styleCombo QAbstractItemView::item:hover, #langCombo QAbstractItemView::item:hover {
+#voiceCombo QAbstractItemView::item:hover, #styleCombo QAbstractItemView::item:hover, #langCombo QAbstractItemView::item:hover, #asrProviderCombo QAbstractItemView::item:hover {
     background-color: #1a2744;
     color: #60a5fa;
 }
@@ -3352,6 +3352,22 @@ QSlider::sub-page:horizontal {
 #segmentPreviewBtn:hover {
     background-color: #1a2744;
     border-color: #6366f1;
+}
+
+#addSpeakerBtn {
+    background-color: #1a2744;
+    color: #60a5fa;
+    border: 1px dashed #3b82f6;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#addSpeakerBtn:hover {
+    background-color: #1e3050;
+    border-color: #6366f1;
+    color: #93c5fd;
 }
 
 #roleAliasPopup {

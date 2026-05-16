@@ -351,6 +351,7 @@ class CharacterRecognitionPage(QFrame):
         self._recognition_data = None
         self._merged_video_path = ""
         self._speaker_cards: list[SpeakerCard] = []
+        self._user_speaker_counter = 0
         self._setup_ui()
 
     def _setup_ui(self):
@@ -381,6 +382,30 @@ class CharacterRecognitionPage(QFrame):
 
         scroll_area.setWidget(self._scroll_content)
         layout.addWidget(scroll_area, stretch=1)
+
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+
+        self._add_speaker_btn = QPushButton("＋ 新增说话人")
+        self._add_speaker_btn.setObjectName("addSpeakerBtn")
+        self._add_speaker_btn.setCursor(Qt.PointingHandCursor)
+        self._add_speaker_btn.clicked.connect(self._add_new_speaker)
+        btn_row.addWidget(self._add_speaker_btn)
+        btn_row.addStretch()
+
+        layout.addLayout(btn_row)
+
+    def _add_new_speaker(self):
+        self._user_speaker_counter += 1
+        speaker_id = f"user_{self._user_speaker_counter}"
+        card = SpeakerCard(speaker_id, [], self._merged_video_path, self)
+        card._expanded = True
+        card._text_list.setVisible(True)
+        card._expand_arrow.setText("▼")
+        card._count_label.setText("0 条台词")
+        self._speaker_layout.insertWidget(self._speaker_layout.count() - 1 if self._speaker_layout.count() > 0 else 0, card)
+        self._speaker_cards.append(card)
+        self.utterance_moved.emit()
 
     def move_utterance(self, utterance: dict, source_speaker: str, target_speaker: str):
         source_card = self._find_card(source_speaker)

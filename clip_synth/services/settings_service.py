@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from clip_synth.core.database import DatabaseManager
-from clip_synth.models.settings import AIModelSettings, AppSettings, DoubaoVoiceSettings, SettingsModel
+from clip_synth.models.settings import AIModelSettings, AppSettings, DoubaoVoiceSettings, TencentAsrSettings, SettingsModel
 
 
 class SettingsService:
@@ -32,6 +32,12 @@ class SettingsService:
                     app_id=row.doubao_app_id,
                     token=row.doubao_token,
                 ),
+                tencent_asr=TencentAsrSettings(
+                    secret_id=row.tencent_asr_secret_id or "",
+                    secret_key=row.tencent_asr_secret_key or "",
+                    region=row.tencent_asr_region or "ap-guangzhou",
+                ),
+                asr_provider=row.asr_provider or "volcengine",
                 tts_params=row.tts_params or "",
                 gpu_accel_enabled=bool(row.gpu_accel_enabled),
             )
@@ -57,6 +63,10 @@ class SettingsService:
             row.doubao_secret_key = settings.doubao_voice.secret_key
             row.doubao_app_id = settings.doubao_voice.app_id
             row.doubao_token = settings.doubao_voice.token
+            row.tencent_asr_secret_id = settings.tencent_asr.secret_id
+            row.tencent_asr_secret_key = settings.tencent_asr.secret_key
+            row.tencent_asr_region = settings.tencent_asr.region
+            row.asr_provider = settings.asr_provider
             row.tts_params = settings.tts_params
             row.gpu_accel_enabled = settings.gpu_accel_enabled
 

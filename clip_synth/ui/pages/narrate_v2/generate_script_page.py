@@ -257,6 +257,7 @@ class GenerateScriptPage(QFrame):
         self._original_sound_combo.setObjectName("styleCombo")
         for opt in ORIGINAL_SOUND_OPTIONS:
             self._original_sound_combo.addItem(opt)
+        self._original_sound_combo.setCurrentText("开启")
         right_layout.addWidget(self._original_sound_combo)
 
         right_layout.addWidget(_section_label("附加要求"))

@@ -50,7 +50,15 @@ class DatabaseManager:
                 conn.execute(text("ALTER TABLE settings ADD COLUMN tts_params TEXT DEFAULT ''"))
             if "gpu_accel_enabled" not in columns:
                 conn.execute(text("ALTER TABLE settings ADD COLUMN gpu_accel_enabled BOOLEAN DEFAULT 0"))
-            
+            if "tencent_asr_secret_id" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN tencent_asr_secret_id VARCHAR(512) DEFAULT ''"))
+            if "tencent_asr_secret_key" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN tencent_asr_secret_key VARCHAR(512) DEFAULT ''"))
+            if "tencent_asr_region" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN tencent_asr_region VARCHAR(64) DEFAULT 'ap-guangzhou'"))
+            if "asr_provider" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN asr_provider VARCHAR(32) DEFAULT 'volcengine'"))
+
             conn.commit()
 
     @property

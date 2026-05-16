@@ -1,7 +1,9 @@
 import logging
 import os
 import shutil
+import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 logger = logging.getLogger("clip_synth.utils.ffmpeg_helper")
@@ -74,3 +76,79 @@ def add_ffmpeg_to_path() -> None:
     if bundle_dir not in path_env:
         os.environ["PATH"] = bundle_dir + os.pathsep + path_env
         logger.info("已将捆绑的 ffmpeg 目录添加到 PATH: %s", bundle_dir)
+
+
+def get_video_codec(filepath: str) -> str | None:
+    try:
+        flags = 0
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            flags = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_name",
+             "-of", "csv=p=0", filepath],
+            capture_output=True, text=True, timeout=15,
+            creationflags=flags,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        return None
+    except Exception:
+        return None
+
+
+def unify_video_codecs(video_paths: list[str], cache_dir: str) -> list[str]:
+    if len(video_paths) <= 1:
+        return list(video_paths)
+
+    codecs = []
+    for p in video_paths:
+        c = get_video_codec(p)
+        codecs.append(c)
+        logger.info("视频编码检测: %s -> %s", os.path.basename(p), c or "未知")
+
+    valid = [(p, c) for p, c in zip(video_paths, codecs) if c]
+    if len(valid) < 2:
+        return list(video_paths)
+
+    counter = Counter(c for _, c in valid)
+    if len(counter) == 1:
+        logger.info("所有视频编码一致: %s", next(iter(counter)))
+        return list(video_paths)
+
+    majority_codec = counter.most_common(1)[0][0]
+    logger.info("多数编码: %s (%d个), 需要统一 %d 个视频",
+                majority_codec, counter[majority_codec],
+                len(valid) - counter[majority_codec])
+
+    output_paths = []
+    for i, (p, c) in enumerate(zip(video_paths, codecs)):
+        if c == majority_codec or c is None:
+            output_paths.append(p)
+            continue
+
+        transcoded = os.path.join(cache_dir, f"unified_{i:04d}_{majority_codec}.mp4")
+        logger.info("转码 %s: %s → %s", os.path.basename(p), c, majority_codec)
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", p,
+            "-c:v", "libx264" if majority_codec == "h264" else majority_codec,
+            "-preset", "ultrafast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "128k",
+            "-avoid_negative_ts", "make_zero",
+            transcoded,
+        ]
+        flags = 0
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            flags = subprocess.CREATE_NO_WINDOW
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            shell=False, creationflags=flags,
+        )
+        _, stderr = proc.communicate()
+        if proc.returncode != 0:
+            error_msg = stderr.decode("utf-8", errors="replace").strip() or "未知错误"
+            raise RuntimeError(f"视频编码统一转码失败: {error_msg}")
+        output_paths.append(transcoded)
+
+    return output_paths

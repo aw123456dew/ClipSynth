@@ -17,10 +17,54 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from clip_synth.ui.pages.narrate_v2.recognition_worker import RecognitionWorker
+from clip_synth.ui.pages.narrate_v2.recognition_worker import RecognitionWorker, TencentRecognitionWorker
 from clip_synth.services.settings_service import SettingsService
 
 logger = logging.getLogger("clip_synth.narrate_v2")
+
+
+VOLC_ENGINE_OPTIONS = [
+    ("中文普通话（中英混合）", "zh-CN"),
+    ("粤语", "yue"),
+    ("吴语-上海话", "wuu"),
+    ("闽南语", "nan"),
+    ("西南官话", "xghu"),
+    ("中原官话", "zgyu"),
+    ("维语", "ug"),
+    ("英语（美国）", "en-US"),
+    ("日语", "ja-JP"),
+    ("韩语", "ko-KR"),
+    ("西班牙语", "es-MX"),
+    ("俄语", "ru-RU"),
+    ("法语", "fr-FR"),
+]
+
+TENCENT_ENGINE_OPTIONS = [
+    ("中文普通话（中英粤+方言大模型，推荐）", "16k_zh_en"),
+    ("中文普通话（普方英大模型）", "16k_zh_large"),
+    ("中文普通话通用", "16k_zh"),
+    ("中英粤混合", "16k_zh-PY"),
+    ("中文繁体", "16k_zh-TW"),
+    ("粤语", "16k_yue"),
+    ("英语", "16k_en"),
+    ("英语（大模型）", "16k_en_large"),
+    ("日语", "16k_ja"),
+    ("韩语", "16k_ko"),
+    ("越南语", "16k_vi"),
+    ("马来语", "16k_ms"),
+    ("印度尼西亚语", "16k_id"),
+    ("菲律宾语", "16k_fil"),
+    ("泰语", "16k_th"),
+    ("葡萄牙语", "16k_pt"),
+    ("土耳其语", "16k_tr"),
+    ("阿拉伯语", "16k_ar"),
+    ("西班牙语", "16k_es"),
+    ("印地语", "16k_hi"),
+    ("法语", "16k_fr"),
+    ("德语", "16k_de"),
+    ("中文医疗", "16k_zh_medical"),
+    ("多语种自动识别（15语种）", "16k_multi_lang"),
+]
 
 
 class ReorderableVideoList(QListWidget):
@@ -60,6 +104,18 @@ class SubtitleRecognitionPage(QFrame):
                 new_paths.append(item.toolTip())
         self._video_paths = new_paths
         self.video_order_changed.emit(list(self._video_paths))
+
+    def _populate_lang_combo(self, provider):
+        self._lang_combo.blockSignals(True)
+        self._lang_combo.clear()
+        options = TENCENT_ENGINE_OPTIONS if provider == "tencent" else VOLC_ENGINE_OPTIONS
+        for label, code in options:
+            self._lang_combo.addItem(label, code)
+        self._lang_combo.blockSignals(False)
+
+    def _on_provider_changed(self):
+        provider = self._asr_provider_combo.currentData()
+        self._populate_lang_combo(provider)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -106,6 +162,18 @@ class SubtitleRecognitionPage(QFrame):
         bottom_row = QHBoxLayout()
         bottom_row.setSpacing(12)
 
+        provider_label = QLabel("ASR引擎：")
+        provider_label.setStyleSheet("color: #cbd5e1; font-size: 14px;")
+        bottom_row.addWidget(provider_label)
+
+        self._asr_provider_combo = QComboBox()
+        self._asr_provider_combo.setObjectName("asrProviderCombo")
+        self._asr_provider_combo.setMinimumWidth(140)
+        self._asr_provider_combo.addItem("火山引擎", "volcengine")
+        self._asr_provider_combo.addItem("腾讯云ASR", "tencent")
+        self._asr_provider_combo.currentIndexChanged.connect(self._on_provider_changed)
+        bottom_row.addWidget(self._asr_provider_combo)
+
         lang_label = QLabel("字幕语言：")
         lang_label.setStyleSheet("color: #cbd5e1; font-size: 14px;")
         bottom_row.addWidget(lang_label)
@@ -113,24 +181,9 @@ class SubtitleRecognitionPage(QFrame):
         self._lang_combo = QComboBox()
         self._lang_combo.setObjectName("styleCombo")
         self._lang_combo.setMinimumWidth(160)
-        languages = [
-            ("中文普通话（中英混合）", "zh-CN"),
-            ("粤语", "yue"),
-            ("吴语-上海话", "wuu"),
-            ("闽南语", "nan"),
-            ("西南官话", "xghu"),
-            ("中原官话", "zgyu"),
-            ("维语", "ug"),
-            ("英语（美国）", "en-US"),
-            ("日语", "ja-JP"),
-            ("韩语", "ko-KR"),
-            ("西班牙语", "es-MX"),
-            ("俄语", "ru-RU"),
-            ("法语", "fr-FR"),
-        ]
-        for label, code in languages:
-            self._lang_combo.addItem(label, code)
         bottom_row.addWidget(self._lang_combo)
+
+        self._populate_lang_combo("volcengine")
 
         bottom_row.addStretch()
 
@@ -145,25 +198,45 @@ class SubtitleRecognitionPage(QFrame):
 
     def _on_start_recognition(self):
         settings = self._settings_service.load()
-        doubao = settings.doubao_voice
-        if not doubao.is_configured:
-            self._status_label.setText("请先在系统配置中配置豆包语音参数")
-            self._status_label.show()
-            return
+        provider = self._asr_provider_combo.currentData()
 
-        language = self._lang_combo.currentData()
+        if provider == "tencent":
+            tencent = settings.tencent_asr
+            if not tencent.is_configured:
+                self._status_label.setText("请先在系统配置中配置腾讯云ASR参数")
+                self._status_label.show()
+                return
+        else:
+            doubao = settings.doubao_voice
+            if not doubao.is_configured:
+                self._status_label.setText("请先在系统配置中配置豆包语音参数")
+                self._status_label.show()
+                return
+
+        engine = self._lang_combo.currentData()
         self._start_btn.setEnabled(False)
         self._progress_bar.show()
         self._status_label.setText("正在准备...")
         self._status_label.show()
 
-        self._worker = RecognitionWorker(
-            self._video_paths,
-            language,
-            doubao.app_id,
-            doubao.token,
-            self._project_id,
-        )
+        if provider == "tencent":
+            self._worker = TencentRecognitionWorker(
+                self._video_paths,
+                engine,
+                settings.tencent_asr.secret_id,
+                settings.tencent_asr.secret_key,
+                settings.tencent_asr.region,
+                self._project_id,
+            )
+        else:
+            doubao = settings.doubao_voice
+            self._worker = RecognitionWorker(
+                self._video_paths,
+                engine,
+                doubao.app_id,
+                doubao.token,
+                self._project_id,
+            )
         self._worker.progress.connect(self._on_progress)
         self._worker.recognition_finished.connect(self._on_recognition_finished)
         self._worker.error.connect(self._on_recognition_error)
