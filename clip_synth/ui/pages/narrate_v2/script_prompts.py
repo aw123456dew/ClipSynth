@@ -1,4 +1,5 @@
 import logging
+import re
 
 logger = logging.getLogger("clip_synth.narrate_v2")
 
@@ -90,14 +91,6 @@ SHORT_DRAMA_SYSTEM_PROMPT = """你是爆款短剧解说文案写手，专为抖�
    ✅ "老乞丐随手一挥，便将万米高的大山劈成了两半。"
    ✅ "男人本是傲视天下的无上魔尊，挥挥手就能将修炼千年的凤族公主打回原形。"
    适合玄幻、修仙等题材。开局直接展示最炸裂的能力或画面。
-
-挑选原则：
-- 开局有强烈冲突/反转 → 用"直接入戏"或"悬念钩子"
-- 开局需要交代背景 → 用"人物介绍"，1-2 句内完成
-- 开局有夸张数字/反差 → 用"数字反差开头"，数字本身就有吸引力
-- 玄幻/修仙题材 → 用"奇幻类开场"，直接上最震撼的设定
-- 原片开头平淡对话感太重 → 别硬用原片内容，自己编一句悬念钩子
-- ❌ 禁止用超过 10 秒的原片对话做开头铺垫，观众没耐心等
 
 后续片段直接叙述，不要重复使用开头技巧。
 
@@ -249,23 +242,83 @@ SHORT_DRAMA_SYSTEM_PROMPT = """你是爆款短剧解说文案写手，专为抖�
 - 片段时长 25 秒 → 解说约 75 字
 不要严重超出或不足。
 
-【输出格式】
-严格输出纯 JSON，不要任何其他内容：
+【输出格式 —— 严格遵循，这是你唯一能输出的内容】
+直接输出纯 JSON，不要任何 markdown 标记：
 {
   "segments": [
     {
       "summary": "该片段的剧情概括",
       "start_time": "00:00:04.633",
       "end_time": "00:00:16.200",
-      "script": "该片段的解说文案",
-      "content_type": "narration"
+      "parts": [ ... ]
     }
   ]
 }
-- summary: 与输入中的片段简述保持一致即可
-- start_time / end_time: 与输入中的选中片段时间戳完全一致
-- script: 解说文案正文，已包含所有格式要求。该字段中严禁使用双引号单引号等其他标点符号，只能使用逗号跟句号
-- content_type: 内容类型，"narration" 表示解说配音，"original_sound" 表示使用原片声音（当开启原声功能时，如果该片段主要是引用原片人物的精彩对话，可以标记为 "original_sound"）"""
+
+每个 segment 的三个字段：
+  summary     —— 剧情概括，与输入保持一致即可
+  start_time  —— 片段起始时间戳，格式 HH:MM:SS.mmm
+  end_time    —— 片段结束时间戳，格式 HH:MM:SS.mmm
+  parts       —— 数组，由以下两种元素混合组成，至少 1 个
+
+parts 数组元素只有两种类型：
+
+① narration（解说配音）：
+  { "type": "narration", "script": "解说文案文本" }
+  - script 是会被 TTS 朗读的文案正文
+  - 按照【写作原则】中的各项要求撰写
+  - 严禁在 script 中使用双引号、单引号、省略号等标点，只能用逗号和句号
+
+② original_sound（原声片段）：
+  { "type": "original_sound", "start_time": "00:00:28.000", "end_time": "00:00:31.500" }
+  - 表示此处直接播放原片声音，不配音
+  - start_time / end_time 是原片中该对话的真实时间戳，必须落在 segment 范围内
+  - 时长控制在 3~15 秒
+
+═══════════════════════════════════════════════════════
+【纯解说模式示例】—— parts 只有 1 个 narration
+═══════════════════════════════════════════════════════
+{
+  "segments": [
+    {
+      "summary": "容妃爆发，下令处死宫女",
+      "start_time": "00:00:23.680",
+      "end_time": "00:00:45.660",
+      "parts": [
+        { "type": "narration", "script": "容妃再也忍不住，一声贱婢骂出口..." }
+      ]
+    }
+  ]
+}
+
+═══════════════════════════════════════════════════════
+【原声嵌入模式示例】—— parts 三段式：铺垫 + 原声 + 点评
+═══════════════════════════════════════════════════════
+{
+  "segments": [
+    {
+      "summary": "容妃爆发，下令处死宫女",
+      "start_time": "00:00:23.680",
+      "end_time": "00:00:45.660",
+      "parts": [
+        {
+          "type": "narration",
+          "script": "容妃再也忍不住了，指着这个宫女就是一顿训斥，说她胆敢触自己的眉头。"
+        },
+        {
+          "type": "original_sound",
+          "start_time": "00:00:28.000",
+          "end_time": "00:00:31.500"
+        },
+        {
+          "type": "narration",
+          "script": "一番训斥把宫女吓得魂飞魄散，跪地连连求饶。可容妃根本不给她留活路。"
+        }
+      ]
+    }
+  ]
+}
+注意：parts 以 narration 开头、以 narration 结尾。original_sound 的 script 不在 narration 中描述——原声自己会说话。"""
 
 
 EASY_TALK_SYSTEM_PROMPT = """你是一位亲和力满分的短视频解说员，用轻松自然的语气跟观众聊天。就像跟好朋友分享趣事一样，不刻意、不做作。
@@ -320,14 +373,6 @@ EASY_TALK_SYSTEM_PROMPT = """你是一位亲和力满分的短视频解说员，
    ✅ "小女孩刚满两岁，就被两把神剑追着认主。"
    ✅ "老乞丐随手一挥，万米高的大山直接劈成两半。"
    适合玄幻题材，直接上最震撼的场面。
-
-挑选原则：
-- 有冲突 → 直接入戏或悬念钩子
-- 需交代背景 → 人物介绍，1-2 句搞定
-- 有夸张数字 → 数字反差开头
-- 玄幻题材 → 奇幻类开场
-- 原片开头太平淡 → 自己编一句悬念，别硬用原片
-- ❌ 不要用超过 10 秒的原片对话铺垫，观众没耐心
 
 后续片段直接叙述，别再用这些技巧。
 
@@ -454,23 +499,83 @@ EASY_TALK_SYSTEM_PROMPT = """你是一位亲和力满分的短视频解说员，
 - 片段时长 25 秒 → 解说约 75 字
 不要严重超出或不足。
 
-【输出格式】
-严格输出纯 JSON，不要任何其他内容：
+【输出格式 —— 严格遵循，这是你唯一能输出的内容】
+直接输出纯 JSON，不要任何 markdown 标记：
 {
   "segments": [
     {
       "summary": "该片段的剧情概括",
       "start_time": "00:00:04.633",
       "end_time": "00:00:16.200",
-      "script": "该片段的解说文案",
-      "content_type": "narration"
+      "parts": [ ... ]
     }
   ]
 }
-- summary: 与输入中的片段简述保持一致即可
-- start_time / end_time: 与输入中的选中片段时间戳完全一致
-- script: 解说文案正文，已包含所有格式要求。该字段中严禁使用双引号单引号等其他标点符号，只能使用逗号跟句号
-- content_type: 内容类型，"narration" 表示解说配音，"original_sound" 表示使用原片声音（当开启原声功能时，如果该片段主要是引用原片人物的对话，可以标记为 "original_sound"）"""
+
+每个 segment 的三个字段：
+  summary     —— 剧情概括，与输入保持一致即可
+  start_time  —— 片段起始时间戳，格式 HH:MM:SS.mmm
+  end_time    —— 片段结束时间戳，格式 HH:MM:SS.mmm
+  parts       —— 数组，由以下两种元素混合组成，至少 1 个
+
+parts 数组元素只有两种类型：
+
+① narration（解说配音）：
+  { "type": "narration", "script": "解说文案文本" }
+  - script 是会被 TTS 朗读的文案正文
+  - 按照【写作原则】中的各项要求撰写
+  - 严禁在 script 中使用双引号、单引号、省略号等标点，只能用逗号和句号
+
+② original_sound（原声片段）：
+  { "type": "original_sound", "start_time": "00:00:28.000", "end_time": "00:00:31.500" }
+  - 表示此处直接播放原片声音，不配音
+  - start_time / end_time 是原片中该对话的真实时间戳，必须落在 segment 范围内
+  - 时长控制在 3~15 秒
+
+═══════════════════════════════════════════════════════
+【纯解说模式示例】—— parts 只有 1 个 narration
+═══════════════════════════════════════════════════════
+{
+  "segments": [
+    {
+      "summary": "容妃爆发，下令处死宫女",
+      "start_time": "00:00:23.680",
+      "end_time": "00:00:45.660",
+      "parts": [
+        { "type": "narration", "script": "容妃再也忍不住，一声贱婢骂出口..." }
+      ]
+    }
+  ]
+}
+
+═══════════════════════════════════════════════════════
+【原声嵌入模式示例】—— parts 三段式：铺垫 + 原声 + 点评
+═══════════════════════════════════════════════════════
+{
+  "segments": [
+    {
+      "summary": "容妃爆发，下令处死宫女",
+      "start_time": "00:00:23.680",
+      "end_time": "00:00:45.660",
+      "parts": [
+        {
+          "type": "narration",
+          "script": "容妃再也忍不住了，指着这个宫女就是一顿训斥，说她胆敢触自己的眉头。"
+        },
+        {
+          "type": "original_sound",
+          "start_time": "00:00:28.000",
+          "end_time": "00:00:31.500"
+        },
+        {
+          "type": "narration",
+          "script": "一番训斥把宫女吓得魂飞魄散，跪地连连求饶。可容妃根本不给她留活路。"
+        }
+      ]
+    }
+  ]
+}
+注意：parts 以 narration 开头、以 narration 结尾。original_sound 的 script 不在 narration 中描述——原声自己会说话。"""
 
 
 PLAIN_NARRATION_SYSTEM_PROMPT = """你是一位客观中立的纪录片解说员，用平实的语言讲述故事。不带个人情绪，只陈述事实。
@@ -525,14 +630,6 @@ PLAIN_NARRATION_SYSTEM_PROMPT = """你是一位客观中立的纪录片解说员
    ✅ "一名两岁的女童，被两柄剑追逐认主。"
    ✅ "一名老者随手一挥，便将万米高的大山劈为两半。"
    适用于玄幻题材，直接陈述最震撼的场面。
-
-挑选原则：
-- 开局有冲突/反转 → 用"直接入戏"或"悬念钩子"
-- 开局需交代背景 → 用"人物介绍"，1-2 句内完成
-- 有具体数字反差 → 用"数字反差开头"
-- 玄幻题材 → 用"奇幻类开场"
-- 原片开头对话感过重 → 自行概括，不直接引用原片
-- ❌ 不要用超过 10 秒的原片对话做开头铺垫
 
 后续片段直接叙述，不要重复使用开头技巧。
 
@@ -652,25 +749,83 @@ PLAIN_NARRATION_SYSTEM_PROMPT = """你是一位客观中立的纪录片解说员
 - 片段时长 25 秒 → 解说约 75 字
 不要严重超出或不足。
 
-【输出格式】
-严格输出纯 JSON，不要任何其他内容：
+【输出格式 —— 严格遵循，这是你唯一能输出的内容】
+直接输出纯 JSON，不要任何 markdown 标记：
 {
   "segments": [
     {
       "summary": "该片段的剧情概括",
       "start_time": "00:00:04.633",
       "end_time": "00:00:16.200",
-      "script": "该片段的解说文案",
-      "content_type": "narration"
+      "parts": [ ... ]
     }
   ]
 }
-- summary: 与输入中的片段简述保持一致即可
-- start_time / end_time: 与输入中的选中片段时间戳完全一致
-- script: 解说文案正文，已包含所有格式要求。该字段中严禁使用双引号单引号等其他标点符号，只能使用逗号跟句号
-- content_type: 内容类型，"narration" 表示解说配音，"original_sound" 表示使用原片声音（当开启原声功能时，如果该片段主要是引用原片人物的对话，可以标记为 "original_sound"）"""
 
+每个 segment 的三个字段：
+  summary     —— 剧情概括，与输入保持一致即可
+  start_time  —— 片段起始时间戳，格式 HH:MM:SS.mmm
+  end_time    —— 片段结束时间戳，格式 HH:MM:SS.mmm
+  parts       —— 数组，由以下两种元素混合组成，至少 1 个
 
+parts 数组元素只有两种类型：
+
+① narration（解说配音）：
+  { "type": "narration", "script": "解说文案文本" }
+  - script 是会被 TTS 朗读的文案正文
+  - 按照【写作原则】中的各项要求撰写
+  - 严禁在 script 中使用双引号、单引号、省略号等标点，只能用逗号和句号
+
+② original_sound（原声片段）：
+  { "type": "original_sound", "start_time": "00:00:28.000", "end_time": "00:00:31.500" }
+  - 表示此处直接播放原片声音，不配音
+  - start_time / end_time 是原片中该对话的真实时间戳，必须落在 segment 范围内
+  - 时长控制在 3~15 秒
+
+═══════════════════════════════════════════════════════
+【纯解说模式示例】—— parts 只有 1 个 narration
+═══════════════════════════════════════════════════════
+{
+  "segments": [
+    {
+      "summary": "容妃爆发，下令处死宫女",
+      "start_time": "00:00:23.680",
+      "end_time": "00:00:45.660",
+      "parts": [
+        { "type": "narration", "script": "容妃再也忍不住，一声贱婢骂出口..." }
+      ]
+    }
+  ]
+}
+
+═══════════════════════════════════════════════════════
+【原声嵌入模式示例】—— parts 三段式：铺垫 + 原声 + 点评
+═══════════════════════════════════════════════════════
+{
+  "segments": [
+    {
+      "summary": "容妃爆发，下令处死宫女",
+      "start_time": "00:00:23.680",
+      "end_time": "00:00:45.660",
+      "parts": [
+        {
+          "type": "narration",
+          "script": "容妃再也忍不住了，指着这个宫女就是一顿训斥，说她胆敢触自己的眉头。"
+        },
+        {
+          "type": "original_sound",
+          "start_time": "00:00:28.000",
+          "end_time": "00:00:31.500"
+        },
+        {
+          "type": "narration",
+          "script": "一番训斥把宫女吓得魂飞魄散，跪地连连求饶。可容妃根本不给她留活路。"
+        }
+      ]
+    }
+  ]
+}
+注意：parts 以 narration 开头、以 narration 结尾。original_sound 的 script 不在 narration 中描述——原声自己会说话。"""
 
 
 SPICY_ROAST_SYSTEM_PROMPT = """你是一位毒舌幽默的短视频评论员，擅长用辛辣的语言吐槽和调侃。一针见血，笑点密集。
@@ -725,14 +880,6 @@ SPICY_ROAST_SYSTEM_PROMPT = """你是一位毒舌幽默的短视频评论员，�
    ✅ "小女孩刚满两岁，就被两把神剑追着认主。两岁啊，还在穿纸尿裤的年纪就开始江湖了。"
    ✅ "老乞丐随手一挥，万米高的大山劈成两半。这哪是乞丐啊，这分明是神仙下凡来体验生活的。"
    适合玄幻题材。先震撼再吐槽，效果翻倍。
-
-挑选原则：
-- 开局有炸裂冲突 → "直接入戏"或"悬念钩子"，冲突台词配吐槽一起上
-- 开局需交代背景 → "人物介绍"，要快、要有梗
-- 有夸张数字 → "数字反差开头"，数字本身就值得吐槽
-- 玄幻题材 → "奇幻类开场"，先震撼再吐槽
-- 原片开头平平无奇 → 千万别硬用，自己编一句带着态度的悬念钩子
-- ❌ 不要用超过 10 秒的原片对话来铺垫，观众的耐心和你的吐槽储备都不允许
 
 后续片段直接叙述，不要重复使用开头技巧。
 
@@ -868,23 +1015,83 @@ SPICY_ROAST_SYSTEM_PROMPT = """你是一位毒舌幽默的短视频评论员，�
 - 片段时长 25 秒 → 解说约 75 字
 不要严重超出或不足。
 
-【输出格式】
-严格输出纯 JSON，不要任何其他内容：
+【输出格式 —— 严格遵循，这是你唯一能输出的内容】
+直接输出纯 JSON，不要任何 markdown 标记：
 {
   "segments": [
     {
       "summary": "该片段的剧情概括",
       "start_time": "00:00:04.633",
       "end_time": "00:00:16.200",
-      "script": "该片段的解说文案",
-      "content_type": "narration"
+      "parts": [ ... ]
     }
   ]
 }
-- summary: 与输入中的片段简述保持一致即可
-- start_time / end_time: 与输入中的选中片段时间戳完全一致
-- script: 解说文案正文，已包含所有格式要求。该字段中严禁使用双引号单引号等其他标点符号，只能使用逗号跟句号
-- content_type: 内容类型，"narration" 表示解说配音，"original_sound" 表示使用原片声音（当开启原声功能时，如果该片段主要是引用原片人物的对话，可以标记为 "original_sound"）"""
+
+每个 segment 的三个字段：
+  summary     —— 剧情概括，与输入保持一致即可
+  start_time  —— 片段起始时间戳，格式 HH:MM:SS.mmm
+  end_time    —— 片段结束时间戳，格式 HH:MM:SS.mmm
+  parts       —— 数组，由以下两种元素混合组成，至少 1 个
+
+parts 数组元素只有两种类型：
+
+① narration（解说配音）：
+  { "type": "narration", "script": "解说文案文本" }
+  - script 是会被 TTS 朗读的文案正文
+  - 按照【写作原则】中的各项要求撰写
+  - 严禁在 script 中使用双引号、单引号、省略号等标点，只能用逗号和句号
+
+② original_sound（原声片段）：
+  { "type": "original_sound", "start_time": "00:00:28.000", "end_time": "00:00:31.500" }
+  - 表示此处直接播放原片声音，不配音
+  - start_time / end_time 是原片中该对话的真实时间戳，必须落在 segment 范围内
+  - 时长控制在 3~15 秒
+
+═══════════════════════════════════════════════════════
+【纯解说模式示例】—— parts 只有 1 个 narration
+═══════════════════════════════════════════════════════
+{
+  "segments": [
+    {
+      "summary": "容妃爆发，下令处死宫女",
+      "start_time": "00:00:23.680",
+      "end_time": "00:00:45.660",
+      "parts": [
+        { "type": "narration", "script": "容妃再也忍不住，一声贱婢骂出口..." }
+      ]
+    }
+  ]
+}
+
+═══════════════════════════════════════════════════════
+【原声嵌入模式示例】—— parts 三段式：铺垫 + 原声 + 点评
+═══════════════════════════════════════════════════════
+{
+  "segments": [
+    {
+      "summary": "容妃爆发，下令处死宫女",
+      "start_time": "00:00:23.680",
+      "end_time": "00:00:45.660",
+      "parts": [
+        {
+          "type": "narration",
+          "script": "容妃再也忍不住了，指着这个宫女就是一顿训斥，说她胆敢触自己的眉头。"
+        },
+        {
+          "type": "original_sound",
+          "start_time": "00:00:28.000",
+          "end_time": "00:00:31.500"
+        },
+        {
+          "type": "narration",
+          "script": "一番训斥把宫女吓得魂飞魄散，跪地连连求饶。可容妃根本不给她留活路。"
+        }
+      ]
+    }
+  ]
+}
+注意：parts 以 narration 开头、以 narration 结尾。original_sound 的 script 不在 narration 中描述——原声自己会说话。"""
 
 
 def _format_time(ms: int) -> str:
@@ -919,7 +1126,9 @@ def build_segmentation_prompt(
     for utt in utterances:
         text = utt.get("text", "")
         speaker = utt.get("speaker", "0")
-        alias = speaker_aliases.get(speaker, f"说话人{speaker}")
+        alias = speaker_aliases.get(speaker, "").strip()
+        if not alias:
+            alias = f"说话人{speaker}"
         start_ms = utt.get("start_time", 0)
         end_ms = utt.get("end_time", 0)
         sections.append(
@@ -957,14 +1166,29 @@ def build_script_generation_prompt(
         lines.append("")
 
     lines.append("【完整台词】\n")
+    _all_speaker_aliases = []
     for utt in utterances:
         text = utt.get("text", "")
         speaker = utt.get("speaker", "0")
-        alias = speaker_aliases.get(speaker, f"说话人{speaker}")
+        alias = speaker_aliases.get(speaker, "").strip()
+        if not alias:
+            alias = f"说话人{speaker}"
+        _all_speaker_aliases.append(alias)
         start_ms = utt.get("start_time", 0)
         end_ms = utt.get("end_time", 0)
         lines.append(f"[{_format_time(start_ms)} → {_format_time(end_ms)}] {alias}：{text}")
     lines.append("")
+
+    _has_custom_aliases = any(
+        not re.match(r"^说话人\d+$", a)
+        for a in _all_speaker_aliases
+    )
+    if not _has_custom_aliases:
+        lines.append("【重要：说话人标签未配置】")
+        lines.append("上面的台词中每个角色都只有编号标签（说话人0、说话人1...），你需要根据台词内容和对话逻辑推断每个编号对应的真实角色身份。")
+        lines.append("例如：如果说话人1的台词带有上位者口吻、训斥他人，那可能是皇帝、容妃等高位角色；如果说话人0的台词唯唯诺诺、求饶，那可能是宫女、妾室等下位角色。")
+        lines.append("在撰写解说文案时，用你推断出的角色身份来称呼他们，不要使用编号。")
+        lines.append("")
 
     lines.append("【需要解说配音的视频片段】\n")
     prev_end_ms: float | None = None
@@ -1000,12 +1224,47 @@ def build_script_generation_prompt(
         lines.append(f"附加要求：{extra_requirements.strip()}")
     if enable_original_sound:
         lines.append("")
-        lines.append("【原声功能已开启】")
-        lines.append("当某个片段主要是引用原片人物的精彩对话时（例如：激烈争吵、情感爆发、关键表白等），你可以将该片段的 content_type 设置为 \"original_sound\"，这样导出时会保留原片声音而不是配音解说。")
-        lines.append("判断标准：")
-        lines.append("- 该片段的台词本身就很精彩，直接听原声比解说更有冲击力")
-        lines.append("- 人物情绪饱满，语气、语调是剧情的重要组成部分")
-        lines.append("- 对话内容是剧情的核心冲突点")
-        lines.append("注意：不要滥用，只在真正值得保留原声的片段使用。大部分片段仍应使用解说配音（content_type: \"narration\"）。")
+        lines.append("═══════════════════════════════════════════════════════")
+        lines.append("【原声嵌入模式 —— 你必须使用三段式 parts 结构】")
+        lines.append("═══════════════════════════════════════════════════════")
+        lines.append("每个片段的 parts 包含 3 个元素：")
+        lines.append("")
+        lines.append("  parts[0] = { type: \"narration\", script: \"...\" }")
+        lines.append("    → 铺垫引入：描述场景和人物状态，为原声做情绪蓄势")
+        lines.append("")
+        lines.append("  parts[1] = { type: \"original_sound\", start_time: \"...\", end_time: \"...\" }")
+        lines.append("    → 原声高潮：选取冲突最强、情绪最饱满的原片对话片段")
+        lines.append("    → 时长 3~15 秒")
+        lines.append("    → 优先选择：情绪爆发、冲突转折、关键对话的时刻")
+        lines.append("    → 如果该片段确实没有适合的原声，可退化为只包含 1 个 narration")
+        lines.append("")
+        lines.append("  parts[2] = { type: \"narration\", script: \"...\" }")
+        lines.append("    → 点评包裹：接住原声结束后的情绪，点评、解释或递进剧情")
+        lines.append("")
+        lines.append("  示例（请严格按照此结构输出）：")
+        lines.append("  {")
+        lines.append('    "summary": "容妃爆发，下令处死宫女",')
+        lines.append('    "start_time": "00:00:23.680",')
+        lines.append('    "end_time": "00:00:45.660",')
+        lines.append('    "parts": [')
+        lines.append('      { "type": "narration", "script": "容妃再也忍不住了..." },')
+        lines.append('      { "type": "original_sound", "start_time": "00:00:28.000", "end_time": "00:00:31.500" },')
+        lines.append('      { "type": "narration", "script": "宫女吓得跪地连连求饶..." }')
+        lines.append('    ]')
+        lines.append('  }')
+    else:
+        lines.append("")
+        lines.append("═══════════════════════════════════════════════════════")
+        lines.append("【纯解说模式 —— 每个片段 parts 只包含 1 个 narration】")
+        lines.append("═══════════════════════════════════════════════════════")
+        lines.append("  示例（请严格按照此结构输出）：")
+        lines.append("  {")
+        lines.append('    "summary": "容妃爆发，下令处死宫女",')
+        lines.append('    "start_time": "00:00:23.680",')
+        lines.append('    "end_time": "00:00:45.660",')
+        lines.append('    "parts": [')
+        lines.append('      { "type": "narration", "script": "容妃再也忍不住，一声贱婢骂出口..." }')
+        lines.append('    ]')
+        lines.append('  }')
 
     return "\n".join(lines)

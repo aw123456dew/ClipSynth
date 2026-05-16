@@ -403,15 +403,15 @@ class NarrateV2Wizard(QFrame):
             self._save_current_state()
 
     def _setup_voice(self):
+        self._script_page.validate_script()
         segments = self._script_page.get_script_segments()
-        if not segments:
-            self._script_page.validate_script()
-            segments = self._script_page.get_script_segments()
         scripts = []
         for seg in segments:
-            script_text = seg.get("script", "")
-            if script_text.strip():
-                scripts.append({"text": script_text})
+            for part in seg.get("parts", []):
+                if part.get("type") == "narration":
+                    script_text = part.get("script", "").strip()
+                    if script_text:
+                        scripts.append({"text": script_text})
         self._voice_page.set_scripts(scripts)
 
     def _setup_export(self):
@@ -419,19 +419,13 @@ class NarrateV2Wizard(QFrame):
         if not project:
             return
 
+        self._script_page.validate_script()
         segs = self._script_page.get_script_segments()
-        narration_scripts = []
-        for seg in segs:
-            script_text = seg.get("script", "")
-            content_type = seg.get("content_type", "narration")
-            if content_type == "original_sound" or script_text.strip():
-                narration_scripts.append({
-                    "text": script_text,
-                    "start_time": seg.get("start_time", "00:00:00.000"),
-                    "end_time": seg.get("end_time", "00:00:00.000"),
-                    "content_type": content_type,
-                })
-        project.narration_scripts = narration_scripts
+        logger.info("_setup_export: segs=%d, has_parts=%s, first_part_types=%s",
+                     len(segs),
+                     "parts" in segs[0] if segs else "N/A",
+                     [p.get("type") for p in segs[0].get("parts", [])] if segs and "parts" in segs[0] else "N/A")
+        project.narration_scripts = segs
         project.audio_files = self._generated_audio_files or project.audio_files
         project.extra_data["merged_video_path"] = self._character_page._merged_video_path
 
@@ -460,46 +454,25 @@ class NarrateV2Wizard(QFrame):
             self._advance()
             return
 
+        self._script_page.validate_script()
         segments = self._script_page.get_script_segments()
         logger.info("生成配音: get_script_segments 返回 %d 个片段", len(segments) if segments else 0)
 
-        if segments:
-            logger.info("第一个片段 keys=%s, 样例=%s", list(segments[0].keys()) if isinstance(segments[0], dict) else "N/A", str(segments[0])[:200])
-
-        if not segments:
-            logger.info("片段为空，尝试 validate_script 解析编辑器内容")
-            valid, msg = self._script_page.validate_script()
-            if not valid:
-                logger.warning("validate_script 失败: %s", msg)
-                QMessageBox.warning(self, "解说文案验证失败", msg)
-                return
-            segments = self._script_page.get_script_segments()
-            logger.info("validate_script 后获取到 %d 个片段", len(segments) if segments else 0)
-        elif not any(seg.get("script", "").strip() for seg in segments):
-            logger.info("片段存在但缺少 script 字段，强制从编辑器重新解析")
-            valid, msg = self._script_page.validate_script()
-            if not valid:
-                logger.warning("validate_script 失败: %s", msg)
-                QMessageBox.warning(self, "解说文案验证失败", msg)
-                return
-            segments = self._script_page.get_script_segments()
-            logger.info("重新解析后获取到 %d 个片段", len(segments) if segments else 0)
-
-        if segments:
-            logger.info("第一个片段样例: %s", str(segments[0])[:200])
-            empty_script_count = sum(1 for seg in segments if not seg.get("script", "").strip())
-            logger.info("片段中 script 字段为空的数量: %d / %d", empty_script_count, len(segments))
-
-        scripts = [
-            {"text": seg.get("script", ""), "content_type": seg.get("content_type", "narration")}
-            for seg in segments
-            if seg.get("content_type", "narration") != "original_sound" and seg.get("script", "").strip()
-        ]
-        logger.info("过滤后有效文案数: %d", len(scripts))
+        scripts = []
+        for seg_idx, seg in enumerate(segments):
+            for part_idx, part in enumerate(seg.get("parts", [])):
+                if part.get("type") == "narration":
+                    text = part.get("script", "").strip()
+                    if text:
+                        scripts.append({
+                            "text": text,
+                            "segment_index": seg_idx,
+                            "part_index": part_idx,
+                        })
+        logger.info("从 parts 中提取到 %d 段解说文案", len(scripts))
         if not scripts:
-            logger.warning("没有有效的解说文案片段. 当前 _current_step=%d, _segments=%s",
-                           self._current_step, str(segments)[:300] if segments else "None")
-            QMessageBox.warning(self, "没有解说文案", "解说文案片段中没有有效的 script 文本，请返回上一步检查解说文案内容。")
+            logger.warning("没有有效的解说文案片段. 当前 _current_step=%d", self._current_step)
+            QMessageBox.warning(self, "没有解说文案", "解说文案片段中没有有效的 narration 文本，请返回上一步检查解说文案内容。")
             return
 
         settings = self._settings_service.load()

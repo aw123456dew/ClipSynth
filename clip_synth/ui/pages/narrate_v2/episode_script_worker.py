@@ -330,7 +330,13 @@ class EpisodeScriptWorker(QThread):
         client = _create_client(self._api_key, self._base_url)
 
         # 提取本集最后几个片段的解说文案，重点关注结尾状态
-        scripts = [seg.get("script", "") for seg in segments if seg.get("script", "").strip()]
+        scripts = []
+        for seg in segments:
+            for part in seg.get("parts", []):
+                if part.get("type") == "narration":
+                    text = part.get("script", "").strip()
+                    if text:
+                        scripts.append(text)
         # 优先取最后 3 个片段，让摘要聚焦在结尾
         tail_scripts = scripts[-3:] if len(scripts) > 3 else scripts
         script_text = "".join(tail_scripts)[:1500]
@@ -469,4 +475,4 @@ class EpisodeScriptWorker(QThread):
         segments = data.get("segments", [])
         if not isinstance(segments, list):
             return []
-        return [seg for seg in segments if isinstance(seg, dict) and "script" in seg]
+        return [seg for seg in segments if isinstance(seg, dict) and "parts" in seg]

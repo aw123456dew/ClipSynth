@@ -215,6 +215,7 @@ class NarrateExportService:
     ) -> str:
         scripts = project.narration_scripts
         audio_files = project.audio_files
+        logger.info("export_parts 入口: scripts=%d, audio_files=%d", len(scripts), len(audio_files))
         if not scripts:
             raise RuntimeError("没有解说文案，无法导出")
 
@@ -604,6 +605,301 @@ class NarrateExportService:
         except Exception as e:
             logger.error(f"导出失败: {e}", exc_info=True)
             raise
+
+    def export_parts(
+        self,
+        project: NarrateProjectState,
+        progress_callback: Optional[Callable[[str, float], None]] = None,
+    ) -> str:
+        scripts = project.narration_scripts
+        audio_files = project.audio_files
+        if not scripts:
+            raise RuntimeError("没有解说文案，无法导出")
+
+        _merged_video_path = _ensure_merged_video(project)
+        if not _merged_video_path:
+            raise RuntimeError("无法获取合并视频")
+
+        seg_video_map = self._build_segment_video_map(project)
+        video_width, video_height = _get_video_resolution(_merged_video_path)
+
+        output_path = str(self._output_dir / f"{project.name}_成品视频.mp4")
+        seg_dir = self._output_dir / "segments"
+        sub_dir = self._output_dir / "subtitles"
+        seg_dir.mkdir(parents=True, exist_ok=True)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+
+        enable_subtitle = getattr(project, "enable_subtitle", False)
+        subtitle_settings = {
+            "font": getattr(project, "subtitle_font", "Microsoft YaHei"),
+            "font_size": getattr(project, "subtitle_font_size", 24),
+            "font_color": getattr(project, "subtitle_font_color", "#FFFFFF"),
+            "bg_color": getattr(project, "subtitle_bg_color", "#000000"),
+            "bg_opacity": getattr(project, "subtitle_bg_opacity", 50),
+            "position": getattr(project, "subtitle_position", "bottom"),
+            "offset_x": getattr(project, "subtitle_offset_x", 0.5),
+            "offset_y": getattr(project, "subtitle_offset_y", 0.9),
+        }
+
+        enable_remove_subtitle = getattr(project, "enable_remove_subtitle", False)
+        mask_settings = {
+            "mask_x": getattr(project, "mask_x", 0.2),
+            "mask_y": getattr(project, "mask_y", 0.85),
+            "mask_width": getattr(project, "mask_width", 0.6),
+            "mask_height": getattr(project, "mask_height", 0.1),
+            "blur_radius": getattr(project, "mask_blur_radius", 20),
+            "feather": getattr(project, "mask_feather", 5),
+        }
+
+        total = len(scripts)
+        final_segments: list[str] = []
+
+        logger.info("========== export_parts 开始: %d 个片段 ==========", total)
+        for i, s in enumerate(scripts):
+            parts_preview = s.get("parts", [])
+            types = [p.get("type", "?") for p in parts_preview]
+            logger.info("片段 %d: summary=%s, parts=%d, types=%s", i + 1, s.get("summary", "?"), len(parts_preview), types)
+
+        for seg_idx, script in enumerate(scripts):
+            if progress_callback:
+                progress_callback(f"处理第 {seg_idx + 1}/{total} 个片段...", 5.0 + (seg_idx / total) * 75.0)
+
+            video_path = seg_video_map.get(script.get("segment_id", ""))
+            if not video_path:
+                video_path = _merged_video_path
+            if not video_path:
+                for vs in project.videos:
+                    video_path = vs.video_path
+                    break
+
+            seg_start = script.get("start_time", "00:00:00.000")
+            seg_end = script.get("end_time", "00:00:00.000")
+            seg_duration = _time_to_seconds(seg_end) - _time_to_seconds(seg_start)
+            if seg_duration < 0.5:
+                seg_duration = 0.5
+
+            seg_video = str(seg_dir / f"seg_{seg_idx:04d}.mp4")
+            cut_cmd = [
+                "ffmpeg", "-y",
+                "-ss", seg_start,
+                "-i", video_path,
+                "-t", str(seg_duration),
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                "-c:a", "aac", "-b:a", "128k",
+                "-avoid_negative_ts", "make_zero",
+                seg_video,
+            ]
+            _run_cmd(cut_cmd, f"裁剪片段 {seg_idx + 1}")
+
+            parts = script.get("parts", [])
+            logger.info("  片段 %d: parts_count=%d, seg_range=%s~%s", seg_idx + 1, len(parts), seg_start, seg_end)
+            if not parts:
+                logger.warning("  片段 %d: parts 为空，整段保留", seg_idx + 1)
+                final_segments.append(seg_video)
+                continue
+
+            sub_segments: list[str] = []
+            video_offset = 0.0
+            global_subtitle_offset = 0.0
+            all_subtitles: list = []
+
+            for part_idx, part in enumerate(parts):
+                ptype = part.get("type", "")
+                logger.info("    part[%d]: type=%s", part_idx, ptype)
+
+                if ptype == "narration":
+                    audio = self._find_audio_for_part(audio_files, seg_idx, part_idx)
+                    logger.info("    narration: seg=%d part=%d, 找到音频=%s", seg_idx, part_idx, audio.get("path", "无") if audio else "无")
+                    if not audio or not os.path.exists(audio.get("path", "")):
+                        logger.warning("片段 %d part %d 缺少配音文件，跳过", seg_idx + 1, part_idx)
+                        continue
+
+                    audio_path = audio["path"]
+                    audio_dur = _get_media_duration(audio_path)
+                    if audio_dur <= 0:
+                        logger.warning("片段 %d part %d 配音时长无效，跳过", seg_idx + 1, part_idx)
+                        continue
+
+                    sub_out = str(seg_dir / f"seg_{seg_idx:04d}_part_{part_idx:04d}.mp4")
+
+                    blur_filter = None
+                    if enable_remove_subtitle:
+                        blur_filter = _build_blur_filter(
+                            mask_settings["mask_x"], mask_settings["mask_y"],
+                            mask_settings["mask_width"], mask_settings["mask_height"],
+                            mask_settings["blur_radius"],
+                            video_width, video_height,
+                            mask_settings.get("feather", 0),
+                        )
+
+                    sub_filter = None
+                    timestamps = audio.get("timestamps", [])
+                    if enable_subtitle and timestamps:
+                        reference = part.get("script", "") or audio.get("text", "") or ""
+                        sentences = SubtitleService.merge_words_to_sentences(
+                            timestamps, reference_text=reference,
+                        )
+                        if sentences:
+                            # Shift all subtitle times by global offset
+                            for s in sentences:
+                                s.start_time += global_subtitle_offset
+                                s.end_time += global_subtitle_offset
+                            all_subtitles.extend(sentences)
+
+                            current_subtitles = SubtitleService.merge_words_to_sentences(
+                                timestamps, reference_text=reference,
+                            )
+                            drawtext = SubtitleService.build_drawtext_filter(
+                                current_subtitles,
+                                clip_start_time=0.0,
+                                font=subtitle_settings["font"],
+                                font_size=subtitle_settings["font_size"],
+                                font_color=subtitle_settings["font_color"],
+                                bg_color=subtitle_settings["bg_color"],
+                                bg_opacity=subtitle_settings["bg_opacity"],
+                                position=f"custom:{subtitle_settings['offset_x']}:{subtitle_settings['offset_y']}",
+                                video_width=video_width,
+                                video_height=video_height,
+                            )
+                            if drawtext:
+                                sub_filter = drawtext
+
+                    filters = []
+                    if blur_filter:
+                        filters.append(blur_filter)
+                    if sub_filter:
+                        filters.append(sub_filter)
+                    final_filter = ",".join(filters) if filters else None
+
+                    overlay_cmd = [
+                        "ffmpeg", "-y",
+                        "-ss", str(video_offset),
+                        "-i", seg_video,
+                        "-i", audio_path,
+                        "-t", str(audio_dur),
+                    ]
+                    if final_filter:
+                        overlay_cmd.extend([
+                            "-filter:v", final_filter,
+                        ])
+                        overlay_cmd.extend([
+                            "-map", "0:v:0", "-map", "1:a:0",
+                            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                            "-c:a", "aac", "-b:a", "128k",
+                            "-shortest",
+                        ])
+                    else:
+                        overlay_cmd.extend([
+                            "-map", "0:v:0", "-map", "1:a:0",
+                            "-c:v", "copy",
+                            "-c:a", "aac", "-b:a", "128k",
+                            "-shortest",
+                        ])
+
+                    _run_cmd(overlay_cmd, f"合成配音 {seg_idx + 1} part {part_idx + 1}")
+                    sub_segments.append(sub_out)
+                    video_offset += audio_dur
+                    global_subtitle_offset += audio_dur
+
+                elif ptype == "original_sound":
+                    raw_start = _normalize_time(part.get("start_time", seg_start))
+                    raw_end = _normalize_time(part.get("end_time", seg_end))
+                    part_dur = _time_to_seconds(raw_end) - _time_to_seconds(raw_start)
+                    logger.info("    original_sound: %s~%s (dur=%.2fs), video=%s", raw_start, raw_end, part_dur, video_path)
+                    if part_dur <= 0:
+                        logger.warning("    original_sound 时长<=0, 跳过")
+                        continue
+
+                    sub_out = str(seg_dir / f"seg_{seg_idx:04d}_part_{part_idx:04d}.mp4")
+                    cut_cmd = [
+                        "ffmpeg", "-y",
+                        "-ss", raw_start,
+                        "-i", video_path,
+                        "-t", str(part_dur),
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                        "-c:a", "aac", "-b:a", "128k",
+                        sub_out,
+                    ]
+                    _run_cmd(cut_cmd, f"原声片段 {seg_idx + 1}")
+                    sub_segments.append(sub_out)
+                    video_offset += part_dur
+                    global_subtitle_offset += part_dur
+
+            if not sub_segments:
+                logger.warning("  片段 %d: sub_segments 为空!", seg_idx + 1)
+                final_segments.append(seg_video)
+                continue
+
+            logger.info("  片段 %d: 共 %d 个子片段待拼接", seg_idx + 1, len(sub_segments))
+
+            seg_final: str
+            if len(sub_segments) == 1:
+                seg_final = sub_segments[0]
+            else:
+                seg_final = str(seg_dir / f"seg_{seg_idx:04d}_final.mp4")
+                concat_file = str(seg_dir / f"concat_{seg_idx}.txt")
+                try:
+                    with open(concat_file, "w", encoding="utf-8") as f:
+                        for sub in sub_segments:
+                            f.write(f"file '{Path(sub).resolve()}'\n")
+                    concat_cmd = [
+                        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                        "-i", concat_file,
+                        "-c", "copy",
+                        seg_final,
+                    ]
+                    _run_cmd(concat_cmd, f"拼接片段 {seg_idx + 1} 子片段")
+                finally:
+                    if os.path.exists(concat_file):
+                        os.unlink(concat_file)
+
+            final_segments.append(seg_final)
+
+        if not final_segments:
+            raise RuntimeError("没有有效的片段可导出")
+
+        if progress_callback:
+            progress_callback("正在合并所有片段...", 85.0)
+
+        if len(final_segments) == 1:
+            import shutil
+            shutil.copy2(final_segments[0], output_path)
+        else:
+            concat_global = str(self._output_dir / "concat_global.txt")
+            try:
+                with open(concat_global, "w", encoding="utf-8") as f:
+                    for fp in final_segments:
+                        f.write(f"file '{Path(fp).resolve()}'\n")
+                concat_cmd = [
+                    "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                    "-i", concat_global,
+                    "-c", "copy",
+                    output_path,
+                ]
+                _run_cmd(concat_cmd, "合并所有片段")
+            finally:
+                if os.path.exists(concat_global):
+                    os.unlink(concat_global)
+
+        if progress_callback:
+            progress_callback("导出完成", 100.0)
+
+        logger.info(f"parts 模式视频导出完成: {output_path}")
+        return output_path
+
+    def _find_audio_for_part(self, audio_files: list, seg_idx: int, part_idx: int):
+        for af in audio_files:
+            if af.get("segment_index") == seg_idx and af.get("part_index") == part_idx:
+                return af
+        # 兼容旧格式：从零开始顺序匹配
+        flat_idx = 0
+        for af in audio_files:
+            if af.get("segment_index") is not None:
+                continue
+            if flat_idx == seg_idx * 100 + part_idx:
+                return af
+            flat_idx += 1
+        return None
 
     def cancel(self):
         if self._process:

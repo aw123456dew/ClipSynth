@@ -255,6 +255,79 @@ def _generate_srt(scripts_data: List[dict], audio_files: List[dict], output_dir:
     return srt_path
 
 
+def _generate_srt_parts(scripts: list, audio_files: list, output_dir: str) -> Optional[str]:
+    """从 parts 结构生成合并的SRT字幕文件，只对 narration parts 生成字幕"""
+    from clip_synth.services.subtitle_service import SubtitleService
+
+    srt_sections = []
+    time_offset = 0.0
+
+    for seg_idx, seg in enumerate(scripts):
+        parts = seg.get("parts", [])
+        for part_idx, part in enumerate(parts):
+            ptype = part.get("type", "")
+
+            if ptype == "original_sound":
+                raw_start = _normalize_time(part.get("start_time", "00:00:00"))
+                raw_end = _normalize_time(part.get("end_time", "00:00:00"))
+                part_dur = max(0.0, _time_to_seconds(raw_end) - _time_to_seconds(raw_start))
+                time_offset += part_dur
+                continue
+
+            if ptype != "narration":
+                continue
+
+            audio = _find_audio_in_list(audio_files, seg_idx, part_idx)
+            if not audio:
+                logger.info("_generate_srt_parts | seg=%d part=%d 无音频，跳过", seg_idx, part_idx)
+                continue
+
+            audio_path = audio.get("path", "") or audio.get("audio_path", "")
+            audio_dur = audio.get("duration", 0) or _get_media_duration(audio_path) if audio_path else 0
+            timestamps = audio.get("timestamps", [])
+
+            if not timestamps:
+                time_offset += audio_dur
+                continue
+
+            reference = part.get("script", "") or audio.get("text", "") or ""
+            logger.info("_generate_srt_parts | seg=%d part=%d: timestamps=%d", seg_idx, part_idx, len(timestamps))
+            sentences = SubtitleService.merge_words_to_sentences(timestamps, reference_text=reference)
+            if sentences:
+                srt_content = SubtitleService.generate_srt(sentences, clip_start_time=time_offset)
+                srt_sections.append(srt_content.strip())
+
+            time_offset += audio_dur
+
+    if not srt_sections:
+        return None
+
+    merged_content = "\n\n".join(srt_sections)
+    lines = merged_content.split("\n")
+    renumbered = []
+    idx = 1
+    for line in lines:
+        if line.strip().isdigit():
+            renumbered.append(str(idx))
+            idx += 1
+        else:
+            renumbered.append(line)
+
+    srt_path = os.path.join(output_dir, "subtitles.srt")
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(renumbered))
+
+    logger.info("_generate_srt_parts | 字幕文件已生成: %s", srt_path)
+    return srt_path
+
+
+def _find_audio_in_list(audio_files: list, seg_idx: int, part_idx: int):
+    for af in audio_files:
+        if af.get("segment_index") == seg_idx and af.get("part_index") == part_idx:
+            return af
+    return None
+
+
 def _ensure_merged_video(project: NarrateProjectState) -> str | None:
     """确保合并视频存在，如果不存在则用原始视频重新合并"""
     merged_path = project.extra_data.get("merged_video_path", "")
@@ -320,14 +393,209 @@ class JianYingExportService:
         output_dir: str,
         progress_callback: Optional[Callable[[str, float], None]] = None,
     ) -> Dict[str, str]:
-        """
-        导出项目到剪映草稿
+        scripts = project.narration_scripts
+        s0 = scripts[0] if scripts else None
+        logger.info("export_to_jianying 入口: scripts=%d, s0_keys=%s, has_parts=%s",
+                     len(scripts), list(s0.keys()) if isinstance(s0, dict) else type(s0),
+                     "parts" in s0 if isinstance(s0, dict) else False)
+        if scripts and isinstance(scripts[0], dict) and "parts" in scripts[0]:
+            logger.info("  -> 走 _export_to_jianying_parts")
+            return self._export_to_jianying_parts(project, output_dir, progress_callback)
+        logger.info("  -> 走 _export_to_jianying_legacy")
+        return self._export_to_jianying_legacy(project, output_dir, progress_callback)
 
-        流程：
-        1. 用ffmpeg按时间戳裁剪视频片段
-           - 解说片段(narration)：移除原声(-an)，时长按配音时长
-           - 原声片段(original_sound)：保留原声，时长按片段时长
-        2. 将裁剪好的片段、配音、字幕添加到剪映草稿轨道
+    def _export_to_jianying_parts(
+        self,
+        project: NarrateProjectState,
+        output_dir: str,
+        progress_callback: Optional[Callable[[str, float], None]] = None,
+    ) -> Dict[str, str]:
+        """
+        导出项目到剪映草稿（V2 parts 结构）
+        每个片段按 parts 顺序：narration(视频+TTS音频) + original_sound(视频含原声) + narration(...)
+        """
+        try:
+            import pyJianYingDraft
+            from pyJianYingDraft import DraftFolder, VideoSegment, AudioSegment, trange, TrackType
+        except ImportError as e:
+            raise ImportError(f"pyJianYingDraft库导入失败: {e}")
+
+        settings = self._settings_service.load()
+        jianying_draft_path = settings.draft_output_dir
+        if not jianying_draft_path:
+            raise ValueError("剪映草稿路径未配置")
+
+        scripts = project.narration_scripts
+        audio_files = project.audio_files
+        if not scripts:
+            raise RuntimeError("没有解说文案")
+
+        seg_video_map = {}
+        for video_state in project.videos:
+            for seg_list in video_state.segments.values():
+                for seg in seg_list:
+                    seg_video_map[seg.id] = video_state.video_path
+
+        clip_dir = Path(output_dir) / "clips"
+        clip_dir.mkdir(parents=True, exist_ok=True)
+
+        _merged_video_path = _ensure_merged_video(project)
+
+        logger.info("_export_to_jianying_parts 开始: %d 个片段, %d 个音频文件", len(scripts), len(audio_files))
+        for i, s in enumerate(scripts):
+            types = [p.get("type", "?") for p in s.get("parts", [])]
+            logger.info("片段 %d: parts=%d, types=%s", i + 1, len(s.get("parts", [])), types)
+
+        total = len(scripts)
+        clip_entries = []  # [(video_path, audio_path_or_None, duration)]
+
+        for seg_idx, script_item in enumerate(scripts):
+            if self._canceled:
+                raise RuntimeError("导出已取消")
+
+            if progress_callback:
+                progress_callback(f"处理第 {seg_idx+1}/{total} 个片段...", 20 + (seg_idx / total) * 40)
+
+            parts = script_item.get("parts", [])
+            if not parts:
+                continue
+
+            seg_start = script_item.get("start_time", "00:00:00.000")
+            seg_end = script_item.get("end_time", "00:00:00.000")
+
+            video_path = seg_video_map.get(script_item.get("segment_id", ""))
+            if not video_path:
+                video_path = _merged_video_path
+            if not video_path:
+                for vs in project.videos:
+                    video_path = vs.video_path
+                    break
+
+            for part_idx, part in enumerate(parts):
+                ptype = part.get("type", "")
+                logger.info("  片段 %d part[%d]: type=%s", seg_idx + 1, part_idx, ptype)
+
+                if ptype == "narration":
+                    audio = self._find_audio_part(audio_files, seg_idx, part_idx)
+                    if not audio or not os.path.exists(audio.get("path", "")):
+                        logger.warning("  片段 %d part[%d] 缺少配音", seg_idx + 1, part_idx)
+                        continue
+
+                    audio_path = audio["path"]
+                    audio_dur = _get_media_duration(audio_path)
+
+                    clip_path = str(clip_dir / f"clip_{seg_idx:04d}_{part_idx:04d}.mp4")
+                    cut_cmd = [
+                        "ffmpeg", "-y",
+                        "-ss", str(seg_start),
+                        "-i", video_path,
+                        "-t", str(audio_dur),
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                        "-an",
+                        "-avoid_negative_ts", "make_zero",
+                        clip_path,
+                    ]
+                    _run_cmd(cut_cmd, f"part剪辑 {seg_idx+1}.{part_idx+1} narration")
+                    clip_entries.append((clip_path, audio_path, audio_dur))
+
+                elif ptype == "original_sound":
+                    raw_start = _normalize_time(part.get("start_time", seg_start))
+                    raw_end = _normalize_time(part.get("end_time", seg_end))
+                    part_dur = _time_to_seconds(raw_end) - _time_to_seconds(raw_start)
+                    if part_dur <= 0:
+                        continue
+
+                    clip_path = str(clip_dir / f"clip_{seg_idx:04d}_{part_idx:04d}.mp4")
+                    cut_cmd = [
+                        "ffmpeg", "-y",
+                        "-ss", raw_start,
+                        "-i", video_path,
+                        "-t", str(part_dur),
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                        "-c:a", "aac", "-b:a", "128k",
+                        clip_path,
+                    ]
+                    _run_cmd(cut_cmd, f"part剪辑 {seg_idx+1}.{part_idx+1} original_sound")
+                    clip_entries.append((clip_path, None, part_dur))
+
+        if not clip_entries:
+            raise RuntimeError("没有有效片段")
+
+        # --- 字幕 ---
+        subtitle_path = None
+        enable_subtitle_val = getattr(project, "enable_subtitle", False)
+        if enable_subtitle_val and scripts:
+            if progress_callback:
+                progress_callback("正在生成字幕...", 65)
+            subtitle_path = _generate_srt_parts(scripts, audio_files, output_dir)
+
+        # --- 添加到剪映草稿 ---
+        if progress_callback:
+            progress_callback("正在创建剪映草稿...", 70)
+
+        draft_folder = DraftFolder(jianying_draft_path)
+        draft_name = f"{project.name}_{int(time.time())}"
+        script = draft_folder.create_draft(draft_name, 1920, 1080)
+
+        script.add_track(TrackType.video, "视频轨道")
+        script.add_track(TrackType.audio, "音频轨道")
+        if subtitle_path:
+            script.add_track(TrackType.text, "字幕轨道")
+
+        current_time = 0.0
+        for i, (clip_path, audio_path, duration) in enumerate(clip_entries):
+            if self._canceled:
+                raise RuntimeError("导出已取消")
+
+            if not os.path.exists(clip_path):
+                current_time += duration
+                continue
+
+            actual_duration = _get_video_duration(clip_path)
+            if actual_duration <= 0:
+                current_time += duration
+                continue
+
+            duration = actual_duration
+
+            video_segment = VideoSegment(clip_path, trange(f"{current_time}s", f"{duration}s"))
+            script.add_segment(video_segment, "视频轨道")
+
+            if audio_path and os.path.exists(audio_path):
+                audio_dur = _get_video_duration(audio_path)
+                if audio_dur <= 0:
+                    audio_dur = duration
+                audio_segment = AudioSegment(audio_path, trange(f"{current_time}s", f"{min(duration, audio_dur)}s"))
+                script.add_segment(audio_segment, "音频轨道")
+
+            current_time += duration
+
+        if subtitle_path and os.path.exists(subtitle_path):
+            script.import_srt(subtitle_path, track_name="字幕轨道", time_offset="0s")
+
+        script.save()
+        draft_path = os.path.join(jianying_draft_path, draft_name)
+
+        if progress_callback:
+            progress_callback("导出完成", 100)
+
+        logger.info(f"剪映草稿(parts)导出完成: {draft_path}")
+        return {"draft_path": draft_path, "draft_name": draft_name}
+
+    def _find_audio_part(self, audio_files: list, seg_idx: int, part_idx: int):
+        for af in audio_files:
+            if af.get("segment_index") == seg_idx and af.get("part_index") == part_idx:
+                return af
+        return None
+
+    def _export_to_jianying_legacy(
+        self,
+        project: NarrateProjectState,
+        output_dir: str,
+        progress_callback: Optional[Callable[[str, float], None]] = None,
+    ) -> Dict[str, str]:
+        """
+        导出项目到剪映草稿（V1旧版，兼容无 parts 结构）
         """
         try:
             import pyJianYingDraft

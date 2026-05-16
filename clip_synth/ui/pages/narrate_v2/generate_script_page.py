@@ -641,7 +641,7 @@ class GenerateScriptPage(QFrame):
             return []
         validated = []
         for seg in segments:
-            if isinstance(seg, dict) and "script" in seg:
+            if isinstance(seg, dict) and "parts" in seg:
                 validated.append(seg)
         return validated
 
@@ -673,7 +673,6 @@ class GenerateScriptPage(QFrame):
             return False
 
         time_pattern = re.compile(r"^\d{2}:\d{2}:\d{2}\.\d{3}$")
-        required_keys = {"summary", "start_time", "end_time", "script"}
 
         try:
             data = json.loads(text)
@@ -691,12 +690,22 @@ class GenerateScriptPage(QFrame):
         for seg in segments:
             if not isinstance(seg, dict):
                 return False
-            if not required_keys.issubset(seg.keys()):
-                return False
             st = str(seg.get("start_time", ""))
             et = str(seg.get("end_time", ""))
             if not time_pattern.match(st) or not time_pattern.match(et):
                 return False
+            if "summary" not in seg:
+                return False
+            parts = seg.get("parts")
+            if not isinstance(parts, list) or len(parts) == 0:
+                return False
+            for part in parts:
+                ptype = part.get("type", "")
+                if ptype == "narration" and not isinstance(part.get("script"), str):
+                    return False
+                if ptype == "original_sound":
+                    if not isinstance(part.get("start_time"), str) or not isinstance(part.get("end_time"), str):
+                        return False
 
         self._segments = segments
         return True
@@ -704,17 +713,22 @@ class GenerateScriptPage(QFrame):
     def validate_script(self) -> tuple:
         clean_json = self._clean_json_text(self._script_input.toPlainText())
         if not clean_json:
-            if self._segments and any(seg.get("script", "").strip() for seg in self._segments):
+            if self._segments and any(
+                any(part.get("script", "").strip() for part in seg.get("parts", []))
+                for seg in self._segments
+            ):
                 return True, ""
             return False, "输入框为空，请先点击「开始生成解说文案」按钮生成文案。"
 
         time_pattern = re.compile(r"^\d{2}:\d{2}:\d{2}\.\d{3}$")
-        required_keys = {"summary", "start_time", "end_time", "script"}
 
         try:
             data = json.loads(clean_json)
         except json.JSONDecodeError as e:
-            if self._segments and any(seg.get("script", "").strip() for seg in self._segments):
+            if self._segments and any(
+                any(part.get("script", "").strip() for part in seg.get("parts", []))
+                for seg in self._segments
+            ):
                 return True, ""
             return False, f"JSON 格式错误：{e}"
 
@@ -731,10 +745,8 @@ class GenerateScriptPage(QFrame):
             if not isinstance(seg, dict):
                 return False, f"第 {i+1} 个片段不是对象格式，每个片段必须是 {{}} 包裹的字典。"
 
-            missing = required_keys - seg.keys()
-            if missing:
-                missing_str = "、".join(sorted(missing))
-                return False, f"第 {i+1} 个片段缺少字段：{missing_str}"
+            if "summary" not in seg:
+                return False, f"第 {i+1} 个片段缺少 summary 字段"
 
             st = str(seg.get("start_time", ""))
             et = str(seg.get("end_time", ""))
@@ -742,6 +754,25 @@ class GenerateScriptPage(QFrame):
                 return False, f"第 {i+1} 个片段的 start_time 格式错误：\"{st}\"，正确格式如 00:00:04.633"
             if not time_pattern.match(et):
                 return False, f"第 {i+1} 个片段的 end_time 格式错误：\"{et}\"，正确格式如 00:00:06.200"
+
+            parts = seg.get("parts")
+            if not isinstance(parts, list) or len(parts) == 0:
+                return False, f"第 {i+1} 个片段的 parts 数组为空，至少需要包含 1 个元素"
+
+            for j, part in enumerate(parts):
+                if not isinstance(part, dict):
+                    return False, f"第 {i+1} 个片段 parts[{j}] 不是对象格式"
+                ptype = part.get("type", "")
+                if ptype not in ("narration", "original_sound"):
+                    return False, f"第 {i+1} 个片段 parts[{j}] 的 type 无效: \"{ptype}\"，应为 narration 或 original_sound"
+                if ptype == "narration":
+                    if "script" not in part:
+                        return False, f"第 {i+1} 个片段 parts[{j}] 的 narration 缺少 script 字段"
+                    if not isinstance(part["script"], str):
+                        return False, f"第 {i+1} 个片段 parts[{j}] 的 script 必须是字符串"
+                if ptype == "original_sound":
+                    if "start_time" not in part or "end_time" not in part:
+                        return False, f"第 {i+1} 个片段 parts[{j}] 的 original_sound 缺少 start_time 或 end_time 字段"
 
         self._segments = segments
         return True, ""

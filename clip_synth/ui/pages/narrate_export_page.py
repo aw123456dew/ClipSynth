@@ -44,10 +44,17 @@ class ExportWorker(QThread):
 
     def run(self):
         try:
-            output_path = self._service.export(
-                self._project,
-                progress_callback=lambda msg, pct: self.progress.emit(msg),
-            )
+            scripts = self._project.narration_scripts
+            if scripts and isinstance(scripts[0], dict) and "parts" in scripts[0]:
+                output_path = self._service.export_parts(
+                    self._project,
+                    progress_callback=lambda msg, pct: self.progress.emit(msg),
+                )
+            else:
+                output_path = self._service.export(
+                    self._project,
+                    progress_callback=lambda msg, pct: self.progress.emit(msg),
+                )
             self._output_path = output_path
             self.export_finished.emit(output_path)
         except Exception as e:
