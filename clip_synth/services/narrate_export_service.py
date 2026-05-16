@@ -702,9 +702,12 @@ class NarrateExportService:
             video_offset = 0.0
             global_subtitle_offset = 0.0
             all_subtitles: list = []
+            _seg_duration = seg_duration
+            _is_last_narration = parts and parts[-1].get("type") == "narration"
 
             for part_idx, part in enumerate(parts):
                 ptype = part.get("type", "")
+                _is_last = (part_idx == len(parts) - 1)
                 logger.info("    part[%d]: type=%s", part_idx, ptype)
 
                 if ptype == "narration":
@@ -719,6 +722,11 @@ class NarrateExportService:
                     if audio_dur <= 0:
                         logger.warning("片段 %d part %d 配音时长无效，跳过", seg_idx + 1, part_idx)
                         continue
+
+                    if _is_last and _is_last_narration:
+                        _cut_offset = max(0, _seg_duration - audio_dur)
+                    else:
+                        _cut_offset = video_offset
 
                     sub_out = str(seg_dir / f"seg_{seg_idx:04d}_part_{part_idx:04d}.mp4")
 
@@ -773,7 +781,7 @@ class NarrateExportService:
 
                     overlay_cmd = [
                         "ffmpeg", "-y",
-                        "-ss", str(video_offset),
+                        "-ss", str(_cut_offset),
                         "-i", seg_video,
                         "-i", audio_path,
                         "-t", str(audio_dur),
@@ -805,7 +813,8 @@ class NarrateExportService:
                     raw_start = _normalize_time(part.get("start_time", seg_start))
                     raw_end = _normalize_time(part.get("end_time", seg_end))
                     part_dur = _time_to_seconds(raw_end) - _time_to_seconds(raw_start)
-                    logger.info("    original_sound: %s~%s (dur=%.2fs), video=%s", raw_start, raw_end, part_dur, video_path)
+                    seg_offset = _time_to_seconds(raw_start) - _time_to_seconds(seg_start)
+                    logger.info("    original_sound: %s~%s (dur=%.2fs, seg_offset=%.2fs)", raw_start, raw_end, part_dur, seg_offset)
                     if part_dur <= 0:
                         logger.warning("    original_sound 时长<=0, 跳过")
                         continue
@@ -813,8 +822,8 @@ class NarrateExportService:
                     sub_out = str(seg_dir / f"seg_{seg_idx:04d}_part_{part_idx:04d}.mp4")
                     cut_cmd = [
                         "ffmpeg", "-y",
-                        "-ss", raw_start,
-                        "-i", video_path,
+                        "-ss", str(seg_offset),
+                        "-i", seg_video,
                         "-t", str(part_dur),
                         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
                         "-c:a", "aac", "-b:a", "128k",
@@ -822,7 +831,7 @@ class NarrateExportService:
                     ]
                     _run_cmd(cut_cmd, f"原声片段 {seg_idx + 1}")
                     sub_segments.append(sub_out)
-                    video_offset += part_dur
+                    video_offset = seg_offset + part_dur
                     global_subtitle_offset += part_dur
 
             if not sub_segments:

@@ -461,6 +461,7 @@ class JianYingExportService:
                 continue
 
             seg_start = script_item.get("start_time", "00:00:00.000")
+            seg_start_sec = _time_to_seconds(seg_start)
             seg_end = script_item.get("end_time", "00:00:00.000")
 
             video_path = seg_video_map.get(script_item.get("segment_id", ""))
@@ -471,9 +472,26 @@ class JianYingExportService:
                     video_path = vs.video_path
                     break
 
+            seg_duration = _time_to_seconds(seg_end) - seg_start_sec
+            seg_video = str(clip_dir / f"seg_{seg_idx:04d}.mp4")
+            _run_cmd([
+                "ffmpeg", "-y",
+                "-ss", seg_start,
+                "-i", video_path,
+                "-t", str(seg_duration),
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                "-c:a", "aac", "-b:a", "128k",
+                "-avoid_negative_ts", "make_zero",
+                seg_video,
+            ], f"预裁剪 segment {seg_idx+1}")
+
+            video_offset = 0.0
+            _is_last_narration = parts and parts[-1].get("type") == "narration"
+
             for part_idx, part in enumerate(parts):
                 ptype = part.get("type", "")
-                logger.info("  片段 %d part[%d]: type=%s", seg_idx + 1, part_idx, ptype)
+                _is_last = (part_idx == len(parts) - 1)
+                logger.info("  片段 %d part[%d]: type=%s, video_offset=%.2f", seg_idx + 1, part_idx, ptype, video_offset)
 
                 if ptype == "narration":
                     audio = self._find_audio_part(audio_files, seg_idx, part_idx)
@@ -484,19 +502,25 @@ class JianYingExportService:
                     audio_path = audio["path"]
                     audio_dur = _get_media_duration(audio_path)
 
+                    if _is_last and _is_last_narration:
+                        _cut_offset = max(0, seg_duration - audio_dur)
+                        logger.info("    最后一个narration: 从末尾倒推 offset=%.2f", _cut_offset)
+                    else:
+                        _cut_offset = video_offset
+
                     clip_path = str(clip_dir / f"clip_{seg_idx:04d}_{part_idx:04d}.mp4")
                     cut_cmd = [
                         "ffmpeg", "-y",
-                        "-ss", str(seg_start),
-                        "-i", video_path,
+                        "-ss", str(_cut_offset),
+                        "-i", seg_video,
                         "-t", str(audio_dur),
                         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
                         "-an",
-                        "-avoid_negative_ts", "make_zero",
                         clip_path,
                     ]
                     _run_cmd(cut_cmd, f"part剪辑 {seg_idx+1}.{part_idx+1} narration")
                     clip_entries.append((clip_path, audio_path, audio_dur))
+                    video_offset += audio_dur
 
                 elif ptype == "original_sound":
                     raw_start = _normalize_time(part.get("start_time", seg_start))
@@ -505,11 +529,13 @@ class JianYingExportService:
                     if part_dur <= 0:
                         continue
 
+                    seg_offset = _time_to_seconds(raw_start) - seg_start_sec
+
                     clip_path = str(clip_dir / f"clip_{seg_idx:04d}_{part_idx:04d}.mp4")
                     cut_cmd = [
                         "ffmpeg", "-y",
-                        "-ss", raw_start,
-                        "-i", video_path,
+                        "-ss", str(seg_offset),
+                        "-i", seg_video,
                         "-t", str(part_dur),
                         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
                         "-c:a", "aac", "-b:a", "128k",
@@ -517,6 +543,7 @@ class JianYingExportService:
                     ]
                     _run_cmd(cut_cmd, f"part剪辑 {seg_idx+1}.{part_idx+1} original_sound")
                     clip_entries.append((clip_path, None, part_dur))
+                    video_offset = seg_offset + part_dur
 
         if not clip_entries:
             raise RuntimeError("没有有效片段")

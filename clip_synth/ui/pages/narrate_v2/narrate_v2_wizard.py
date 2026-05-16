@@ -568,7 +568,10 @@ class NarrateV2Wizard(QFrame):
         }
         project.extra_data["script_content"] = self._script_page.get_script_content()
         script_segments = self._script_page.get_script_segments()
-        if script_segments and any(seg.get("script", "").strip() for seg in script_segments):
+        if script_segments and any(
+            (seg.get("script", "") or "").strip() or "parts" in seg
+            for seg in script_segments
+        ):
             project.extra_data["script_segments"] = script_segments
         if self._generated_audio_files:
             project.audio_files = self._generated_audio_files
