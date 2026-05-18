@@ -8,6 +8,12 @@ from pathlib import Path
 
 logger = logging.getLogger("clip_synth.utils.ffmpeg_helper")
 
+try:
+    from clip_synth.utils.gpu_accel import get_video_encoder_args
+    HAS_GPU_ACCEL = True
+except ImportError:
+    HAS_GPU_ACCEL = False
+
 FFMPEG_FILENAME = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
 
 
@@ -123,17 +129,22 @@ def unify_video_codecs(video_paths: list[str], cache_dir: str) -> list[str]:
 
     output_paths = []
     for i, (p, c) in enumerate(zip(video_paths, codecs)):
-        if c == majority_codec or c is None:
+        if c == majority_codec:
             output_paths.append(p)
             continue
 
         transcoded = os.path.join(cache_dir, f"unified_{i:04d}_{majority_codec}.mp4")
-        logger.info("转码 %s: %s → %s", os.path.basename(p), c, majority_codec)
+        logger.info("转码 %s: %s → %s", os.path.basename(p), c or "未知", majority_codec)
+        
+        if HAS_GPU_ACCEL:
+            encoder_args = get_video_encoder_args()
+        else:
+            encoder_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
+        
         cmd = [
             "ffmpeg", "-y",
             "-i", p,
-            "-c:v", "libx264" if majority_codec == "h264" else majority_codec,
-            "-preset", "ultrafast", "-crf", "23",
+            *encoder_args,
             "-c:a", "aac", "-b:a", "128k",
             "-avoid_negative_ts", "make_zero",
             transcoded,

@@ -529,6 +529,57 @@ class JianYingExportService:
                     seg_video,
                 ], f"预裁剪 segment {seg_idx+1} (软件重试)")
 
+            _max_needed = seg_duration
+            _simulated_offset = 0.0
+            _last_is_narration = parts and parts[-1].get("type") == "narration"
+            for _p_idx, _p in enumerate(parts):
+                if _p.get("type") != "narration":
+                    if _p.get("type") == "original_sound":
+                        _raw_start = _normalize_time(_p.get("start_time", seg_start))
+                        _raw_end = _normalize_time(_p.get("end_time", seg_end))
+                        _p_dur = _time_to_seconds(_raw_end) - _time_to_seconds(_raw_start)
+                        _simulated_offset = (_time_to_seconds(_raw_start) - seg_start_sec) + _p_dur
+                    continue
+                _audio = self._find_audio_part(audio_files, seg_idx, _p_idx)
+                if not _audio or not os.path.exists(_audio.get("path", "")):
+                    continue
+                _audio_dur = _get_media_duration(_audio["path"])
+                _is_last_p = (_p_idx == len(parts) - 1)
+                if _is_last_p and _last_is_narration:
+                    _cut = max(0, seg_duration - _audio_dur)
+                else:
+                    _cut = _simulated_offset
+                _need = _cut + _audio_dur
+                if _need > _max_needed:
+                    _max_needed = _need
+                _simulated_offset += _audio_dur
+
+            if _max_needed > seg_duration + 0.5:
+                seg_duration = _max_needed + 0.5
+                logger.info("  片段 %d 配音超出原片段时长，扩展 seg 至 %.2fs", seg_idx + 1, seg_duration)
+                seg_video = str(clip_dir / f"seg_{seg_idx:04d}_ext.mp4")
+                _run_cmd([
+                    "ffmpeg", "-y",
+                    "-ss", seg_start,
+                    "-i", video_path,
+                    "-t", str(seg_duration),
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                    "-c:a", "aac", "-b:a", "128k",
+                    "-avoid_negative_ts", "make_zero",
+                    seg_video,
+                ], f"预裁剪 segment {seg_idx+1} (扩展)")
+                if not _has_video_stream(seg_video):
+                    _run_cmd_soft([
+                        "ffmpeg", "-y",
+                        "-ss", seg_start,
+                        "-i", video_path,
+                        "-t", str(seg_duration),
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                        "-c:a", "aac", "-b:a", "128k",
+                        "-avoid_negative_ts", "make_zero",
+                        seg_video,
+                    ], f"预裁剪 segment {seg_idx+1} (扩展-软件重试)")
+
             video_offset = 0.0
             _is_last_narration = parts and parts[-1].get("type") == "narration"
 

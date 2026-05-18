@@ -72,6 +72,7 @@ class NavSidebar(QFrame):
             ("short_drama_narrate", "视频解说", "\u25b6"),
             ("short_drama_narrate_v2", "视频解说 V2", "\u25b6"),
             ("video_dedup", "视频处理", "\u25b6"),
+            ("novel_mix", "小说混剪", "\u25b6"),
             ("settings", "系统配置", "\u25b6"),
         ]
 

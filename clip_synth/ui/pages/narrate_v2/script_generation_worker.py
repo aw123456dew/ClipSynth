@@ -166,3 +166,79 @@ class ScriptGenerationWorker(QThread):
         except Exception as e:
             logger.exception("解说文案生成失败")
             self.error.emit(str(e))
+
+
+class PolishWorker(QThread):
+    finished = Signal(str)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        api_key: str,
+        base_url: str,
+        model_name: str,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._system_prompt = system_prompt
+        self._user_prompt = user_prompt
+        self._api_key = api_key
+        self._base_url = base_url
+        self._model_name = model_name
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        logger.info("PolishWorker 启动: model=%s", self._model_name)
+        try:
+            client = _create_client(self._api_key, self._base_url)
+
+            messages = []
+            if self._system_prompt:
+                messages.append({"role": "system", "content": self._system_prompt})
+            messages.append({"role": "user", "content": self._user_prompt})
+
+            logger.info("发送润色请求...")
+            response = client.chat.completions.create(
+                model=self._model_name,
+                messages=messages,
+                temperature=0.3,
+                stream=False,
+            )
+            content = response.choices[0].message.content or ""
+            logger.info("润色响应长度: %d", len(content))
+
+            data = self._parse_result(content)
+            if data.get("pass"):
+                logger.info("润色检测通过，无需修改")
+                self.finished.emit("")
+                return
+
+            rewritten = data.get("rewritten", "")
+            if rewritten:
+                logger.info("润色修正完成: %d 字符", len(rewritten))
+                self.finished.emit(rewritten)
+            else:
+                logger.info("润色返回了 pass=false 但无 rewritten，保持原样")
+                self.finished.emit("")
+
+        except Exception as e:
+            logger.exception("润色失败")
+            self.error.emit(str(e))
+
+    @staticmethod
+    def _parse_result(text: str) -> dict:
+        text = text.strip()
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return {"pass": True}
+        try:
+            import json
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            return {"pass": True}

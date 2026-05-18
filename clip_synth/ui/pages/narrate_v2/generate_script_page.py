@@ -26,13 +26,16 @@ from clip_synth.ui.pages.narrate_v2.episode_script_worker import (
 from clip_synth.ui.pages.narrate_v2.script_generation_worker import (
     ScriptGenerationWorker,
     SegmentationWorker,
+    PolishWorker,
 )
 from clip_synth.ui.pages.narrate_v2.script_prompts import (
+    POLISH_SYSTEM_PROMPT,
     SEGMENTATION_SYSTEM_PROMPT,
     SHORT_DRAMA_SYSTEM_PROMPT,
     EASY_TALK_SYSTEM_PROMPT,
     PLAIN_NARRATION_SYSTEM_PROMPT,
     SPICY_ROAST_SYSTEM_PROMPT,
+    build_polish_prompt,
     build_segmentation_prompt,
     build_script_generation_prompt,
 )
@@ -78,6 +81,7 @@ class GenerateScriptPage(QFrame):
         super().__init__(parent)
         self._segmentation_worker: SegmentationWorker | None = None
         self._script_worker: ScriptGenerationWorker | None = None
+        self._polish_worker: PolishWorker | None = None
         self._episode_worker: EpisodeScriptWorker | None = None
         self._utterances = []
         self._speaker_aliases = {}
@@ -591,18 +595,67 @@ class GenerateScriptPage(QFrame):
 
         self._flush_pending_chunks()
 
+        if parsed_segments and clean_json:
+            self._polish_pending_json = clean_json
+            self._polish_pending_segments = parsed_segments
+            self._polish_pending_raw = full_text
+            self._generate_btn.setEnabled(False)
+            self._generate_btn.setText("润色中...")
+            self._status_label.setText("正在润色文案...")
+            self._status_label.setStyleSheet("color: #60a5fa; font-size: 12px;")
+            self._start_polish(clean_json)
+        else:
+            self._generate_btn.setEnabled(True)
+            self._generate_btn.setText("开始生成解说文案")
+            if parsed_segments:
+                self._script_input.setPlainText(clean_json)
+                self._status_label.setText(f"生成完成（{len(parsed_segments)} 个片段，共 {len(full_text)} 字）")
+                self._status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+                logger.info("解说文案生成完成: %d 个片段", len(parsed_segments))
+            else:
+                self._status_label.setText(f"生成完成（共 {len(full_text)} 字）")
+                self._status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+                logger.info("解说文案生成完成: %d 字（原始）", len(full_text))
+
+    def _start_polish(self, script_json: str):
+        style = self._style_combo.currentText()
+        prompt = build_polish_prompt(script_json, style)
+        self._polish_worker = PolishWorker(
+            system_prompt=POLISH_SYSTEM_PROMPT,
+            user_prompt=prompt,
+            api_key=self._ai_config.api_key,
+            base_url=self._ai_config.base_url,
+            model_name=self._ai_config.model_name,
+        )
+        self._polish_worker.finished.connect(self._on_polish_finished)
+        self._polish_worker.error.connect(self._on_polish_error)
+        self._polish_worker.start()
+
+    def _on_polish_finished(self, rewritten: str):
+        self._polish_worker = None
         self._generate_btn.setEnabled(True)
         self._generate_btn.setText("开始生成解说文案")
 
-        if parsed_segments:
-            self._script_input.setPlainText(clean_json)
-            self._status_label.setText(f"生成完成（{len(parsed_segments)} 个片段，共 {len(full_text)} 字）")
-            self._status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
-            logger.info("解说文案生成完成: %d 个片段", len(parsed_segments))
+        if rewritten:
+            self._script_input.setPlainText(rewritten)
+            parsed = self._parse_json_segments(rewritten)
+            if parsed:
+                self._segments = parsed
+            self._status_label.setText(f"生成完成（{len(self._polish_pending_segments)} 个片段，已润色）")
         else:
-            self._status_label.setText(f"生成完成（共 {len(full_text)} 字）")
-            self._status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
-            logger.info("解说文案生成完成: %d 字（原始）", len(full_text))
+            self._script_input.setPlainText(self._polish_pending_json)
+            self._status_label.setText(f"生成完成（{len(self._polish_pending_segments)} 个片段，共 {len(self._polish_pending_raw)} 字）")
+
+        self._status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+
+    def _on_polish_error(self, error_msg: str):
+        self._polish_worker = None
+        logger.warning("润色失败，使用原脚本: %s", error_msg)
+        self._script_input.setPlainText(self._polish_pending_json)
+        self._generate_btn.setEnabled(True)
+        self._generate_btn.setText("开始生成解说文案")
+        self._status_label.setText(f"生成完成（{len(self._polish_pending_segments)} 个片段，共 {len(self._polish_pending_raw)} 字）")
+        self._status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
     @staticmethod
     def _clean_markdown_fences(text: str) -> str:

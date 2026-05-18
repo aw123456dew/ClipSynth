@@ -128,6 +128,8 @@ class ContentArea(QFrame):
         self._db_manager = db_manager
         self._project_state_service = project_state_service
         self._narrate_project_state_service = narrate_project_state_service or NarrateProjectStateService()
+        from clip_synth.services.novel_mix_state_service import NovelMixStateService
+        self._novel_mix_state_service = NovelMixStateService()
         self._cover_worker: CoverExtractorWorker | None = None
         self._setup_ui()
 
@@ -169,6 +171,13 @@ class ContentArea(QFrame):
         self._stack.addWidget(self._narrate_v2_page)
         self._pages["short_drama_narrate_v2"] = self._stack.count() - 1
 
+        from clip_synth.ui.pages.novel_mix_project_list_page import NovelMixProjectListPage
+        self._novel_mix_page = NovelMixProjectListPage(self._novel_mix_state_service)
+        self._novel_mix_page.start_wizard.connect(self._switch_to_novel_mix_wizard)
+        self._novel_mix_page.open_project.connect(self._open_novel_mix_project)
+        self._stack.addWidget(self._novel_mix_page)
+        self._pages["novel_mix"] = self._stack.count() - 1
+
     def switch_to(self, page_key: str) -> None:
         if page_key in self._pages:
             if page_key == "short_drama_mix":
@@ -179,6 +188,8 @@ class ContentArea(QFrame):
             elif page_key == "short_drama_narrate_v2":
                 self._narrate_v2_page._load_projects()
                 self._narrate_v2_page.sync_all_covers()
+            elif page_key == "novel_mix":
+                self._novel_mix_page._load_projects()
             self._stack.setCurrentIndex(self._pages[page_key])
 
     def switch_to_project_wizard(self, data) -> None:
@@ -404,3 +415,29 @@ class ContentArea(QFrame):
                 self.cover_extracted.emit(project_id)
         except Exception as e:
             logger.error("更新项目封面失败: %s", e)
+
+    def _switch_to_novel_mix_wizard(self, project_id: str) -> None:
+        from clip_synth.ui.pages.novel_mix_wizard import NovelMixWizard
+
+        project = self._novel_mix_state_service.load_project(project_id)
+        if not project:
+            return
+        wizard_page = NovelMixWizard(
+            project, self._novel_mix_state_service, self._settings_service,
+            db_manager=self._db_manager,
+        )
+        wizard_page.finished.connect(self._on_novel_mix_wizard_finished)
+        wizard_page.cancelled.connect(self._on_novel_mix_wizard_cancelled)
+        self._stack.addWidget(wizard_page)
+        self._stack.setCurrentIndex(self._stack.count() - 1)
+
+    def _open_novel_mix_project(self, project_id: str) -> None:
+        self._switch_to_novel_mix_wizard(project_id)
+
+    def _on_novel_mix_wizard_finished(self) -> None:
+        self._remove_wizard_from_stack()
+        self.switch_to("novel_mix")
+
+    def _on_novel_mix_wizard_cancelled(self) -> None:
+        self._remove_wizard_from_stack()
+        self.switch_to("novel_mix")

@@ -1,4 +1,5 @@
 import logging
+import shutil
 import subprocess
 import sys
 import time
@@ -14,6 +15,12 @@ from clip_synth.services.subtitle_recognition_service import (
     TencentASRService,
 )
 from clip_synth.utils.ffmpeg_helper import unify_video_codecs
+
+try:
+    from clip_synth.utils.gpu_accel import get_video_encoder_args
+    HAS_GPU_ACCEL = True
+except ImportError:
+    HAS_GPU_ACCEL = False
 
 logger = logging.getLogger("clip_synth.narrate_v2")
 
@@ -72,7 +79,10 @@ class RecognitionWorker(QThread):
             if need_merge:
                 self.progress.emit(5, "正在合并视频...")
                 if len(self._video_paths) == 1:
-                    Path(merged_video_path).symlink_to(Path(self._video_paths[0]).resolve())
+                    try:
+                        Path(merged_video_path).symlink_to(Path(self._video_paths[0]).resolve())
+                    except OSError:
+                        shutil.copy2(self._video_paths[0], merged_video_path)
                 else:
                     unified = unify_video_codecs(list(self._video_paths), str(project_dir))
                     n = len(unified)
@@ -81,12 +91,18 @@ class RecognitionWorker(QThread):
                         input_parts.extend(["-i", str(Path(p).resolve())])
                     filter_labels = "".join(f"[{j}:v][{j}:a]" for j in range(n))
                     filter_complex = f"{filter_labels}concat=n={n}:v=1:a=1[outv][outa]"
+                    
+                    if HAS_GPU_ACCEL:
+                        encoder_args = get_video_encoder_args()
+                    else:
+                        encoder_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
+                    
                     cmd = [
                         "ffmpeg",
                         *input_parts,
                         "-filter_complex", filter_complex,
                         "-map", "[outv]", "-map", "[outa]",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                        *encoder_args,
                         "-c:a", "aac", "-b:a", "128k",
                         "-y", merged_video_path,
                     ]
@@ -248,12 +264,18 @@ class TencentRecognitionWorker(QThread):
                         input_parts.extend(["-i", str(Path(p).resolve())])
                     filter_labels = "".join(f"[{j}:v][{j}:a]" for j in range(n))
                     filter_complex = f"{filter_labels}concat=n={n}:v=1:a=1[outv][outa]"
+                    
+                    if HAS_GPU_ACCEL:
+                        encoder_args = get_video_encoder_args()
+                    else:
+                        encoder_args = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23"]
+                    
                     cmd = [
                         "ffmpeg",
                         *input_parts,
                         "-filter_complex", filter_complex,
                         "-map", "[outv]", "-map", "[outa]",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                        *encoder_args,
                         "-c:a", "aac", "-b:a", "128k",
                         "-y", merged_video_path,
                     ]
