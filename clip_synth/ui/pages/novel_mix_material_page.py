@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -53,10 +53,47 @@ def _get_video_info(video_path: str) -> dict:
     return info
 
 
+class ScanWorker(QThread):
+    progress = Signal(int, str)
+    finished = Signal(list)
+
+    def __init__(self, folder: str, parent=None):
+        super().__init__(parent)
+        self._folder = folder
+
+    def run(self) -> None:
+        found = []
+        try:
+            for root, dirs, files in os.walk(self._folder):
+                for f in files:
+                    ext = os.path.splitext(f)[1].lower()
+                    if ext not in VIDEO_EXTENSIONS:
+                        continue
+                    full_path = os.path.join(root, f)
+                    info = _get_video_info(full_path)
+                    found.append(
+                        NovelMixMaterialVideo(
+                            name=f,
+                            path=full_path,
+                            duration=info["duration"],
+                            size_mb=info["size_mb"],
+                        )
+                    )
+                    self.progress.emit(len(found), f)
+        except Exception as e:
+            logger.error("扫描文件夹失败: %s", e)
+
+        found.sort(key=lambda v: v.name.lower())
+        self.finished.emit(found)
+
+
 class NovelMixMaterialPage(QFrame):
+    scanning_changed = Signal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("novelMixMaterialPage")
+        self._scan_worker: ScanWorker | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -114,6 +151,7 @@ class NovelMixMaterialPage(QFrame):
         self._table.setColumnWidth(3, 100)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._table.setAlternatingRowColors(True)
         self._table.verticalHeader().setVisible(False)
         layout.addWidget(self._table, stretch=1)
 
@@ -125,43 +163,46 @@ class NovelMixMaterialPage(QFrame):
         if not folder:
             return
         self._current_folder = folder
-        self._scan_folder()
+        self._start_scan()
 
     def _on_refresh(self) -> None:
         if self._current_folder:
-            self._scan_folder()
+            self._start_scan()
 
-    def _scan_folder(self) -> None:
+    def _set_buttons_enabled(self, enabled: bool) -> None:
+        self._select_btn.setEnabled(enabled)
+        self._refresh_btn.setEnabled(enabled)
+
+    def _start_scan(self) -> None:
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            self._scan_worker.terminate()
+            self._scan_worker.wait(2000)
+
         self._folder_label.setText(f"当前文件夹: {self._current_folder}")
-        self._refresh_btn.setEnabled(True)
+        self._count_label.setText("正在扫描...")
+        self._set_buttons_enabled(False)
+        self._table.setRowCount(0)
+        self.scanning_changed.emit(True)
 
-        videos = []
-        try:
-            for root, dirs, files in os.walk(self._current_folder):
-                for f in files:
-                    ext = os.path.splitext(f)[1].lower()
-                    if ext in VIDEO_EXTENSIONS:
-                        full_path = os.path.join(root, f)
-                        info = _get_video_info(full_path)
-                        duration_str = _format_duration(info["duration"])
-                        videos.append(
-                            NovelMixMaterialVideo(
-                                name=f,
-                                path=full_path,
-                                duration=info["duration"],
-                                size_mb=info["size_mb"],
-                            )
-                        )
-        except Exception as e:
-            logger.error("扫描文件夹失败: %s", e)
+        self._scan_worker = ScanWorker(self._current_folder)
+        self._scan_worker.progress.connect(self._on_scan_progress)
+        self._scan_worker.finished.connect(self._on_scan_finished)
+        self._scan_worker.start()
 
-        videos.sort(key=lambda v: v.name.lower())
+    def _on_scan_progress(self, count: int, name: str) -> None:
+        self._count_label.setText(f"正在扫描: 已找到 {count} 个视频...")
+
+    def _on_scan_finished(self, videos: list) -> None:
         self._videos = videos
+        self._set_buttons_enabled(True)
+        self._refresh_btn.setEnabled(True)
+        self._count_label.setText(f"共扫描到 {len(self._videos)} 个视频文件")
+        self.scanning_changed.emit(False)
         self._populate_table()
 
     def _populate_table(self) -> None:
+        self._table.setUpdatesEnabled(False)
         self._table.setRowCount(len(self._videos))
-        self._count_label.setText(f"共扫描到 {len(self._videos)} 个视频文件")
 
         for i, video in enumerate(self._videos):
             self._table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
@@ -169,6 +210,8 @@ class NovelMixMaterialPage(QFrame):
             duration_str = _format_duration(video.duration)
             self._table.setItem(i, 2, QTableWidgetItem(duration_str))
             self._table.setItem(i, 3, QTableWidgetItem(f"{video.size_mb} MB"))
+
+        self._table.setUpdatesEnabled(True)
 
     def save(self, project: NovelMixProjectState) -> None:
         project.material_folder = self._current_folder
@@ -181,6 +224,12 @@ class NovelMixMaterialPage(QFrame):
             self._folder_label.setText(f"当前文件夹: {self._current_folder}")
             self._refresh_btn.setEnabled(True)
             self._populate_table()
+
+    def hideEvent(self, event):
+        if self._scan_worker is not None and self._scan_worker.isRunning():
+            self._scan_worker.terminate()
+            self._scan_worker.wait(2000)
+        super().hideEvent(event)
 
 
 def _format_duration(seconds: float) -> str:

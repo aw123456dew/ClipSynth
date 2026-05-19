@@ -2432,8 +2432,6 @@ QSlider::sub-page:horizontal {
     background-color: #0c1322;
     border: 1px solid #1e293b;
     border-radius: 12px;
-    min-height: 100px;
-    max-width: 400px;
 }
 
 #exportVideoCard:hover, #exportDraftCard:hover {
@@ -2961,6 +2959,345 @@ QSlider::sub-page:horizontal {
     border-radius: 8px;
     padding: 10px 24px;
     min-height: 20px;
+}
+
+/* ===== Material Table (小说混剪) ===== */
+#materialTable {
+    background-color: #0d111f;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    color: #e2e8f0;
+    font-size: 13px;
+    gridline-color: #1e293b;
+    selection-background-color: #1a2744;
+}
+
+#materialTable QHeaderView {
+    background-color: #1a1f2e;
+    color: #e2e8f0;
+    font-weight: bold;
+    border: none;
+}
+
+#materialTable QHeaderView::section {
+    background-color: #1a1f2e;
+    color: #e2e8f0;
+    padding: 10px 8px;
+    border: none;
+    border-bottom: 1px solid #1e293b;
+}
+
+#materialTable QTableCornerButton::section {
+    background-color: #1a1f2e;
+    border: none;
+}
+
+#materialTable::item {
+    background-color: #0d111f;
+    color: #cbd5e1;
+    padding: 8px;
+    border-bottom: 1px solid #1e293b;
+}
+
+#materialTable::item:alternate {
+    background-color: #0f1520;
+}
+
+#materialTable::item:selected {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#materialCountLabel {
+    color: #64748b;
+    font-size: 13px;
+    padding: 4px 0;
+}
+
+#materialFolderLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    padding: 8px 0;
+}
+
+#materialSelectBtn {
+    background-color: #1e293b;
+    color: #a5b4fc;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#materialSelectBtn:hover {
+    background-color: #312e81;
+    color: #e0e7ff;
+    border-color: #6366f1;
+}
+
+#materialRefreshBtn {
+    background-color: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#materialRefreshBtn:hover {
+    background-color: #1e3a5f;
+    color: #e2e8f0;
+    border-color: #6366f1;
+}
+
+/* ===== Novel Mix Dub Page ===== */
+#novelMixDubPage {
+    background-color: #0a0e17;
+}
+
+#novelMixDubPage QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+#novelMixDubPage QScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
+#novelMixExportPage QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+#novelMixExportPage QScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
+#sectionTitle {
+    color: #e2e8f0;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+#sliderValueLabel {
+    color: #cbd5e1;
+    font-size: 12px;
+}
+
+/* ===== Novel Mix Text Edit ===== */
+#novelMixTextEdit {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+    selection-background-color: #4f46e5;
+    selection-color: #ffffff;
+}
+
+#novelMixTextEdit:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+#charCountLabel {
+    color: #64748b;
+    font-size: 12px;
+    padding: 2px 0;
+}
+
+#importTxtBtn {
+    background-color: #1e293b;
+    color: #a5b4fc;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#importTxtBtn:hover {
+    background-color: #312e81;
+    color: #e0e7ff;
+    border-color: #6366f1;
+}
+
+/* ===== Novel Mix Dub Page ===== */
+#generateAllBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 13px;
+    font-weight: 700;
+    min-height: 20px;
+}
+
+#generateAllBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#generateAllBtn:disabled {
+    background: #1e293b;
+    color: #4a5a7a;
+}
+
+#ttsProgressLabel {
+    color: #60a5fa;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* ===== Novel Mix Export ===== */
+#selfAudioGroup {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+
+#selfAudioGroup::title {
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+#selfSubtitleGroup {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+
+#selfSubtitleGroup::title {
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+#uploadAudioBtn, #uploadSubtitleBtn {
+    background-color: #1e293b;
+    color: #a5b4fc;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#uploadAudioBtn:hover, #uploadSubtitleBtn:hover {
+    background-color: #312e81;
+    color: #e0e7ff;
+    border-color: #6366f1;
+}
+
+#orientationGroup, #subtitleSettingsGroup {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+
+#orientationGroup::title, #subtitleSettingsGroup::title {
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+#ratioCombo {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    font-size: 13px;
+    padding: 8px 14px;
+    min-height: 20px;
+}
+
+#ratioCombo:hover {
+    border-color: #6366f1;
+}
+
+#ratioCombo:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+#ratioCombo::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 28px;
+    border: none;
+}
+
+#ratioCombo::down-arrow {
+    image: none;
+    border: none;
+}
+
+#ratioCombo QAbstractItemView {
+    background-color: #0d111f;
+    color: #e2e8f0;
+    font-size: 13px;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+
+#ratioCombo QAbstractItemView::item {
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+#ratioCombo QAbstractItemView::item:hover {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#ratioCombo QAbstractItemView::item:selected {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+/* ===== Novel Mix Card Icon ===== */
+#novelMixCardIcon {
+    color: #2a3a5a;
+}
+
+/* ===== Dub Mode Dialog ===== */
+#dubModeDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#dubModeCard {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+#dubModeCard:hover {
+    background-color: #111827;
+    border-color: #6366f1;
+}
+
+#dubModeCardTitle {
+    color: #e2e8f0;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+#dubModeCardDesc {
+    color: #64748b;
+    font-size: 12px;
 }
 
 #previewCloseBtn:hover {

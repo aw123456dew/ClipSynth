@@ -10,9 +10,11 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSlider,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from clip_synth.models.novel_mix_project_state import NovelMixProjectState
@@ -249,6 +251,7 @@ class NovelMixDubPage(QFrame):
         super().__init__(parent)
         self._settings_service: SettingsService | None = None
         self._tts_worker: TTSWorker | None = None
+        self._generated_audio_files: list | None = None
         self._project_id = ""
         self.setObjectName("novelMixDubPage")
         self._setup_ui()
@@ -257,59 +260,68 @@ class NovelMixDubPage(QFrame):
         self._settings_service = settings_service
 
     def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(16)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("mixScrollArea")
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        outer_layout.addWidget(scroll)
+
+        content = QWidget()
+        content.setObjectName("mixScrollContent")
+        scroll.setWidget(content)
+
+        outer = QVBoxLayout(content)
+        outer.setContentsMargins(32, 24, 32, 24)
+        outer.setSpacing(10)
 
         title = QLabel("输入文案 & 配音设置")
         title.setObjectName("wizardStepTitle")
-        layout.addWidget(title)
+        outer.addWidget(title)
+
+        main_row = QHBoxLayout()
+        main_row.setSpacing(20)
+
+        left_panel = QVBoxLayout()
+        left_panel.setSpacing(8)
 
         text_header = QHBoxLayout()
         text_header.setSpacing(12)
-
         text_label = QLabel("文案内容")
         text_label.setObjectName("sectionTitle")
         text_header.addWidget(text_label)
-
         text_header.addStretch()
-
         self._import_btn = QPushButton("导入 TXT 文件")
         self._import_btn.setObjectName("importTxtBtn")
         self._import_btn.setCursor(Qt.PointingHandCursor)
         self._import_btn.clicked.connect(self._on_import_txt)
         text_header.addWidget(self._import_btn)
-
-        layout.addLayout(text_header)
+        left_panel.addLayout(text_header)
 
         self._text_edit = QTextEdit()
         self._text_edit.setObjectName("novelMixTextEdit")
         self._text_edit.setPlaceholderText("在这里输入或粘贴小说/故事文本...")
-        self._text_edit.setMinimumHeight(150)
-        layout.addWidget(self._text_edit)
+        left_panel.addWidget(self._text_edit, stretch=1)
 
         self._char_count_label = QLabel("已输入 0 字")
         self._char_count_label.setObjectName("charCountLabel")
-        layout.addWidget(self._char_count_label)
+        left_panel.addWidget(self._char_count_label)
 
         self._text_edit.textChanged.connect(self._on_text_changed)
 
-        engine_group = QGroupBox("配音参数")
-        engine_group.setObjectName("ttsEngineGroup")
-        engine_layout = QVBoxLayout(engine_group)
-        engine_layout.setContentsMargins(16, 16, 16, 16)
-        engine_layout.setSpacing(12)
+        main_row.addLayout(left_panel, stretch=1)
 
-        engine_row = QHBoxLayout()
-        engine_row.setSpacing(8)
-        engine_label = QLabel("配音引擎：豆包语音")
-        engine_label.setObjectName("paramLabel")
-        engine_row.addWidget(engine_label)
-        engine_row.addStretch()
-        engine_layout.addLayout(engine_row)
+        right_panel = QGroupBox("配音参数")
+        right_panel.setObjectName("ttsEngineGroup")
+        right_panel.setFixedWidth(340)
+        engine_layout = QVBoxLayout(right_panel)
+        engine_layout.setContentsMargins(16, 4, 16, 10)
+        engine_layout.setSpacing(6)
 
         combo_row = QHBoxLayout()
-        combo_row.setSpacing(16)
+        combo_row.setSpacing(10)
 
         voice_layout = QVBoxLayout()
         voice_label = QLabel("音色选择")
@@ -317,7 +329,7 @@ class NovelMixDubPage(QFrame):
         voice_layout.addWidget(voice_label)
         self._voice_combo = QComboBox()
         self._voice_combo.setObjectName("voiceCombo")
-        self._voice_combo.setMinimumHeight(36)
+        self._voice_combo.setMinimumHeight(32)
         for voice_id, voice_name in DOUBAO_VOICE_OPTIONS.items():
             self._voice_combo.addItem(voice_name, voice_id)
         self._voice_combo.setCurrentIndex(0)
@@ -329,13 +341,15 @@ class NovelMixDubPage(QFrame):
         emotion_label.setObjectName("paramLabel")
         emotion_layout.addWidget(emotion_label)
         self._emotion_combo = QComboBox()
-        self._emotion_combo.setObjectName("emotionCombo")
-        self._emotion_combo.setMinimumHeight(36)
+        self._emotion_combo.setObjectName("styleCombo")
+        self._emotion_combo.setMinimumHeight(32)
         for emotion_id, emotion_name in DOUBAO_EMOTION_OPTIONS.items():
             self._emotion_combo.addItem(emotion_name, emotion_id)
         self._emotion_combo.setCurrentIndex(0)
         emotion_layout.addWidget(self._emotion_combo)
         combo_row.addLayout(emotion_layout, stretch=1)
+
+        engine_layout.addLayout(combo_row)
 
         lang_layout = QVBoxLayout()
         lang_label = QLabel("语种")
@@ -343,34 +357,33 @@ class NovelMixDubPage(QFrame):
         lang_layout.addWidget(lang_label)
         self._lang_combo = QComboBox()
         self._lang_combo.setObjectName("langCombo")
-        self._lang_combo.setMinimumHeight(36)
+        self._lang_combo.setMinimumHeight(32)
         for lang_id, lang_name in DOUBAO_LANGUAGE_OPTIONS.items():
             self._lang_combo.addItem(lang_name, lang_id)
         self._lang_combo.setCurrentIndex(0)
         lang_layout.addWidget(self._lang_combo)
-        combo_row.addLayout(lang_layout, stretch=1)
-
-        engine_layout.addLayout(combo_row)
+        engine_layout.addLayout(lang_layout)
 
         slider_row = QVBoxLayout()
-        slider_row.setSpacing(12)
+        slider_row.setSpacing(6)
 
-        self._speed_slider = self._create_slider_row("语速", 0.2, 3.0, 1.0, slider_row)
-        self._pitch_slider = self._create_slider_row("音调", 0.2, 3.0, 1.0, slider_row)
-        self._volume_slider = self._create_slider_row("音量", 0.2, 3.0, 1.0, slider_row)
+        self._speed_slider = self._create_slider_row("语速", 0.2, 3.0, 1.0, "rateSlider", slider_row)
+        self._pitch_slider = self._create_slider_row("音调", 0.2, 3.0, 1.0, "pitchSlider", slider_row)
+        self._volume_slider = self._create_slider_row("音量", 0.2, 3.0, 1.0, "volumeSlider", slider_row)
 
         engine_layout.addLayout(slider_row)
 
+        engine_layout.addStretch()
+
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
-
+        btn_row.setContentsMargins(0, 8, 0, 0)
+        btn_row.addStretch()
         self._generate_btn = QPushButton("生成全部配音")
         self._generate_btn.setObjectName("generateAllBtn")
         self._generate_btn.setCursor(Qt.PointingHandCursor)
         self._generate_btn.clicked.connect(self._on_generate_all)
         btn_row.addWidget(self._generate_btn)
-
-        btn_row.addStretch()
         engine_layout.addLayout(btn_row)
 
         self._progress_label = QLabel("")
@@ -379,20 +392,22 @@ class NovelMixDubPage(QFrame):
         self._progress_label.hide()
         engine_layout.addWidget(self._progress_label)
 
-        layout.addWidget(engine_group)
-        layout.addStretch()
+        main_row.addWidget(right_panel)
 
-    def _create_slider_row(self, name: str, min_val: float, max_val: float, default: float, parent_layout) -> QSlider:
+        outer.addLayout(main_row, stretch=1)
+
+    def _create_slider_row(self, label_text: str, min_val: float, max_val: float, default: float,
+                           slider_name: str, parent_layout) -> QSlider:
         row = QHBoxLayout()
         row.setSpacing(8)
 
-        label = QLabel(name)
+        label = QLabel(label_text)
         label.setObjectName("paramLabel")
         label.setMinimumWidth(40)
         row.addWidget(label)
 
         slider = QSlider(Qt.Horizontal)
-        slider.setObjectName(f"{name}Slider")
+        slider.setObjectName(slider_name)
         slider.setRange(int(min_val * 10), int(max_val * 10))
         slider.setValue(int(default * 10))
         row.addWidget(slider, stretch=1)

@@ -6,14 +6,14 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -154,16 +154,36 @@ class NovelMixExportPage(QFrame):
         self._worker: NovelMixExportWorker | None = None
         self._jianying_worker: NovelMixJianyingExportWorker | None = None
         self._output_path: str | None = None
+        self._current_mode: str = ""
         self.setObjectName("novelMixExportPage")
         self._setup_ui()
 
     def set_project(self, project: NovelMixProjectState) -> None:
         self._project = project
+        mode = project.dub_mode
+        if mode != self._current_mode:
+            self._build_content(mode)
+            self._current_mode = mode
         self._reset_ui()
         self._restore_ui_from_project()
 
     def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._scroll = QScrollArea()
+        self._scroll.setObjectName("mixScrollArea")
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        outer_layout.addWidget(self._scroll)
+
+    def _build_content(self, mode: str) -> None:
+        is_system = mode == "system"
+
+        content = QWidget()
+        content.setObjectName("mixScrollContent")
+
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(32, 24, 32, 24)
         layout.setSpacing(16)
 
@@ -176,14 +196,31 @@ class NovelMixExportPage(QFrame):
         self._info_label.setWordWrap(True)
         layout.addWidget(self._info_label)
 
-        self._self_dub_section = QFrame()
-        self._self_dub_section.setObjectName("selfDubSection")
-        self_dub_layout = QVBoxLayout(self._self_dub_section)
-        self_dub_layout.setContentsMargins(0, 0, 0, 0)
-        self_dub_layout.setSpacing(12)
+        if not is_system:
+            self._build_upload_section(layout)
+
+        self._build_settings_cards(layout)
+        self._build_export_cards(layout)
+        self._build_progress_section(layout)
+        self._build_result_section(layout)
+
+        layout.addStretch()
+
+        old_widget = self._scroll.takeWidget()
+        if old_widget is not None:
+            old_widget.deleteLater()
+        self._scroll.setWidget(content)
+
+    def _build_upload_section(self, layout: QVBoxLayout) -> None:
+        section = QFrame()
+        section.setObjectName("selfDubSection")
+        row_layout = QHBoxLayout(section)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(16)
 
         audio_group = QGroupBox("配音音频")
         audio_group.setObjectName("selfAudioGroup")
+        audio_group.setFixedHeight(140)
         audio_layout = QVBoxLayout(audio_group)
         audio_layout.setContentsMargins(16, 16, 16, 16)
         audio_layout.setSpacing(8)
@@ -196,10 +233,11 @@ class NovelMixExportPage(QFrame):
         self._upload_audio_btn.setCursor(Qt.PointingHandCursor)
         self._upload_audio_btn.clicked.connect(self._on_upload_audio)
         audio_layout.addWidget(self._upload_audio_btn)
-        self_dub_layout.addWidget(audio_group)
+        row_layout.addWidget(audio_group, stretch=1)
 
         subtitle_group = QGroupBox("字幕文件 (SRT)")
         subtitle_group.setObjectName("selfSubtitleGroup")
+        subtitle_group.setFixedHeight(140)
         subtitle_layout = QVBoxLayout(subtitle_group)
         subtitle_layout.setContentsMargins(16, 16, 16, 16)
         subtitle_layout.setSpacing(8)
@@ -212,24 +250,25 @@ class NovelMixExportPage(QFrame):
         self._upload_subtitle_btn.setCursor(Qt.PointingHandCursor)
         self._upload_subtitle_btn.clicked.connect(self._on_upload_subtitle)
         subtitle_layout.addWidget(self._upload_subtitle_btn)
-        self_dub_layout.addWidget(subtitle_group)
+        row_layout.addWidget(subtitle_group, stretch=1)
 
-        layout.addWidget(self._self_dub_section)
-        self._self_dub_section.hide()
+        layout.addWidget(section)
 
+    def _build_settings_cards(self, layout: QVBoxLayout) -> None:
         groups_row = QHBoxLayout()
         groups_row.setSpacing(16)
 
         orientation_group = QGroupBox("画面方向")
         orientation_group.setObjectName("orientationGroup")
+        orientation_group.setFixedHeight(140)
         orientation_layout = QVBoxLayout(orientation_group)
-        orientation_layout.setContentsMargins(16, 16, 16, 16)
-        orientation_layout.setSpacing(12)
+        orientation_layout.setContentsMargins(12, 8, 12, 12)
+        orientation_layout.setSpacing(8)
 
         direction_row = QHBoxLayout()
         direction_row.setSpacing(12)
 
-        self._landscape_btn = QPushButton("● 横屏")
+        self._landscape_btn = QPushButton("\u25cf 横屏")
         self._landscape_btn.setObjectName("subtitleEnableBtn")
         self._landscape_btn.setCheckable(True)
         self._landscape_btn.setChecked(True)
@@ -237,7 +276,7 @@ class NovelMixExportPage(QFrame):
         self._landscape_btn.clicked.connect(lambda: self._on_orientation_change("landscape"))
         direction_row.addWidget(self._landscape_btn)
 
-        self._portrait_btn = QPushButton("○ 竖屏")
+        self._portrait_btn = QPushButton("\u25cb 竖屏")
         self._portrait_btn.setObjectName("subtitleEnableBtn")
         self._portrait_btn.setCheckable(True)
         self._portrait_btn.setCursor(Qt.PointingHandCursor)
@@ -246,25 +285,23 @@ class NovelMixExportPage(QFrame):
 
         direction_row.addStretch()
         orientation_layout.addLayout(direction_row)
+        orientation_layout.addSpacing(18)
 
-        ratio_label = QLabel("比例选择")
-        ratio_label.setObjectName("paramLabel")
-        orientation_layout.addWidget(ratio_label)
+        self._ratio_combo = QComboBox()
+        self._ratio_combo.setObjectName("ratioCombo")
+        self._ratio_combo.setMinimumHeight(28)
+        orientation_layout.addWidget(self._ratio_combo)
 
-        self._ratio_list = QListWidget()
-        self._ratio_list.setObjectName("ratioList")
-        self._ratio_list.setMaximumHeight(140)
-        orientation_layout.addWidget(self._ratio_list)
-
-        self._populate_ratio_list("landscape")
+        self._populate_ratio_combo("landscape")
 
         groups_row.addWidget(orientation_group, stretch=1)
 
         subtitle_settings_group = QGroupBox("字幕设置")
         subtitle_settings_group.setObjectName("subtitleSettingsGroup")
+        subtitle_settings_group.setFixedHeight(140)
         subtitle_settings_layout = QVBoxLayout(subtitle_settings_group)
-        subtitle_settings_layout.setContentsMargins(16, 16, 16, 16)
-        subtitle_settings_layout.setSpacing(12)
+        subtitle_settings_layout.setContentsMargins(12, 8, 12, 12)
+        subtitle_settings_layout.setSpacing(8)
 
         enable_row = QHBoxLayout()
         enable_row.setSpacing(12)
@@ -289,18 +326,16 @@ class NovelMixExportPage(QFrame):
         tips_label.setStyleSheet("color: #64748b; font-size: 12px;")
         subtitle_settings_layout.addWidget(tips_label)
 
-        subtitle_settings_layout.addStretch()
-
         groups_row.addWidget(subtitle_settings_group, stretch=1)
 
         layout.addLayout(groups_row)
 
+    def _build_export_cards(self, layout: QVBoxLayout) -> None:
         self._card_container = QFrame()
         self._card_container.setObjectName("exportCardsFrame")
         card_inner = QHBoxLayout(self._card_container)
         card_inner.setContentsMargins(0, 0, 0, 0)
         card_inner.setSpacing(16)
-        card_inner.setAlignment(Qt.AlignCenter)
 
         self._export_video_card = _ExportActionCard(
             icon="\U0001f3ac",
@@ -309,8 +344,8 @@ class NovelMixExportPage(QFrame):
         )
         self._export_video_card.clicked.connect(self._on_export_video)
         self._export_video_card.setObjectName("exportVideoCard")
-        self._export_video_card.setMinimumWidth(280)
-        card_inner.addWidget(self._export_video_card)
+        self._export_video_card.setFixedHeight(140)
+        card_inner.addWidget(self._export_video_card, stretch=1)
 
         self._export_draft_card = _ExportActionCard(
             icon="\u2702\ufe0f",
@@ -319,11 +354,12 @@ class NovelMixExportPage(QFrame):
         )
         self._export_draft_card.clicked.connect(self._on_export_draft)
         self._export_draft_card.setObjectName("exportDraftCard")
-        self._export_draft_card.setMinimumWidth(280)
-        card_inner.addWidget(self._export_draft_card)
+        self._export_draft_card.setFixedHeight(140)
+        card_inner.addWidget(self._export_draft_card, stretch=1)
 
-        layout.addWidget(self._card_container, stretch=1)
+        layout.addWidget(self._card_container)
 
+    def _build_progress_section(self, layout: QVBoxLayout) -> None:
         self._progress_container = QFrame()
         self._progress_container.setObjectName("exportProgressContainer")
         progress_layout = QVBoxLayout(self._progress_container)
@@ -343,6 +379,7 @@ class NovelMixExportPage(QFrame):
         layout.addWidget(self._progress_container)
         self._progress_container.hide()
 
+    def _build_result_section(self, layout: QVBoxLayout) -> None:
         self._result_container = QFrame()
         self._result_container.setObjectName("exportResultContainer")
         result_layout = QVBoxLayout(self._result_container)
@@ -364,31 +401,31 @@ class NovelMixExportPage(QFrame):
         layout.addWidget(self._result_container)
         self._result_container.hide()
 
-        layout.addStretch()
-
     def _reset_ui(self) -> None:
         self._output_path = None
         self._card_container.show()
         self._progress_container.hide()
         self._result_container.hide()
 
-    def _populate_ratio_list(self, orientation: str) -> None:
-        self._ratio_list.clear()
+    def _populate_ratio_combo(self, orientation: str) -> None:
+        self._ratio_combo.clear()
         ratios = LANDSCAPE_RATIOS if orientation == "landscape" else PORTRAIT_RATIOS
         for key, label in ratios.items():
-            item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, key)
-            self._ratio_list.addItem(item)
-        self._ratio_list.setCurrentRow(0)
+            self._ratio_combo.addItem(label, key)
+        self._ratio_combo.setCurrentIndex(0)
 
     def _on_orientation_change(self, orientation: str) -> None:
         if orientation == "landscape":
             self._landscape_btn.setText("\u25cf 横屏")
+            self._landscape_btn.setChecked(True)
             self._portrait_btn.setText("\u25cb 竖屏")
+            self._portrait_btn.setChecked(False)
         else:
             self._landscape_btn.setText("\u25cb 横屏")
+            self._landscape_btn.setChecked(False)
             self._portrait_btn.setText("\u25cf 竖屏")
-        self._populate_ratio_list(orientation)
+            self._portrait_btn.setChecked(True)
+        self._populate_ratio_combo(orientation)
 
     def _on_subtitle_toggle(self, checked: bool) -> None:
         self._preview_btn.setEnabled(checked)
@@ -488,9 +525,7 @@ class NovelMixExportPage(QFrame):
     def _save_export_settings(self) -> None:
         if not self._project:
             return
-        current_item = self._ratio_list.currentItem()
-        if current_item:
-            self._project.aspect_ratio = current_item.data(Qt.UserRole)
+        self._project.aspect_ratio = self._ratio_combo.currentData() or "16:9"
         self._project.orientation = "landscape" if self._landscape_btn.isChecked() else "portrait"
         self._project.enable_subtitle = self._subtitle_check.isChecked()
         if self._project.dub_mode == "self":
@@ -504,7 +539,6 @@ class NovelMixExportPage(QFrame):
             return
 
         is_system = self._project.dub_mode == "system"
-        self._self_dub_section.setVisible(not is_system)
 
         if is_system:
             duration = self._project.total_audio_duration
@@ -518,24 +552,21 @@ class NovelMixExportPage(QFrame):
 
         if self._project.orientation == "portrait":
             self._on_orientation_change("portrait")
-            self._landscape_btn.setChecked(False)
-            self._portrait_btn.setChecked(True)
         else:
             self._landscape_btn.setChecked(True)
             self._portrait_btn.setChecked(False)
 
-        for i in range(self._ratio_list.count()):
-            item = self._ratio_list.item(i)
-            if item and item.data(Qt.UserRole) == self._project.aspect_ratio:
-                self._ratio_list.setCurrentRow(i)
-                break
+        idx = self._ratio_combo.findData(self._project.aspect_ratio)
+        if idx >= 0:
+            self._ratio_combo.setCurrentIndex(idx)
 
         self._subtitle_check.setChecked(self._project.enable_subtitle)
         self._on_subtitle_toggle(self._project.enable_subtitle)
 
     def restore(self, project: NovelMixProjectState) -> None:
         self._project = project
-        self._restore_ui_from_project()
+        if self._current_mode:
+            self._restore_ui_from_project()
 
     def _on_export_progress(self, msg: str) -> None:
         self._progress_label.setText(msg)
