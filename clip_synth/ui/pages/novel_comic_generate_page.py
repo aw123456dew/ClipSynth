@@ -101,9 +101,16 @@ ASSET_EXTRACT_SYSTEM_PROMPT = """\
 
 要求：
 1. 每个资产必须包含名称(name)和详细描述(desc)
-2. 描述要足够详细，包括外貌特征、材质、颜色、状态等视觉信息，便于后续AI生成图片
-3. 只提取文本中明确出现或强烈暗示的资产，不要凭空捏造
-4. 如果某类资产不存在，返回空数组
+2. 只提取文本中明确出现或强烈暗示的资产，不要凭空捏造
+3. 如果某类资产不存在，返回空数组
+4. 描述必须具体到可以用于 AI 生图的程度，不同类型有不同的描述重点：
+
+   - 人物（characters）：描述性别、年龄、外貌（发型、脸型、五官特点、身材）、着装（衣服款式、颜色、材质）、气质/神态。正文未明确写到的部分，可根据上下文合理预测，不要编造离谱特征
+   
+   - 场景（scenes）：只描述环境本身——空间大小、建筑风格、光线氛围、色调、时间、天气、装饰、设施。可以写"街上偶有行人""有几盏路灯"这类背景元素，但绝对不能说具体角色（角色名、他、她等）在场景中做什么
+   
+   - 道具（props）：描述物品的外观、材质、颜色、尺寸、状态（新旧/破损/脏污等）。和场景一样，只描述物品本身，不能说角色在使用它
+
 5. 描述中严禁使用双引号、单引号、破折号、省略号、书名号等标点符号，只能使用逗号、句号、感叹号、问号、顿号
 6. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。"""
 
@@ -3021,11 +3028,12 @@ class _AssetManagementDialog(QDialog):
 
         asset_type = self._get_asset_type(asset_name)
         asset_desc = self._get_asset_desc(asset_name)
+        type_label = {"character": "人物图", "scene": "场景图", "prop": "道具图"}.get(asset_type, asset_type)
 
         global_prefix = gen_settings.get("prefix", "").strip()
-        prompt = asset_desc
+        prompt = f"资产名称：{asset_name}，资产类型：{type_label}，{asset_desc}"
         if global_prefix:
-            prompt = global_prefix + ", " + asset_desc
+            prompt = global_prefix + ", " + asset_name + "，" + prompt
 
         if asset_type == "character":
             prompt += "，生成人物4视角（正面全身视图，左侧身视图，右侧视图，背面视图），白底图"
@@ -3241,11 +3249,12 @@ class _AssetManagementDialog(QDialog):
                 row.set_generating()
 
             asset_desc = self._get_asset_desc(asset_name)
+            type_label = {"character": "人物图", "scene": "场景图", "prop": "道具图"}.get(asset_type, asset_type)
 
             global_prefix = gen_settings.get("prefix", "").strip()
-            prompt = asset_desc
+            prompt = f"资产名称：{asset_name}，资产类型：{type_label}，{asset_desc}"
             if global_prefix:
-                prompt = global_prefix + ", " + asset_desc
+                prompt = global_prefix + ", " + asset_name + "，" + prompt
 
             if asset_type == "character":
                 prompt += "，生成人物4视角（正面全身视图，左侧身视图，右侧视图，背面视图），白底图"
