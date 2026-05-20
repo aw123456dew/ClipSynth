@@ -37,6 +37,12 @@ class SettingsService:
                     secret_key=row.tencent_asr_secret_key or "",
                     region=row.tencent_asr_region or "ap-guangzhou",
                 ),
+                image_model=AIModelSettings(
+                    model_name=row.image_model_name or "",
+                    api_key=row.image_api_key or "",
+                    base_url=row.image_base_url or "",
+                    api_type=row.image_api_type or "openai",
+                ),
                 asr_provider=row.asr_provider or "volcengine",
                 tts_params=row.tts_params or "",
                 gpu_accel_enabled=bool(row.gpu_accel_enabled),
@@ -66,6 +72,10 @@ class SettingsService:
             row.tencent_asr_secret_id = settings.tencent_asr.secret_id
             row.tencent_asr_secret_key = settings.tencent_asr.secret_key
             row.tencent_asr_region = settings.tencent_asr.region
+            row.image_model_name = settings.image_model.model_name
+            row.image_api_key = settings.image_model.api_key
+            row.image_base_url = settings.image_model.base_url
+            row.image_api_type = settings.image_model.api_type
             row.asr_provider = settings.asr_provider
             row.tts_params = settings.tts_params
             row.gpu_accel_enabled = settings.gpu_accel_enabled

@@ -129,7 +129,9 @@ class ContentArea(QFrame):
         self._project_state_service = project_state_service
         self._narrate_project_state_service = narrate_project_state_service or NarrateProjectStateService()
         from clip_synth.services.novel_mix_state_service import NovelMixStateService
+        from clip_synth.services.novel_comic_state_service import NovelComicStateService
         self._novel_mix_state_service = NovelMixStateService()
+        self._novel_comic_state_service = NovelComicStateService()
         self._cover_worker: CoverExtractorWorker | None = None
         self._setup_ui()
 
@@ -178,6 +180,13 @@ class ContentArea(QFrame):
         self._stack.addWidget(self._novel_mix_page)
         self._pages["novel_mix"] = self._stack.count() - 1
 
+        from clip_synth.ui.pages.novel_comic_project_list_page import NovelComicProjectListPage
+        self._novel_comic_page = NovelComicProjectListPage(self._novel_comic_state_service)
+        self._novel_comic_page.open_project.connect(self._open_novel_comic_project)
+        self._novel_comic_page.start_chapter_page.connect(self._switch_to_novel_comic_chapter)
+        self._stack.addWidget(self._novel_comic_page)
+        self._pages["novel_comic"] = self._stack.count() - 1
+
     def switch_to(self, page_key: str) -> None:
         if page_key in self._pages:
             if page_key == "short_drama_mix":
@@ -190,6 +199,8 @@ class ContentArea(QFrame):
                 self._narrate_v2_page.sync_all_covers()
             elif page_key == "novel_mix":
                 self._novel_mix_page._load_projects()
+            elif page_key == "novel_comic":
+                self._novel_comic_page._load_projects()
             self._stack.setCurrentIndex(self._pages[page_key])
 
     def switch_to_project_wizard(self, data) -> None:
@@ -441,3 +452,37 @@ class ContentArea(QFrame):
     def _on_novel_mix_wizard_cancelled(self) -> None:
         self._remove_wizard_from_stack()
         self.switch_to("novel_mix")
+
+    def _open_novel_comic_project(self, project_id: str) -> None:
+        self._switch_to_novel_comic_chapter(project_id)
+
+    def _switch_to_novel_comic_chapter(self, project_id: str) -> None:
+        from clip_synth.ui.pages.novel_comic_chapter_page import NovelComicChapterPage
+
+        project = self._novel_comic_state_service.load_project(project_id)
+        if not project:
+            return
+        chapter_page = NovelComicChapterPage(project, self._novel_comic_state_service)
+        chapter_page.back_to_list.connect(self._on_novel_comic_chapter_back)
+        chapter_page.open_generate_page.connect(self._switch_to_novel_comic_generate)
+        self._stack.addWidget(chapter_page)
+        self._stack.setCurrentIndex(self._stack.count() - 1)
+
+    def _switch_to_novel_comic_generate(self, project_id: str, episode_num: int) -> None:
+        from clip_synth.ui.pages.novel_comic_generate_page import NovelComicGeneratePage
+
+        generate_page = NovelComicGeneratePage(
+            project_id, episode_num,
+            self._novel_comic_state_service,
+            self._settings_service,
+        )
+        generate_page.back_to_chapters.connect(self._on_novel_comic_generate_back)
+        self._stack.addWidget(generate_page)
+        self._stack.setCurrentIndex(self._stack.count() - 1)
+
+    def _on_novel_comic_chapter_back(self) -> None:
+        self._remove_wizard_from_stack()
+        self.switch_to("novel_comic")
+
+    def _on_novel_comic_generate_back(self) -> None:
+        self._remove_wizard_from_stack()

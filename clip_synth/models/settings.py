@@ -28,6 +28,10 @@ class SettingsModel(Base):
     tencent_asr_secret_key: Mapped[str] = mapped_column(String(512), default="")
     tencent_asr_region: Mapped[str] = mapped_column(String(64), default="ap-guangzhou")
     asr_provider: Mapped[str] = mapped_column(String(32), default="volcengine")
+    image_model_name: Mapped[str] = mapped_column(String(255), default="")
+    image_api_key: Mapped[str] = mapped_column(String(512), default="")
+    image_base_url: Mapped[str] = mapped_column(String(1024), default="")
+    image_api_type: Mapped[str] = mapped_column(String(32), default="openai")
 
 
 @dataclass
@@ -35,6 +39,7 @@ class AIModelSettings:
     model_name: str = ""
     api_key: str = ""
     base_url: str = ""
+    api_type: str = "openai"
 
     @property
     def is_configured(self) -> bool:
@@ -45,6 +50,7 @@ class AIModelSettings:
             "model_name": self.model_name,
             "api_key": self.api_key,
             "base_url": self.base_url,
+            "api_type": self.api_type,
         }
 
     @classmethod
@@ -53,6 +59,7 @@ class AIModelSettings:
             model_name=data.get("model_name", ""),
             api_key=data.get("api_key", ""),
             base_url=data.get("base_url", ""),
+            api_type=data.get("api_type", "openai"),
         )
 
 
@@ -115,6 +122,7 @@ class TencentAsrSettings:
 class AppSettings:
     text_model: AIModelSettings = field(default_factory=AIModelSettings)
     vision_model: AIModelSettings = field(default_factory=AIModelSettings)
+    image_model: AIModelSettings = field(default_factory=AIModelSettings)
     draft_output_dir: str = ""
     doubao_voice: DoubaoVoiceSettings = field(default_factory=DoubaoVoiceSettings)
     tencent_asr: TencentAsrSettings = field(default_factory=TencentAsrSettings)
@@ -126,6 +134,7 @@ class AppSettings:
         return {
             "text_model": self.text_model.to_dict(),
             "vision_model": self.vision_model.to_dict(),
+            "image_model": self.image_model.to_dict(),
             "draft_output_dir": self.draft_output_dir,
             "doubao_voice": self.doubao_voice.to_dict(),
             "tencent_asr": self.tencent_asr.to_dict(),
@@ -139,6 +148,7 @@ class AppSettings:
         return cls(
             text_model=AIModelSettings.from_dict(data.get("text_model", {})),
             vision_model=AIModelSettings.from_dict(data.get("vision_model", {})),
+            image_model=AIModelSettings.from_dict(data.get("image_model", {})),
             draft_output_dir=data.get("draft_output_dir", ""),
             doubao_voice=DoubaoVoiceSettings.from_dict(data.get("doubao_voice", {})),
             tencent_asr=TencentAsrSettings.from_dict(data.get("tencent_asr", {})),

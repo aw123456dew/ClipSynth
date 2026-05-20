@@ -58,6 +58,14 @@ class DatabaseManager:
                 conn.execute(text("ALTER TABLE settings ADD COLUMN tencent_asr_region VARCHAR(64) DEFAULT 'ap-guangzhou'"))
             if "asr_provider" not in columns:
                 conn.execute(text("ALTER TABLE settings ADD COLUMN asr_provider VARCHAR(32) DEFAULT 'volcengine'"))
+            if "image_model_name" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN image_model_name VARCHAR(255) DEFAULT ''"))
+            if "image_api_key" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN image_api_key VARCHAR(512) DEFAULT ''"))
+            if "image_base_url" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN image_base_url VARCHAR(1024) DEFAULT ''"))
+            if "image_api_type" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN image_api_type VARCHAR(32) DEFAULT 'openai'"))
 
             conn.commit()
 

@@ -129,6 +129,50 @@ QStatusBar {
     font-weight: 600;
 }
 
+#navButton[collapsed="true"] {
+    padding: 12px 10px;
+    text-align: center;
+    border-left: none;
+}
+
+#navButton[collapsed="true"][active="true"] {
+    border-left: 3px solid #4fc3f7;
+    text-align: left;
+}
+
+/* ===== Nav Collapse Button ===== */
+#navCollapseBtn {
+    background-color: #1a2340;
+    color: #4fc3f7;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+#navCollapseBtn:hover {
+    background-color: #0d1f3c;
+    color: #81d4fa;
+    border-color: #4fc3f7;
+}
+
+/* ===== Nav Expand Floating Button ===== */
+#navExpandBtn {
+    background-color: #1a2340;
+    color: #4fc3f7;
+    border: 1px solid #2a3a5a;
+    border-radius: 0 8px 8px 0;
+    font-size: 16px;
+    font-weight: bold;
+    border-left: none;
+}
+
+#navExpandBtn:hover {
+    background-color: #0d1f3c;
+    color: #81d4fa;
+    border-color: #4fc3f7;
+}
+
 /* ===== Content Area ===== */
 #contentArea {
     background-color: #0a0e17;
@@ -298,6 +342,67 @@ QLineEdit:focus {
 
 QLineEdit::placeholder {
     color: #334155;
+}
+
+QComboBox {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    min-height: 20px;
+    selection-background-color: #4f46e5;
+    selection-color: #ffffff;
+}
+
+QComboBox:hover {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+QComboBox:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #0d111f;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px;
+    outline: 0px;
+    selection-background-color: #4f46e5;
+    selection-color: #ffffff;
+}
+
+QComboBox QAbstractItemView::item {
+    padding: 8px 12px;
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+QComboBox QAbstractItemView::item:hover {
+    background-color: #1e293b;
+}
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: #4f46e5;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 24px;
+    border-left: none;
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+QComboBox::down-arrow {
+    width: 10px;
+    height: 10px;
 }
 
 #testConnectionBtn {
@@ -3268,6 +3373,715 @@ QSlider::sub-page:horizontal {
 /* ===== Novel Mix Card Icon ===== */
 #novelMixCardIcon {
     color: #2a3a5a;
+}
+
+/* ===== Novel Comic Card Icon ===== */
+#novelComicCardIcon {
+    color: #2a3a5a;
+}
+
+/* ===== Novel Comic Chapter Page ===== */
+#novelComicProjectListPage {
+    background-color: #060a14;
+}
+
+#novelComicChapterPage {
+    background-color: #060a14;
+}
+
+#chapterInputDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#chapterTextEdit {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+    selection-background-color: #6366f1;
+}
+
+#chapterTextEdit:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+#chapterCard {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+}
+
+#chapterCard:hover {
+    border-color: #2a3a5a;
+}
+
+#chapterEpisodeLabel {
+    color: #4fc3f7;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#chapterTextLabel {
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+#chapterGenBtn {
+    background-color: #1a2340;
+    color: #4fc3f7;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+#chapterGenBtn:hover {
+    background-color: #1e3260;
+    border-color: #4fc3f7;
+}
+
+#chapterEmptyLabel {
+    color: #4a5568;
+    font-size: 14px;
+}
+
+#chapterBackBtn {
+    background: transparent;
+    color: #94a3b8;
+    border: none;
+    font-size: 14px;
+    padding: 4px 8px;
+}
+
+#chapterBackBtn:hover {
+    color: #4fc3f7;
+}
+
+#chapterScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+#chapterScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
+#chapterScrollContent {
+    background-color: transparent;
+}
+
+/* ===== Chapter Input Dialog ===== */
+#chapterInputDialog #dialogTitle {
+    color: #f1f5f9;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+#chapterInputDialog #dialogFieldLabel {
+    color: #94a3b8;
+    font-size: 14px;
+}
+
+#chapterInputDialog QTextEdit {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    selection-background-color: #6366f1;
+}
+
+#chapterInputDialog QTextEdit:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
+/* ===== Novel Comic Generate Page ===== */
+#novelComicGeneratePage {
+    background-color: #060a14;
+}
+
+#comicGenActionBar {
+    background-color: #0c1322;
+    border-bottom: 1px solid #1a2340;
+}
+
+#comicGenActionBtn {
+    background-color: #1a2340;
+    color: #94a3b8;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+#comicGenActionBtn:hover {
+    background-color: #0d1f3c;
+    color: #4fc3f7;
+    border-color: #4fc3f7;
+}
+
+#comicGenBatchBtn {
+    background-color: #1e3260;
+    color: #4fc3f7;
+    border: 1px solid #4fc3f7;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+#comicGenBatchBtn:hover {
+    background-color: #0d1f3c;
+    color: #81d4fa;
+}
+
+#batchGenMenu {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+    padding: 4px;
+}
+
+#batchGenMenu::item {
+    color: #94a3b8;
+    padding: 8px 24px;
+    border-radius: 4px;
+}
+
+#batchGenMenu::item:hover {
+    background-color: #141c30;
+    color: #4fc3f7;
+}
+
+#comicGenAlertBox {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#comicGenAlertBox QLabel {
+    color: #e2e8f0;
+    font-size: 13px;
+}
+
+#comicGenAlertBox QPushButton {
+    background-color: #1a2340;
+    color: #94a3b8;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    padding: 6px 20px;
+    font-size: 13px;
+    min-width: 60px;
+}
+
+#comicGenAlertBox QPushButton:hover {
+    background-color: #0d1f3c;
+    color: #4fc3f7;
+    border-color: #4fc3f7;
+}
+
+#comicGenScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+#comicGenScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
+#comicGenScrollContent {
+    background-color: transparent;
+}
+
+/* ===== Storyboard Card ===== */
+#storyboardCard {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 10px;
+}
+
+#storyboardCard:hover {
+    border-color: #2a3a5a;
+}
+
+#storyboardImagePlaceholder {
+    background-color: #0a0f1a;
+    border: 2px dashed #1e293b;
+    border-radius: 8px;
+}
+
+#storyboardImagePlaceholder:hover {
+    border-color: #2a3a5a;
+}
+
+#storyboardImageCross {
+    color: #2a3a5a;
+    font-size: 32px;
+}
+
+#storyboardIndexLabel {
+    color: #4fc3f7;
+    font-size: 16px;
+    font-weight: bold;
+    min-width: 32px;
+}
+
+#storyboardTextLabel {
+    color: #e2e8f0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+#storyboardDescEdit {
+    color: #6a8ab5;
+    font-size: 12px;
+    background-color: #0d111f;
+    border-left: 3px solid #4fc3f7;
+    border-radius: 0 4px 4px 0;
+    padding: 6px 10px;
+    selection-background-color: #6366f1;
+}
+
+#storyboardDescEdit QScrollBar:vertical {
+    width: 4px;
+    background-color: transparent;
+}
+
+#storyboardDescEdit QScrollBar::handle:vertical {
+    background-color: #2a3a5a;
+    border-radius: 2px;
+    min-height: 20px;
+}
+
+#storyboardDescEdit QScrollBar::add-line:vertical,
+#storyboardDescEdit QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+#storyboardAssetTagLabel {
+    color: #4a5568;
+    font-size: 12px;
+}
+
+#storyboardDescContainer {
+    background-color: transparent;
+}
+
+#storyboardAssetContainer {
+    background-color: transparent;
+}
+
+#storyboardAddAssetBtn {
+    background-color: transparent;
+    color: #4fc3f7;
+    border: 1px dashed #2a3a5a;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+}
+
+#storyboardAddAssetBtn:hover {
+    background-color: #0d1f3c;
+    border-style: solid;
+}
+
+#storyboardActionBtn {
+    background-color: #141c30;
+    color: #94a3b8;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+}
+
+#storyboardActionBtn:hover {
+    background-color: #1e3260;
+    color: #4fc3f7;
+    border-color: #2a3a5a;
+}
+
+#storyboardEmptyLabel {
+    color: #4a5568;
+    font-size: 14px;
+}
+
+/* ===== Asset Tag ===== */
+#assetTag {
+    background-color: #1a2340;
+    border: 1px solid #2a3a5a;
+    border-radius: 12px;
+}
+
+#assetTagLabel {
+    color: #4fc3f7;
+    font-size: 12px;
+}
+
+#assetTagRemoveBtn {
+    background-color: transparent;
+    color: #4a5568;
+    border: none;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+#assetTagRemoveBtn:hover {
+    color: #f87171;
+}
+
+/* ===== Add Asset Dialog ===== */
+#addAssetDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+QWidget[objectName^="addAssetTabPage_"] {
+    background-color: transparent;
+}
+
+#assetCheckBox {
+    color: #c8d6e5;
+    font-size: 13px;
+    spacing: 10px;
+    padding: 4px 0;
+}
+
+#assetCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #2a3a5a;
+    border-radius: 4px;
+    background-color: #0a0f1a;
+}
+
+#assetCheckBox::indicator:checked {
+    background-color: #6366f1;
+    border-color: #6366f1;
+}
+
+#assetCheckBox::indicator:hover {
+    border-color: #4fc3f7;
+}
+
+/* ===== Asset Management Dialog ===== */
+#assetManagementDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#assetTabBar {
+    background-color: #0a0f1a;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 2px;
+}
+
+#assetTabBtn {
+    background-color: transparent;
+    color: #6a7a9a;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-size: 13px;
+}
+
+#assetTabBtn:hover {
+    color: #94a3b8;
+}
+
+#assetTabBtn[active="true"] {
+    background-color: #1a2340;
+    color: #4fc3f7;
+    font-weight: bold;
+}
+
+#assetTabStack {
+    background-color: transparent;
+}
+
+#assetItemScroll {
+    background-color: transparent;
+    border: none;
+}
+
+#assetItemScrollContent {
+    background-color: transparent;
+}
+
+#assetItemRow {
+    background-color: #0c1322;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+}
+
+#assetItemRow:hover {
+    border-color: #2a3a5a;
+}
+
+#assetThumbPlaceholder {
+    background-color: #0a0f1a;
+    border: 1px dashed #1e293b;
+    border-radius: 4px;
+}
+
+#assetItemName {
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#assetItemDesc {
+    color: #6a7a9a;
+    font-size: 12px;
+}
+
+#assetGenImageBtn {
+    background-color: #1a2340;
+    color: #4fc3f7;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+}
+
+#assetGenImageBtn:hover {
+    background-color: #0d1f3c;
+    border-color: #4fc3f7;
+}
+
+#assetUploadBtn {
+    background-color: #1a2340;
+    color: #a5b4fc;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+}
+
+#assetUploadBtn:hover {
+    background-color: #0d1f3c;
+    border-color: #818cf8;
+}
+
+#assetDeleteBtn {
+    background-color: transparent;
+    color: #4a5568;
+    border: 1px solid #1a2340;
+    border-radius: 6px;
+    padding: 4px;
+    font-size: 14px;
+}
+
+#assetDeleteBtn:hover {
+    background-color: #3b1020;
+    color: #f87171;
+    border-color: #f87171;
+}
+
+#assetAddRow {
+    background-color: transparent;
+    border: 1px dashed #1e293b;
+    border-radius: 8px;
+}
+
+#assetAddRow:hover {
+    border-color: #4fc3f7;
+}
+
+#assetAddIcon {
+    color: #4fc3f7;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+#assetAddBtn {
+    background-color: transparent;
+    color: #4fc3f7;
+    border: none;
+    padding: 4px 8px;
+    font-size: 13px;
+    text-align: left;
+}
+
+#assetEmptyLabel {
+    color: #4a5568;
+    font-size: 13px;
+}
+
+#assetExtractStatus {
+    color: #4a5568;
+    font-size: 12px;
+    margin-left: 8px;
+}
+
+/* ===== History Images Dialog ===== */
+#historyImagesDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+/* ===== Description Edit Dialog ===== */
+#descEditDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#addAssetNameDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#confirmDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+/* ===== Gen Settings Dialog ===== */
+#genSettingsDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#genSettingsSpin {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    font-size: 14px;
+    padding: 4px 10px;
+}
+
+#genSettingsSpin:focus {
+    border-color: #6366f1;
+}
+
+#genSettingsSpin::up-button, #genSettingsSpin::down-button {
+    width: 16px;
+    background-color: #1a2340;
+    border: none;
+}
+
+#genSettingsSpin::up-arrow {
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #94a3b8;
+    margin-bottom: 1px;
+}
+
+#genSettingsSpin::down-arrow {
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #94a3b8;
+    margin-top: 1px;
+}
+
+#genSettingsSpin::up-button:hover, #genSettingsSpin::down-button:hover {
+    background-color: #0d1f3c;
+}
+
+#genSettingsCombo {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    font-size: 14px;
+    padding: 4px 10px;
+}
+
+#genSettingsCombo:hover {
+    border-color: #4fc3f7;
+}
+
+#genSettingsCombo:editable {
+    background-color: #0a0f1a;
+}
+
+#genSettingsCombo QAbstractItemView {
+    background-color: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    selection-background-color: #1e3a5f;
+    selection-color: #4fc3f7;
+    outline: none;
+    padding: 4px;
+}
+
+#genSettingsCombo QAbstractItemView::item {
+    min-height: 30px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    color: #cbd5e1;
+    background-color: transparent;
+}
+
+#genSettingsCombo QAbstractItemView::item:hover {
+    background-color: #182545;
+    color: #e2e8f0;
+}
+
+#genSettingsCombo QAbstractItemView::item:selected {
+    background-color: #1e3a5f;
+    color: #4fc3f7;
+    font-weight: bold;
+}
+
+#genSettingsCombo::drop-down {
+    border: none;
+    width: 20px;
+}
+
+#genSettingsCombo::down-arrow {
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #94a3b8;
+    margin-right: 4px;
+}
+
+#genSettingsPrefixEdit {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #2a3a5a;
+    border-radius: 8px;
+    font-size: 13px;
+    padding: 10px;
+    selection-background-color: #6366f1;
+}
+
+#genSettingsPrefixEdit:focus {
+    border-color: #6366f1;
+}
+
+#imageTestDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#imagePreviewDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#imagePreviewScroll {
+    background-color: #0a0f1a;
+    border: none;
 }
 
 /* ===== Dub Mode Dialog ===== */

@@ -1,0 +1,231 @@
+import logging
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from clip_synth.models.novel_comic_project_state import (
+    NovelComicChapterState,
+    NovelComicProjectState,
+)
+from clip_synth.services.novel_comic_state_service import NovelComicStateService
+
+logger = logging.getLogger("clip_synth.novel_comic_chapter")
+
+
+class NovelComicChapterInputDialog(QDialog):
+    def __init__(self, episode_num: int, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._episode_num = episode_num
+        self.setWindowTitle(f"第{episode_num}集 - 输入小说文本")
+        self.setFixedSize(560, 420)
+        self.setObjectName("chapterInputDialog")
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title_label = QLabel(f"第{self._episode_num}集")
+        title_label.setObjectName("dialogTitle")
+        layout.addWidget(title_label)
+
+        hint_label = QLabel("请输入本集小说文本内容：")
+        hint_label.setObjectName("dialogFieldLabel")
+        layout.addWidget(hint_label)
+
+        self._text_edit = QTextEdit()
+        self._text_edit.setObjectName("chapterTextEdit")
+        self._text_edit.setPlaceholderText("在此粘贴或输入小说文本...")
+        layout.addWidget(self._text_edit, stretch=1)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setObjectName("dialogCancelBtn")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        self._confirm_btn = QPushButton("确定")
+        self._confirm_btn.setObjectName("dialogConfirmBtn")
+        self._confirm_btn.clicked.connect(self.accept)
+        btn_row.addWidget(self._confirm_btn)
+
+        layout.addLayout(btn_row)
+
+    @property
+    def chapter_text(self) -> str:
+        return self._text_edit.toPlainText().strip()
+
+
+class NovelComicChapterCard(QFrame):
+    generate_comic = Signal(int)
+
+    def __init__(
+        self,
+        episode_num: int,
+        chapter: NovelComicChapterState,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self._episode_num = episode_num
+        self._chapter = chapter
+        self.setObjectName("chapterCard")
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(12)
+
+        episode_label = QLabel(f"第{self._episode_num}集")
+        episode_label.setObjectName("chapterEpisodeLabel")
+        episode_label.setFixedWidth(60)
+        layout.addWidget(episode_label)
+
+        preview_text = self._chapter.text[:80] + "..." if len(self._chapter.text) > 80 else self._chapter.text
+        text_label = QLabel(preview_text)
+        text_label.setObjectName("chapterTextLabel")
+        text_label.setWordWrap(True)
+        text_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        layout.addWidget(text_label, stretch=1)
+
+        self._gen_btn = QPushButton("生成漫画")
+        self._gen_btn.setObjectName("chapterGenBtn")
+        self._gen_btn.setCursor(Qt.PointingHandCursor)
+        self._gen_btn.clicked.connect(lambda: self.generate_comic.emit(self._episode_num))
+        layout.addWidget(self._gen_btn)
+
+
+class NovelComicChapterPage(QFrame):
+    back_to_list = Signal()
+    open_generate_page = Signal(str, int)
+
+    def __init__(
+        self,
+        project: NovelComicProjectState,
+        state_service: NovelComicStateService,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self._project = project
+        self._state_service = state_service
+        self._chapter_cards: list[NovelComicChapterCard] = []
+        self.setObjectName("novelComicChapterPage")
+        self._first_enter = len(self._project.chapters) == 0
+        self._setup_ui()
+
+        if self._first_enter:
+            self._show_first_chapter_dialog()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        toolbar = QFrame()
+        toolbar.setObjectName("mixToolbar")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(24, 16, 24, 16)
+
+        back_btn = QPushButton("\u2190 返回")
+        back_btn.setObjectName("chapterBackBtn")
+        back_btn.setCursor(Qt.PointingHandCursor)
+        back_btn.clicked.connect(self._on_back)
+        toolbar_layout.addWidget(back_btn)
+
+        title_label = QLabel(self._project.name)
+        title_label.setObjectName("mixTitle")
+        toolbar_layout.addWidget(title_label)
+
+        toolbar_layout.addStretch()
+
+        self._add_chapter_btn = QPushButton("新增章节")
+        self._add_chapter_btn.setObjectName("mixNewProjectBtn")
+        self._add_chapter_btn.clicked.connect(self._on_add_chapter)
+        toolbar_layout.addWidget(self._add_chapter_btn)
+
+        layout.addWidget(toolbar)
+
+        scroll_area = QScrollArea()
+        scroll_area.setObjectName("chapterScrollArea")
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        scroll_content = QWidget()
+        scroll_content.setObjectName("chapterScrollContent")
+        self._chapters_layout = QVBoxLayout(scroll_content)
+        self._chapters_layout.setContentsMargins(24, 16, 24, 16)
+        self._chapters_layout.setSpacing(8)
+        self._chapters_layout.setAlignment(Qt.AlignTop)
+
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area, stretch=1)
+
+        self._refresh_chapter_list()
+
+    def _refresh_chapter_list(self) -> None:
+        while self._chapters_layout.count():
+            item = self._chapters_layout.takeAt(0)
+            if item:
+                widget = item.widget()
+                if widget:
+                    widget.setParent(None)
+                    widget.deleteLater()
+
+        self._chapter_cards.clear()
+
+        if not self._project.chapters:
+            empty_label = QLabel("暂无章节，点击「新增章节」开始添加")
+            empty_label.setObjectName("chapterEmptyLabel")
+            empty_label.setAlignment(Qt.AlignCenter)
+            self._chapters_layout.addWidget(empty_label)
+            return
+
+        for i, chapter in enumerate(self._project.chapters):
+            card = NovelComicChapterCard(
+                episode_num=i + 1,
+                chapter=chapter,
+            )
+            card.generate_comic.connect(self._on_generate_comic)
+            self._chapter_cards.append(card)
+            self._chapters_layout.addWidget(card)
+
+    def _show_first_chapter_dialog(self) -> None:
+        dialog = NovelComicChapterInputDialog(1, self.window())
+        if dialog.exec() == QDialog.Accepted:
+            text = dialog.chapter_text
+            if text:
+                self._project.chapters.append(NovelComicChapterState(text=text))
+                self._state_service.save_project(self._project)
+                self._first_enter = False
+                self._refresh_chapter_list()
+
+    def _on_add_chapter(self) -> None:
+        next_episode = len(self._project.chapters) + 1
+        dialog = NovelComicChapterInputDialog(next_episode, self.window())
+        if dialog.exec() == QDialog.Accepted:
+            text = dialog.chapter_text
+            if text:
+                self._project.chapters.append(NovelComicChapterState(text=text))
+                self._state_service.save_project(self._project)
+                self._refresh_chapter_list()
+
+    def _on_generate_comic(self, episode_num: int) -> None:
+        self.open_generate_page.emit(self._project.id, episode_num)
+
+    def _on_back(self) -> None:
+        self.back_to_list.emit()

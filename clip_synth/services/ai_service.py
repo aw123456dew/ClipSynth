@@ -14,10 +14,15 @@ class AIModelConfig:
         model_name: str = "",
         api_key: str = "",
         base_url: str = "",
+        api_type: str = "openai",
     ):
         self.model_name = model_name
         self.api_key = api_key
-        self.base_url = self._normalize_base_url(base_url)
+        if api_type == "openai":
+            self.base_url = self._normalize_base_url(base_url)
+        else:
+            self.base_url = base_url.strip().rstrip("/")
+        self.api_type = api_type
 
     @staticmethod
     def _normalize_base_url(url: str) -> str:
@@ -39,6 +44,7 @@ class AIModelConfig:
             "model_name": self.model_name,
             "api_key": self.api_key,
             "base_url": self.base_url,
+            "api_type": self.api_type,
         }
 
     @classmethod
@@ -47,6 +53,7 @@ class AIModelConfig:
             model_name=data.get("model_name", ""),
             api_key=data.get("api_key", ""),
             base_url=data.get("base_url", ""),
+            api_type=data.get("api_type", "openai"),
         )
 
 
@@ -220,6 +227,188 @@ class AIService:
             except Exception:
                 pass
             self._client = None
+
+    def generate_image(
+        self,
+        prompt: str,
+        size: str = "1024x1024",
+        reference_images: list[str] | None = None,
+    ) -> bytes:
+        if self._config.api_type == "gemini":
+            return self._generate_image_gemini(prompt, size, reference_images)
+        return self._generate_image_openai(prompt, size, reference_images)
+
+    def _generate_image_openai(
+        self,
+        prompt: str,
+        size: str,
+        reference_images: list[str] | None,
+    ) -> bytes:
+        import base64
+        import httpx
+
+        ref_list: list[tuple[str, bytes]] = []
+        if reference_images:
+            logger.info("收到 %d 张参考图路径", len(reference_images))
+            for path in reference_images:
+                try:
+                    with open(path, "rb") as f:
+                        data = f.read()
+                    name = Path(path).stem
+                    ref_list.append((name, data))
+                    logger.info("参考图加载成功 %s -> %s.png (%d bytes)", path, name, len(data))
+                except Exception as e:
+                    logger.warning("读取参考图失败 %s: %s", path, e)
+        else:
+            logger.info("没有参考图，使用纯文生图")
+
+        base_url = self._config.base_url.rstrip("/")
+        headers = {
+            "Authorization": f"Bearer {self._config.api_key}",
+        }
+
+        if ref_list:
+            logger.info("调用 /v1/images/edits (参考图=%d 张, size=%s)", len(ref_list), size)
+            files: list = [
+                ("image[]", (f"{name}.png", data, "image/png"))
+                for name, data in ref_list
+            ]
+            with httpx.Client(timeout=httpx.Timeout(900, connect=30)) as http:
+                try:
+                    resp = http.post(
+                        f"{base_url}/images/edits",
+                        headers=headers,
+                        data={"model": self._config.model_name, "prompt": prompt, "size": size},
+                        files=files,
+                    )
+                    resp.raise_for_status()
+                    result = resp.json()
+                    logger.info("/v1/images/edits 成功")
+                except Exception as e1:
+                    logger.warning("/v1/images/edits 失败: %s，回退 generations", e1)
+                    resp = http.post(
+                        f"{base_url}/images/generations",
+                        headers=headers,
+                        json={
+                            "model": self._config.model_name,
+                            "prompt": prompt,
+                            "n": 1,
+                            "size": size,
+                        },
+                    )
+                    resp.raise_for_status()
+                    result = resp.json()
+        else:
+            logger.info("调用 /v1/images/generations (纯文生图)")
+            with httpx.Client(timeout=httpx.Timeout(900, connect=30)) as http:
+                resp = http.post(
+                    f"{base_url}/images/generations",
+                    headers=headers,
+                    json={
+                        "model": self._config.model_name,
+                        "prompt": prompt,
+                        "n": 1,
+                        "size": size,
+                    },
+                )
+                resp.raise_for_status()
+                result = resp.json()
+
+        data_items = result.get("data", [])
+        if not data_items:
+            raise RuntimeError("图片生成未返回图像数据")
+
+        item = data_items[0]
+        if "b64_json" in item and item["b64_json"]:
+            logger.debug("图片返回 b64_json, 长度=%d", len(item["b64_json"]))
+            return base64.b64decode(item["b64_json"])
+
+        image_url = item.get("url", "")
+        if image_url:
+            logger.debug("图片返回 URL, 开始下载: %s", image_url[:80])
+            with httpx.Client(timeout=httpx.Timeout(900)) as http:
+                dl_resp = http.get(image_url)
+                dl_resp.raise_for_status()
+                data = dl_resp.content
+                logger.debug("图片下载完成, 大小=%d bytes", len(data))
+                return data
+
+        raise RuntimeError("图片生成未返回图像数据")
+
+    def _generate_image_gemini(
+        self,
+        prompt: str,
+        size: str,
+        reference_images: list[str] | None,
+    ) -> bytes:
+        import base64
+        import httpx
+
+        parts: list[dict] = []
+        if reference_images:
+            for path in reference_images:
+                try:
+                    with open(path, "rb") as f:
+                        img_data = f.read()
+                    parts.append({
+                        "inlineData": {
+                            "mimeType": "image/png",
+                            "data": base64.b64encode(img_data).decode("utf-8"),
+                        },
+                    })
+                    logger.info("Gemini 参考图加载成功 %s (%d bytes)", path, len(img_data))
+                except Exception as e:
+                    logger.warning("Gemini 读取参考图失败 %s: %s", path, e)
+
+        parts.append({"text": prompt})
+
+        body: dict = {
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+        }
+
+        model = self._config.model_name or "gemini-3-pro-image-preview"
+        base = self._config.base_url or "https://4sapi.com/v1beta"
+        base = base.rstrip("/")
+        url = f"{base}/models/{model}:generateContent"
+
+        logger.info("调用 Gemini 生图: %s", url)
+        with httpx.Client(timeout=httpx.Timeout(900)) as http:
+            resp = http.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {self._config.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+
+        candidates = result.get("candidates", [])
+        if not candidates:
+            raise RuntimeError("Gemini 图片生成未返回数据")
+
+        for candidate in candidates:
+            content = candidate.get("content", {})
+            for part in content.get("parts", []):
+                if "inlineData" in part:
+                    b64 = part["inlineData"].get("data", "")
+                    if b64:
+                        logger.debug("Gemini 返回 inlineData, 长度=%d", len(b64))
+                        return base64.b64decode(b64)
+                if "fileData" in part:
+                    file_url = part["fileData"].get("fileUri", "")
+                    if file_url:
+                        logger.debug("Gemini 返回文件 URL, 开始下载: %s", file_url[:80])
+                        with httpx.Client(timeout=httpx.Timeout(900)) as http2:
+                            dl_resp = http2.get(file_url)
+                            dl_resp.raise_for_status()
+                            data = dl_resp.content
+                            logger.debug("Gemini 图片下载完成, 大小=%d bytes", len(data))
+                            return data
+
+        raise RuntimeError("Gemini 图片生成未返回图像数据")
 
     @property
     def config(self) -> AIModelConfig:

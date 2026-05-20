@@ -1,8 +1,14 @@
 import logging
+import tempfile
+import threading
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -18,8 +24,10 @@ from PySide6.QtWidgets import (
 
 from clip_synth.models.settings import AIModelSettings, AppSettings, DoubaoVoiceSettings, TencentAsrSettings
 from clip_synth.services.ai_service import AIModelConfig, AIService
+from clip_synth.services.image_gen_service import ImageGenService
 from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.components.toast import show_toast
+from clip_synth.ui.widgets.image_viewer import show_image_viewer
 from clip_synth.utils.gpu_accel import detect_gpu, set_gpu_accel_enabled
 
 logger = logging.getLogger("clip_synth.settings")
@@ -54,16 +62,69 @@ class ConnectionTestThread(QThread):
             self.result_ready.emit(False, str(e))
 
 
+class ImageGenTestWorker(QThread):
+    finished = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, config: AIModelSettings, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._config = config
+
+    def run(self) -> None:
+        event = threading.Event()
+        result: dict = {"path": None, "error": None}
+
+        def on_done(task_id: int, image_data: bytes) -> None:
+            try:
+                tmp_path = Path(tempfile.gettempdir()) / f"frame_cut_img_test_{task_id}.png"
+                tmp_path.write_bytes(image_data)
+                result["path"] = str(tmp_path)
+            except Exception as e:
+                result["error"] = f"保存图片失败: {e}"
+            event.set()
+
+        def on_error(task_id: int, error_msg: str) -> None:
+            result["error"] = error_msg
+            event.set()
+
+        try:
+            service_config = AIModelConfig(
+                model_name=self._config.model_name,
+                api_key=self._config.api_key,
+                base_url=self._config.base_url,
+                api_type=self._config.api_type,
+            )
+            ImageGenService.instance().submit(
+                service_config, "一只小狗", on_done, on_error,
+            )
+            event.wait()
+        except Exception as e:
+            result["error"] = str(e)
+
+        if result["path"]:
+            self.finished.emit(result["path"])
+        else:
+            self.error.emit(result["error"] or "未知错误")
+
+
 class ModelConfigGroup(QGroupBox):
     def __init__(
         self,
         title: str,
         settings: AIModelSettings,
         parent: QWidget | None = None,
+        show_image_test: bool = False,
+        show_connection_test: bool = True,
+        show_api_type: bool = False,
     ):
         super().__init__(title, parent)
         self._settings = settings
         self._test_thread: ConnectionTestThread | None = None
+        self._image_test_thread: ImageGenTestWorker | None = None
+        self._show_image_test = show_image_test
+        self._show_connection_test = show_connection_test
+        self._show_api_type = show_api_type
+        self._api_type_combo: QComboBox | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -87,19 +148,51 @@ class ModelConfigGroup(QGroupBox):
         self._base_url_input.setText(self._settings.base_url)
         layout.addRow("接口地址:", self._base_url_input)
 
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
+        if self._show_api_type:
+            self._api_type_combo = QComboBox()
+            self._api_type_combo.setObjectName("settingsApiTypeCombo")
+            self._api_type_combo.addItems(["OpenAI", "Gemini"])
+            idx = self._api_type_combo.findText(
+                self._settings.api_type.capitalize() if self._settings.api_type else "OpenAI"
+            )
+            self._api_type_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            self._api_type_combo.currentIndexChanged.connect(self._on_api_type_changed)
+            layout.addRow("接口类型:", self._api_type_combo)
+        else:
+            self._api_type_combo = None
 
-        self._test_btn = QPushButton("测试连接")
-        self._test_btn.setObjectName("testConnectionBtn")
-        self._test_btn.clicked.connect(self._on_test_connection)
-        btn_layout.addWidget(self._test_btn)
+        if self._show_connection_test:
+            btn_layout = QHBoxLayout()
+            btn_layout.addStretch()
 
-        self._test_status = QLabel("")
-        self._test_status.setObjectName("testStatus")
-        btn_layout.addWidget(self._test_status)
+            self._test_btn = QPushButton("测试连接")
+            self._test_btn.setObjectName("testConnectionBtn")
+            self._test_btn.clicked.connect(self._on_test_connection)
+            btn_layout.addWidget(self._test_btn)
 
-        layout.addRow("", btn_layout)
+            self._test_status = QLabel("")
+            self._test_status.setObjectName("testStatus")
+            btn_layout.addWidget(self._test_status)
+
+            layout.addRow("", btn_layout)
+        else:
+            self._test_btn = None
+            self._test_status = None
+
+        if self._show_image_test:
+            img_test_layout = QHBoxLayout()
+            img_test_layout.addStretch()
+
+            self._image_test_btn = QPushButton("测试生图")
+            self._image_test_btn.setObjectName("testConnectionBtn")
+            self._image_test_btn.clicked.connect(self._on_test_image_gen)
+            img_test_layout.addWidget(self._image_test_btn)
+
+            self._image_test_status = QLabel("")
+            self._image_test_status.setObjectName("testStatus")
+            img_test_layout.addWidget(self._image_test_status)
+
+            layout.addRow("", img_test_layout)
 
     def _on_test_connection(self) -> None:
         config = self.collect_settings()
@@ -133,11 +226,53 @@ class ModelConfigGroup(QGroupBox):
     def _on_thread_finished(self) -> None:
         logger.info("连接测试线程已结束")
 
+    def _on_test_image_gen(self) -> None:
+        config = self.collect_settings()
+        if not config.is_configured:
+            show_toast(self, "请先填写所有字段再测试生图", "error")
+            return
+
+        self._image_test_btn.setEnabled(False)
+        self._image_test_status.setText("生图中...")
+        self._image_test_status.setStyleSheet("color: #9ca3af;")
+
+        self._image_test_thread = ImageGenTestWorker(config)
+        self._image_test_thread.finished.connect(self._on_image_test_finished)
+        self._image_test_thread.error.connect(self._on_image_test_error)
+        self._image_test_thread.start()
+
+    def _on_image_test_finished(self, image_path: str) -> None:
+        self._image_test_btn.setEnabled(True)
+        self._image_test_status.setText("生图成功")
+        self._image_test_status.setStyleSheet("color: #34d399;")
+        show_image_viewer(image_path, "生图测试结果", self.window())
+
+    def _on_image_test_error(self, error_msg: str) -> None:
+        self._image_test_btn.setEnabled(True)
+        self._image_test_status.setText("生图失败")
+        self._image_test_status.setStyleSheet("color: #f87171;")
+        show_toast(self, f"生图失败: {error_msg}", "error", duration=5000)
+
+    def _on_api_type_changed(self) -> None:
+        if self._api_type_combo is None:
+            return
+        is_gemini = self._api_type_combo.currentText() == "Gemini"
+        if is_gemini:
+            self._model_name_input.setPlaceholderText("gemini-3-pro-image-preview")
+            self._base_url_input.setPlaceholderText("https://4sapi.com/v1beta")
+        else:
+            self._model_name_input.setPlaceholderText("例如 gpt-4o, deepseek-chat")
+            self._base_url_input.setPlaceholderText("例如 https://api.openai.com/v1")
+
     def collect_settings(self) -> AIModelSettings:
+        api_type = "openai"
+        if self._api_type_combo:
+            api_type = self._api_type_combo.currentText().lower()
         return AIModelSettings(
             model_name=self._model_name_input.text().strip(),
             api_key=self._api_key_input.text().strip(),
             base_url=self._base_url_input.text().strip().rstrip("/"),
+            api_type=api_type,
         )
 
     def update_settings(self, settings: AIModelSettings) -> None:
@@ -145,6 +280,10 @@ class ModelConfigGroup(QGroupBox):
         self._model_name_input.setText(settings.model_name)
         self._api_key_input.setText(settings.api_key)
         self._base_url_input.setText(settings.base_url)
+        if self._api_type_combo:
+            idx = self._api_type_combo.findText(settings.api_type.capitalize() if settings.api_type else "OpenAI")
+            self._api_type_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            self._on_api_type_changed()
 
 
 class DoubaoVoiceConfigGroup(QGroupBox):
@@ -293,6 +432,15 @@ class SettingsPage(QFrame):
         )
         scroll_layout.addWidget(self._vision_model_group)
 
+        self._image_model_group = ModelConfigGroup(
+            "图片生成模型设置",
+            self._settings.image_model,
+            show_image_test=True,
+            show_connection_test=False,
+            show_api_type=True,
+        )
+        scroll_layout.addWidget(self._image_model_group)
+
         self._doubao_voice_group = DoubaoVoiceConfigGroup(
             "火山引擎配置",
             self._settings.doubao_voice,
@@ -393,6 +541,7 @@ class SettingsPage(QFrame):
         self._settings = self._settings_service.load()
         self._text_model_group.update_settings(self._settings.text_model)
         self._vision_model_group.update_settings(self._settings.vision_model)
+        self._image_model_group.update_settings(self._settings.image_model)
         self._doubao_voice_group.update_settings(self._settings.doubao_voice)
         self._tencent_asr_group.update_settings(self._settings.tencent_asr)
         self._draft_path_input.setText(self._settings.draft_output_dir)
@@ -402,6 +551,7 @@ class SettingsPage(QFrame):
     def _on_save_settings(self) -> None:
         self._settings.text_model = self._text_model_group.collect_settings()
         self._settings.vision_model = self._vision_model_group.collect_settings()
+        self._settings.image_model = self._image_model_group.collect_settings()
         self._settings.doubao_voice = self._doubao_voice_group.collect_settings()
         self._settings.tencent_asr = self._tencent_asr_group.collect_settings()
         self._settings.draft_output_dir = self._draft_path_input.text().strip()

@@ -1,10 +1,11 @@
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QStatusBar,
     QWidget,
 )
@@ -101,7 +102,28 @@ class MainWindow(QMainWindow):
         )
         layout.addWidget(self._content_area, stretch=1)
 
+        self._expand_btn = QPushButton("\u00bb", central)
+        self._expand_btn.setObjectName("navExpandBtn")
+        self._expand_btn.setCursor(Qt.PointingHandCursor)
+        self._expand_btn.setFixedSize(28, 60)
+        self._expand_btn.clicked.connect(self._nav_sidebar._toggle_collapse)
+        self._expand_btn.hide()
+
         self._nav_sidebar.page_changed.connect(self._content_area.switch_to)
+        self._nav_sidebar.collapse_changed.connect(self._on_sidebar_collapse_changed)
+
+    def _on_sidebar_collapse_changed(self, collapsed: bool) -> None:
+        if collapsed:
+            self._expand_btn.move(0, (self.height() - self._expand_btn.height()) // 2)
+            self._expand_btn.show()
+            self._expand_btn.raise_()
+        else:
+            self._expand_btn.hide()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._nav_sidebar.is_collapsed():
+            self._expand_btn.move(0, (self.height() - self._expand_btn.height()) // 2)
 
     def _setup_status_bar(self) -> None:
         status_bar = QStatusBar()
