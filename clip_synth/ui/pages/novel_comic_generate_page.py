@@ -453,12 +453,12 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
 - 场景：描述该格的环境、时间、天气、氛围
 - 人物：出现在该格的角色名称
 - 动作/表情：角色的肢体动作和面部表情细节
-- 气泡：如有对话或内心独白，注明气泡类型（云朵状内心独白 / 带尖刺的爆炸形对话 / 颤抖气泡 / 破格气泡 等）和气泡内的文字，所有文字内容必须用中文双引号（""）包裹，例如：气泡：(云朵状内心独白) "明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"
-- 说明框：如有旁白或说明文字，放在画面底部或顶部，注明文字内容，所有文字内容必须用中文双引号（""）包裹，例如：说明框："其实我想过沈故会有新的女朋友。"
+- 气泡：如有对话或内心独白，注明气泡类型（云朵状内心独白 / 带尖刺的爆炸形对话 / 颤抖气泡 / 破格气泡 等）和气泡内的文字。每个气泡文字控制在 1-2 行以内，超过的拆成多个气泡依次排列，例如：气泡1："你怎么来了？" 气泡2："我来看看你。" 所有文字内容必须用中文双引号（""）包裹，例如：气泡：(云朵状内心独白)"明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"
+- 说明框：尽量减少使用，能用画面构图和人物动作表情传达的信息，就不要用说明框。优先通过场景氛围、人物微表情、肢体语言来表现情绪和叙事。确需使用时，放在画面底部或顶部，文字控制在 1-2 行以内，注明文字内容，用中文双引号（""）包裹，例如：说明框："其实我想过沈故会有新的女朋友。"
 
 核心规则：
 1. 一个分镜对应一页漫画，不要拆分到多个分镜描述
-2. 格的数量和形状由内容节奏决定，高潮部分用大格或出格，过渡部分用小格
+2. 格的数量：画面节奏要快，优先使用 1-2 格，只有在气泡数量超过 4 个以上时才考虑使用 3 格，超过 6 个气泡以上才使用 4 格。在满足气泡容量的前提下尽量用更少的格数来保证大画面表现力
 3. 场景使用规则（极其重要）：
    - 每个分镜已绑定了一个场景（从资产池中匹配），本页所有格必须统一使用该场景
    - 严禁使用"无明确背景""纯色背景""网点处理""抽象背景"等空洞描述代替实际场景
@@ -466,8 +466,8 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
    - 唯有在原文明确描写角色离开了当前场景、进入了另一个场所时，该格才能使用另一个场景，否则一律使用绑定场景
 4. 人物和道具只能从已匹配的资产列表中选择，不要自行编造或添加未匹配的角色和物品
 5. 每个格必须有明确的景别和角度
-6. 对话气泡和内心独白要标注气泡类型
-7. 描述语言要有画面感，让画师能直接照着画
+6. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列
+7. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事，能靠画面表达的就不加说明框
 8. 手机屏幕 / 电脑屏幕 / 平板 / 纸条 / 书本等媒介上显示的文字：这些不是气泡也不是说明框，而是画面内的视觉元素，应在动作/表情或场景描述中直接描述屏幕上的文字内容，例如：动作/表情：陆宴知手指微微收紧，手机屏幕冷光照亮指节，聊天界面上赫然显示谢依璇刚刚发送的信息：「今晚有空吗？」。严禁为此类媒介文字使用气泡或说明框
 9. 气泡和说明框的文字内容必须使用中文双引号（""）包裹，除此之外的其他位置（场景描述、人物描述、动作表情等）严禁使用双引号、单引号、破折号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号、冒号
 10. 输出合法 JSON：只输出一个 JSON 对象，不要输出任何其他内容。描述文本中出现的所有英文双引号（"）必须用反斜杠转义（\\"），中文双引号（""）无需转义。所有换行符必须用 \\n 表示，不得出现真正的换行符。JSON 对象内的 description 字符串本身可以包含 \\n 来表示换行。"""
@@ -515,15 +515,25 @@ class StoryboardDescriptionWorker(QThread):
                     svc = AIService(config)
                     cli = svc._ensure_client()
 
+                    context_parts: list[str] = []
+                    for s in sorted(self._storyboards, key=lambda x: x.get("index", 0)):
+                        tag = ">>> 当前要生成的分镜 <<<" if s["index"] == sb["index"] else ""
+                        context_parts.append(
+                            f"--- 分镜 #{s['index']} {tag}---\n"
+                            f"原文: {s['text']}"
+                        )
+                    full_context = "\n\n".join(context_parts)
+
                     assets = sb.get('assets', [])
                     scene_name = assets[0] if assets else ""
                     chars_and_props = ', '.join(assets[1:]) if len(assets) > 1 else '(无)'
                     prompt = (
-                        "请为以下分镜生成详细的一页漫画分镜描述，"
-                        "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。\n\n"
-                        f"--- 分镜 #{sb['index']} ---\n"
+                        "以下是一页漫画的全部原文分镜，请为标记为「当前要生成的分镜」的那个分镜生成详细的一页漫画分镜描述，"
+                        "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。"
+                        "你可以参考前后分镜的上下文来理解叙事节奏和人物状态。\n\n"
+                        f"{full_context}\n\n"
+                        f"--- 当前分镜额外信息 ---\n"
                         f"绑定场景: {scene_name}\n"
-                        f"原文: {sb['text']}\n"
                         f"已匹配人物/道具: {chars_and_props}"
                     )
 
@@ -592,6 +602,7 @@ class SingleDescWorker(QThread):
     def __init__(
         self,
         storyboard: dict,
+        all_storyboards: list[dict],
         project_id: str,
         episode_num: int,
         settings_service: SettingsService,
@@ -599,6 +610,7 @@ class SingleDescWorker(QThread):
     ):
         super().__init__()
         self._storyboard = storyboard
+        self._all_storyboards = all_storyboards
         self._project_id = project_id
         self._episode_num = episode_num
         self._settings_service = settings_service
@@ -618,16 +630,26 @@ class SingleDescWorker(QThread):
             service = AIService(config)
             client = service._ensure_client()
 
+            context_parts: list[str] = []
+            for s in sorted(self._all_storyboards, key=lambda x: x.get("index", 0)):
+                tag = ">>> 当前要生成的分镜 <<<" if s["index"] == self._storyboard["index"] else ""
+                context_parts.append(
+                    f"--- 分镜 #{s['index']} {tag}---\n"
+                    f"原文: {s['text']}"
+                )
+            full_context = "\n\n".join(context_parts)
+
             sb = self._storyboard
             assets = sb.get('assets', [])
             scene_name = assets[0] if assets else ""
             chars_and_props = ', '.join(assets[1:]) if len(assets) > 1 else '(无)'
             prompt = (
-                "请为以下分镜生成详细的一页漫画分镜描述，"
-                "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。\n\n"
-                f"--- 分镜 #{sb['index']} ---\n"
+                "以下是一页漫画的全部原文分镜，请为标记为「当前要生成的分镜」的那个分镜生成详细的一页漫画分镜描述，"
+                "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。"
+                "你可以参考前后分镜的上下文来理解叙事节奏和人物状态。\n\n"
+                f"{full_context}\n\n"
+                f"--- 当前分镜额外信息 ---\n"
                 f"绑定场景: {scene_name}\n"
-                f"原文: {sb['text']}\n"
                 f"已匹配人物/道具: {chars_and_props}"
             )
 
@@ -1299,6 +1321,7 @@ class NovelComicGeneratePage(QFrame):
             card.history_clicked.connect(lambda idx=sb["index"]: self._on_history_images(idx))
             card.gen_desc_clicked.connect(self._on_gen_single_desc)
             card.desc_edit_requested.connect(self._on_edit_desc)
+            card.text_edit_requested.connect(self._on_edit_text)
             card.preview_clicked.connect(lambda idx=sb["index"]: self._on_preview_comic(idx))
             self._storyboard_cards[sb["index"]] = card
             self._storyboard_layout.addWidget(card)
@@ -1511,7 +1534,7 @@ class NovelComicGeneratePage(QFrame):
         project = self._state_service.load_project(self._project_id)
         gen_settings = project.extra_data.get("gen_settings", {}) if project else {}
 
-        prompt, size, reference_paths = self._build_comic_prompt(sb, project, gen_settings)
+        prompt, size, reference_paths = self._build_comic_prompt(sb, project, gen_settings, page_num=sb.get("index", 1))
 
         if reference_paths:
             logger.info("分镜 #%d 找到 %d 张参考图: %s", storyboard_index, len(reference_paths), reference_paths)
@@ -1572,11 +1595,11 @@ class NovelComicGeneratePage(QFrame):
 
         card = self._storyboard_cards.get(storyboard_index)
         if card:
-            card._desc_edit.setPlaceholderText("生成中...")
+            card.set_desc_gen_status("generating")
 
         key = _worker_key(self._project_id, self._episode_num, f"desc_{storyboard_index}")
         worker = SingleDescWorker(
-            sb, self._project_id, self._episode_num,
+            sb, self._storyboards, self._project_id, self._episode_num,
             self._settings_service, self._state_service,
         )
         _running_workers[key] = worker
@@ -1597,11 +1620,16 @@ class NovelComicGeneratePage(QFrame):
                 break
         self._save_storyboards()
         self._refresh_single_card(storyboard_index)
+        card = self._storyboard_cards.get(storyboard_index)
+        if card:
+            card.set_desc_gen_status("done")
 
     def _on_single_desc_error(self, storyboard_index: int, error_msg: str) -> None:
         card = self._storyboard_cards.get(storyboard_index)
         if card:
-            card._desc_edit.setPlaceholderText(f"生成失败: {error_msg}")
+            card.set_desc_gen_status("error")
+            if card._desc_edit:
+                card._desc_edit.setPlaceholderText(f"生成失败: {error_msg}")
 
     def _on_edit_desc(self, storyboard_index: int, current_desc: str) -> None:
         dialog = _DescEditDialog(storyboard_index, current_desc, self.window())
@@ -1609,6 +1637,17 @@ class NovelComicGeneratePage(QFrame):
             for sb in self._storyboards:
                 if sb["index"] == storyboard_index:
                     sb["description"] = dialog.edited_desc
+                    break
+            self._save_storyboards()
+            self._refresh_single_card(storyboard_index)
+
+    def _on_edit_text(self, storyboard_index: int, current_text: str) -> None:
+        dialog = _DescEditDialog(storyboard_index, current_text, self.window())
+        dialog.setWindowTitle(f"编辑分镜 #{storyboard_index} 原文")
+        if dialog.exec() == QDialog.Accepted:
+            for sb in self._storyboards:
+                if sb["index"] == storyboard_index:
+                    sb["text"] = dialog.edited_desc
                     break
             self._save_storyboards()
             self._refresh_single_card(storyboard_index)
@@ -1700,7 +1739,7 @@ class NovelComicGeneratePage(QFrame):
             if card:
                 card.set_generating()
 
-            prompt, size, reference_paths = self._build_comic_prompt(sb, project, gen_settings)
+            prompt, size, reference_paths = self._build_comic_prompt(sb, project, gen_settings, page_num=idx)
             ImageGenService.instance().submit(
                 image_config, prompt,
                 _make_comic_on_done(
@@ -1717,7 +1756,7 @@ class NovelComicGeneratePage(QFrame):
             )
 
     def _build_comic_prompt(
-        self, sb: dict, project, gen_settings: dict,
+        self, sb: dict, project, gen_settings: dict, page_num: int = 0,
     ) -> tuple[str, str, list[str]]:
         desc = sb.get("description", "")
         asset_names = sb.get("assets", [])
@@ -1742,6 +1781,8 @@ class NovelComicGeneratePage(QFrame):
         resolution = gen_settings.get("resolution", "1K")
         size = _image_size_from_settings(ratio, resolution)
         prompt += f"，{resolution}分辨率，图片比例{ratio}，尺寸{size}"
+        if page_num:
+            prompt += f"。请在画面底部居中位置用白色小字生成页码 {page_num}"
 
         return prompt, size, reference_paths
 
@@ -1817,6 +1858,7 @@ class _StoryboardCard(QFrame):
     history_clicked = Signal(int)
     gen_desc_clicked = Signal(int)
     desc_edit_requested = Signal(int, str)
+    text_edit_requested = Signal(int, str)
     preview_clicked = Signal(int)
 
     def __init__(self, data: dict, parent: QWidget | None = None):
@@ -1825,7 +1867,7 @@ class _StoryboardCard(QFrame):
         self.setObjectName("storyboardCard")
         self._main_layout: QHBoxLayout | None = None
         self._right_layout: QVBoxLayout | None = None
-        self._text_label: QLabel | None = None
+        self._text_edit: QTextEdit | None = None
         self._desc_container: QWidget | None = None
         self._desc_edit: QTextEdit | None = None
         self._asset_row: QHBoxLayout | None = None
@@ -1833,6 +1875,7 @@ class _StoryboardCard(QFrame):
         self._image_placeholder: QFrame | None = None
         self._image_label: QLabel | None = None
         self._gen_img_btn: QPushButton | None = None
+        self._gen_desc_btn: QPushButton | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -1864,11 +1907,17 @@ class _StoryboardCard(QFrame):
         index_label.setObjectName("storyboardIndexLabel")
         header_row.addWidget(index_label)
 
-        self._text_label = QLabel(self._data["text"])
-        self._text_label.setObjectName("storyboardTextLabel")
-        self._text_label.setWordWrap(True)
-        self._text_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        header_row.addWidget(self._text_label, stretch=1)
+        self._text_edit = QTextEdit(self._data["text"])
+        self._text_edit.setObjectName("storyboardTextLabel")
+        self._text_edit.setReadOnly(True)
+        self._text_edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._text_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._text_edit.setFrameShape(QTextEdit.NoFrame)
+        self._text_edit.setStyleSheet("QTextEdit { background: transparent; color: #e2e8f0; font-size: 13px; }")
+        self._text_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._text_edit.setFixedHeight(60)
+        self._text_edit.viewport().installEventFilter(self)
+        header_row.addWidget(self._text_edit, stretch=1)
         self._right_layout.addLayout(header_row)
 
         self._desc_container = QWidget()
@@ -1915,13 +1964,13 @@ class _StoryboardCard(QFrame):
         )
         btn_row.addWidget(hist_btn)
 
-        gen_desc_btn = QPushButton("\U0001f4c4  生成描述")
-        gen_desc_btn.setObjectName("storyboardActionBtn")
-        gen_desc_btn.setCursor(Qt.PointingHandCursor)
-        gen_desc_btn.clicked.connect(
+        self._gen_desc_btn = QPushButton("\U0001f4c4  生成描述")
+        self._gen_desc_btn.setObjectName("storyboardActionBtn")
+        self._gen_desc_btn.setCursor(Qt.PointingHandCursor)
+        self._gen_desc_btn.clicked.connect(
             lambda: self.gen_desc_clicked.emit(self._data["index"])
         )
-        btn_row.addWidget(gen_desc_btn)
+        btn_row.addWidget(self._gen_desc_btn)
 
         btn_row.addStretch()
         self._right_layout.addLayout(btn_row)
@@ -1931,14 +1980,17 @@ class _StoryboardCard(QFrame):
         self._apply_data()
 
     def _apply_data(self) -> None:
-        if self._text_label:
-            self._text_label.setText(self._data["text"])
+        if self._text_edit:
+            self._text_edit.setPlainText(self._data["text"])
 
         if self._desc_edit and self._desc_container:
             desc = self._data.get("description", "")
             if desc:
                 self._desc_edit.setPlainText(desc)
                 self._desc_container.setVisible(True)
+                if self._gen_desc_btn:
+                    self._gen_desc_btn.setText("\U0001f4c4  重新生成")
+                    self._gen_desc_btn.setEnabled(True)
             else:
                 self._desc_container.setVisible(False)
 
@@ -1974,11 +2026,28 @@ class _StoryboardCard(QFrame):
                     self._gen_img_btn.setText("\U0001f5bc  重新生成")
                     self._gen_img_btn.setEnabled(True)
 
+    def set_desc_gen_status(self, status: str) -> None:
+        if not self._gen_desc_btn:
+            return
+        if status == "generating":
+            self._gen_desc_btn.setText("生成中...")
+            self._gen_desc_btn.setEnabled(False)
+        elif status == "error":
+            self._gen_desc_btn.setText("\U0001f4c4  生成描述")
+            self._gen_desc_btn.setEnabled(True)
+        else:
+            self._gen_desc_btn.setText("\U0001f4c4  重新生成")
+            self._gen_desc_btn.setEnabled(True)
+
     def eventFilter(self, obj, event) -> bool:
-        if event.type() == QEvent.MouseButtonDblClick and obj is self._desc_edit.viewport():
-            current_desc = self._data.get("description", "")
-            self.desc_edit_requested.emit(self._data["index"], current_desc)
-            return True
+        if event.type() == QEvent.MouseButtonDblClick:
+            if obj is self._desc_edit.viewport():
+                current_desc = self._data.get("description", "")
+                self.desc_edit_requested.emit(self._data["index"], current_desc)
+                return True
+            if obj is self._text_edit.viewport():
+                self.text_edit_requested.emit(self._data["index"], self._data["text"])
+                return True
         return super().eventFilter(obj, event)
 
     def _rebuild_asset_row(self) -> None:
