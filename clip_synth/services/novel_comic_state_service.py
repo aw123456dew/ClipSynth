@@ -88,10 +88,9 @@ class NovelComicStateService:
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
-                import re as _re
-                cleaned = _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", raw)
-                data = json.loads(cleaned)
-                logger.warning("项目 JSON 文件 %s 含控制字符，已自动清理", file_path)
+                logger.error("项目 JSON 文件损坏，已自动删除损坏项目: %s", file_path)
+                file_path.unlink(missing_ok=True)
+                return None
 
             chapters = [
                 NovelComicChapterState.from_dict(ch)

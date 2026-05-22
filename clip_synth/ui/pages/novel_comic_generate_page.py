@@ -157,7 +157,7 @@ class AssetExtractWorker(QThread):
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
-                timeout=900,
+                timeout=900,  # 根据模型设置最大值
                 response_format={"type": "json_object"},
             )
 
@@ -268,7 +268,7 @@ class StoryboardSplitWorker(QThread):
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
-                timeout=900,
+                timeout=900,   # 根据模型设置最大值
                 response_format={"type": "json_object"},
             )
 
@@ -283,7 +283,10 @@ class StoryboardSplitWorker(QThread):
 
         except Exception as e:
             logger.error("分镜拆分失败: %s", str(e), exc_info=True)
-            logger.info("错误分镜: %s", content)
+            try:
+                logger.info("错误分镜: %s", content[:300])
+            except NameError:
+                pass
             self.error.emit(str(e))
 
     def _parse_response(self, content: str) -> list[dict]:
@@ -387,7 +390,7 @@ class MatchAssetsWorker(QThread):
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
-                timeout=900,
+                timeout=900, # 根据模型设置最大值
                 response_format={"type": "json_object"},
             )
 
@@ -400,7 +403,10 @@ class MatchAssetsWorker(QThread):
 
         except Exception as e:
             logger.error("资产匹配失败: %s", str(e), exc_info=True)
-            logger.info("资产匹配AI返回: %s", content)
+            try:
+                logger.info("资产匹配AI返回: %s", content[:300])
+            except NameError:
+                pass
             self.error.emit(str(e))
 
     def _apply_and_save(self, assets_map: dict) -> None:
@@ -458,7 +464,7 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
 
 格N (形状描述，如：窄长横格 / 大方格 / 竖长格左半页 / 满版出血格 / 三小格并列 等)
 - 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
-- 场景：描述该格的环境、时间、天气、氛围
+- 场景：出现在该格的场景名称
 - 人物：出现在该格的角色名称
 - 动作/表情：角色的肢体动作和面部表情细节
 - 气泡：如有对话或内心独白，注明所属角色、气泡类型及文字。格式：角色名：气泡序号(气泡类型)："文字"，字体加粗。每个气泡文字控制在 1-2 行以内，超过的拆成多个气泡依次排列，例如：张三：气泡1(普通气泡)："你怎么来了？" 李四：气泡2(普通气泡)："我来看看你。" 沈故：(云朵状内心独白)"明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"。**气泡和说明框的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。**
@@ -474,8 +480,8 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
    - 唯有在原文明确描写角色离开了当前场景、进入了另一个场所时，该格才能使用另一个场景，否则一律使用绑定场景
 4. 人物和道具只能从已匹配的资产列表中选择，不要自行编造或添加未匹配的角色和物品
 5. 每个格必须有明确的景别和角度
-6. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列,尽量减少气泡文字数量。气泡和说明框的语言必须与分镜原文一致（中文原文用中文，英文原文用英文）
-7. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事，能靠画面表达的就不加说明框
+6. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列,尽量减少气泡文字数量。你也可以不使用原文文案，但是意思表达出来就行。你也可以加一些声响词，比如 砰， 咚， 咔嚓， 之类的声响词
+7. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事，尽量使用说明框说明画面
 8. 手机屏幕 / 电脑屏幕 / 平板 / 纸条 / 书本等媒介上显示的文字：这些不是气泡也不是说明框，而是画面内的视觉元素，应在动作/表情或场景描述中直接描述屏幕上的文字内容，例如：动作/表情：陆宴知手指微微收紧，手机屏幕冷光照亮指节，聊天界面上赫然显示谢依璇刚刚发送的信息：「今晚有空吗？」。严禁为此类媒介文字使用气泡或说明框
 9. 气泡和说明框的文字内容必须使用中文双引号（""）包裹，除此之外的其他位置（场景描述、人物描述、动作表情等）严禁使用双引号、单引号、破折号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号、冒号
 10. 输出合法 JSON：只输出一个 JSON 对象，不要输出任何其他内容。描述文本中出现的所有英文双引号（"）必须用反斜杠转义（\\"），中文双引号（""）无需转义。所有换行符必须用 \\n 表示，不得出现真正的换行符。JSON 对象内的 description 字符串本身可以包含 \\n 来表示换行。"""
@@ -552,7 +558,7 @@ class StoryboardDescriptionWorker(QThread):
                             {"role": "user", "content": prompt},
                         ],
                         temperature=0.7,
-                        timeout=900,
+                        timeout=900,  # 根据模型设置最大值
                         response_format={"type": "json_object"},
                     )
 
@@ -567,7 +573,10 @@ class StoryboardDescriptionWorker(QThread):
                         self.progress.emit(sb["index"], done_ctr[0], total, desc)
                 except Exception as e:
                     logger.error("分镜 #%d 描述生成异常: %s", sb['index'], str(e), exc_info=True)
-                    logger.info("分镜 #%d 描述AI返回: %s", sb['index'], content)
+                    try:
+                        logger.info("分镜 #%d 描述AI返回: %s", sb['index'], content[:200])
+                    except NameError:
+                        pass
                     with lock:
                         errors.append(str(e))
                         sb["description"] = ""
@@ -669,7 +678,7 @@ class SingleDescWorker(QThread):
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.7,
-                timeout=900,
+                timeout=900, # 根据模型设置最大值
                 response_format={"type": "json_object"},
             )
 
@@ -699,6 +708,10 @@ class SingleDescWorker(QThread):
 
         except Exception as e:
             logger.error("单条描述生成失败: %s", str(e), exc_info=True)
+            try:
+                logger.info("分镜 #%d 单条描述AI返回: %s", sb['index'], content[:200])
+            except NameError:
+                pass
             self.error.emit(str(e))
 
 
@@ -1000,9 +1013,13 @@ class _GenerateSettingsDialog(QDialog):
         saved_style = self._settings.get("style", COMIC_STYLE_PRESETS[0]["name"])
         idx = self._style_combo.findText(saved_style)
         if idx >= 0:
+            self._style_combo.blockSignals(True)
             self._style_combo.setCurrentIndex(idx)
+            self._style_combo.blockSignals(False)
         elif saved_style == "自定义画风":
+            self._style_combo.blockSignals(True)
             self._style_combo.setCurrentIndex(self._style_combo.count() - 1)
+            self._style_combo.blockSignals(False)
         self._style_combo.currentIndexChanged.connect(self._on_style_changed)
         layout.addWidget(self._style_combo)
 
@@ -1183,15 +1200,6 @@ class NovelComicGeneratePage(QFrame):
         if not project:
             return
         self._gen_settings = project.extra_data.get("gen_settings", {})
-        changed = False
-        if not self._gen_settings.get("style"):
-            self._gen_settings["style"] = COMIC_STYLE_PRESETS[0]["name"]
-            changed = True
-        if not self._gen_settings.get("prefix") and COMIC_STYLE_PRESETS:
-            self._gen_settings["prefix"] = COMIC_STYLE_PRESETS[0]["prompt"]
-            changed = True
-        if changed:
-            self._save_gen_settings()
 
     def _save_gen_settings(self) -> None:
         project = self._state_service.load_project(self._project_id)
@@ -1601,7 +1609,7 @@ class NovelComicGeneratePage(QFrame):
         project.extra_data["ep_assets_1"] = migrated
 
     def _on_add_asset(self, storyboard_index: int) -> None:
-        dialog = _AddAssetDialog(self._storyboards, storyboard_index, self.window())
+        dialog = _AddAssetDialog(self._storyboards, storyboard_index, self._state_service, self._project_id, self.window())
         if dialog.exec() == QDialog.Accepted:
             for sb in self._storyboards:
                 if sb["index"] == storyboard_index:
@@ -2233,6 +2241,8 @@ class _AddAssetDialog(QDialog):
         self,
         storyboards: list[dict],
         storyboard_index: int,
+        state_service: NovelComicStateService | None = None,
+        project_id: str | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -2244,9 +2254,9 @@ class _AddAssetDialog(QDialog):
         self._asset_checkboxes: dict[str, list[QCheckBox]] = {
             "character": [], "scene": [], "prop": [],
         }
-        self._setup_ui(storyboards, storyboard_index)
+        self._setup_ui(storyboards, storyboard_index, state_service, project_id)
 
-    def _setup_ui(self, storyboards: list[dict], storyboard_index: int) -> None:
+    def _setup_ui(self, storyboards: list[dict], storyboard_index: int, state_service, project_id) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
@@ -2276,23 +2286,19 @@ class _AddAssetDialog(QDialog):
         self._tab_stack = QStackedWidget()
         self._tab_stack.setObjectName("assetTabStack")
 
-        character_data = [
-            {"icon": "\U0001f464", "name": "林逸"},
-            {"icon": "\U0001f464", "name": "刀疤脸"},
-            {"icon": "\U0001f464", "name": "打手A"},
-            {"icon": "\U0001f464", "name": "打手B"},
-        ]
-        scene_data = [
-            {"icon": "\U0001f3ed", "name": "废弃工厂"},
-            {"icon": "\U0001f3ed", "name": "仓库"},
-            {"icon": "\U0001f3ed", "name": "工业区"},
-        ]
-        prop_data = [
-            {"icon": "\U0001f4f7", "name": "照片"},
-            {"icon": "\U0001f52b", "name": "匕首"},
-            {"icon": "\U0001f52b", "name": "绳索"},
-            {"icon": "\U0001f4e6", "name": "箱子"},
-        ]
+        project = state_service.load_project(project_id) if state_service and project_id else None
+        character_data = []
+        scene_data = []
+        prop_data = []
+        if project:
+            for a in project.assets:
+                entry = {"name": a.name}
+                if a.asset_type == "character":
+                    character_data.append(entry)
+                elif a.asset_type == "scene":
+                    scene_data.append(entry)
+                elif a.asset_type == "prop":
+                    prop_data.append(entry)
 
         current_assets = []
         for sb in storyboards:
@@ -2353,7 +2359,7 @@ class _AddAssetDialog(QDialog):
         check_layout.setAlignment(Qt.AlignTop)
 
         for asset in assets:
-            cb = QCheckBox(f"{asset['icon']}  {asset['name']}")
+            cb = QCheckBox(asset["name"])
             cb.setObjectName("assetCheckBox")
             cb.setChecked(asset["name"] in current)
             check_layout.addWidget(cb)

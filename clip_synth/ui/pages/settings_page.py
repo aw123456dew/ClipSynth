@@ -4,7 +4,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QPixmap, QWheelEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -31,6 +31,11 @@ from clip_synth.ui.widgets.image_viewer import show_image_viewer
 from clip_synth.utils.gpu_accel import detect_gpu, set_gpu_accel_enabled
 
 logger = logging.getLogger("clip_synth.settings")
+
+
+class _NoWheelComboBox(QComboBox):
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        event.ignore()
 
 
 class ConnectionTestThread(QThread):
@@ -128,8 +133,8 @@ class ModelConfigGroup(QGroupBox):
         self._show_connection_test = show_connection_test
         self._show_api_type = show_api_type
         self._show_api_provider = show_api_provider
-        self._api_type_combo: QComboBox | None = None
-        self._api_provider_combo: QComboBox | None = None
+        self._api_type_combo: _NoWheelComboBox | None = None
+        self._api_provider_combo: _NoWheelComboBox | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -154,7 +159,7 @@ class ModelConfigGroup(QGroupBox):
         layout.addRow("接口地址:", self._base_url_input)
 
         if self._show_api_provider:
-            self._api_provider_combo = QComboBox()
+            self._api_provider_combo = _NoWheelComboBox()
             self._api_provider_combo.setObjectName("settingsApiProviderCombo")
             self._api_provider_combo.addItems(["NewAPI", "ToAPI"])
             idx = self._api_provider_combo.findText(
@@ -164,7 +169,7 @@ class ModelConfigGroup(QGroupBox):
             layout.addRow("API 供应商:", self._api_provider_combo)
 
         if self._show_api_type:
-            self._api_type_combo = QComboBox()
+            self._api_type_combo = _NoWheelComboBox()
             self._api_type_combo.setObjectName("settingsApiTypeCombo")
             self._api_type_combo.addItems(["OpenAI", "Gemini"])
             idx = self._api_type_combo.findText(
