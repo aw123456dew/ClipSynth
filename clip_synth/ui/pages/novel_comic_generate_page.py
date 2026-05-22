@@ -1684,7 +1684,14 @@ class NovelComicGeneratePage(QFrame):
             self._state_service, self._project_id, self._episode_num,
             storyboard_index, self.window(),
         )
-        dialog.exec()
+        if dialog.exec() == QDialog.Accepted and dialog.selected_path:
+            selected = dialog.selected_path
+            for sb in self._storyboards:
+                if sb["index"] == storyboard_index:
+                    sb["generated_image"] = selected
+                    break
+            self._save_storyboards()
+            self._refresh_single_card(storyboard_index)
 
     def _on_preview_comic(self, storyboard_index: int) -> None:
         dialog = _StoryboardPreviewDialog(
@@ -2688,6 +2695,7 @@ class _HistoryImagesDialog(QDialog):
         self._project_id = project_id
         self._episode_num = episode_num
         self._storyboard_index = storyboard_index
+        self._selected_path: str = ""
         self.setWindowTitle(f"分镜 #{storyboard_index} 历史图片")
         self.setFixedSize(560, 480)
         self.setObjectName("historyImagesDialog")
@@ -2742,11 +2750,11 @@ class _HistoryImagesDialog(QDialog):
                 info.setObjectName("assetItemName")
                 row_layout.addWidget(info, stretch=1)
 
-                view_btn = QPushButton("查看")
-                view_btn.setObjectName("assetGenImageBtn")
-                view_btn.setCursor(Qt.PointingHandCursor)
-                view_btn.clicked.connect(lambda checked, p=str(fp): self._on_view(p))
-                row_layout.addWidget(view_btn)
+                use_btn = QPushButton("使用")
+                use_btn.setObjectName("dialogConfirmBtn")
+                use_btn.setCursor(Qt.PointingHandCursor)
+                use_btn.clicked.connect(lambda checked, p=str(fp): self._on_use(p))
+                row_layout.addWidget(use_btn)
 
                 scroll_layout.addWidget(row)
 
@@ -2764,24 +2772,13 @@ class _HistoryImagesDialog(QDialog):
 
         layout.addLayout(btn_row)
 
-    def _on_view(self, image_path: str) -> None:
-        try:
-            from clip_synth.ui.widgets.image_viewer import show_image_viewer
-            show_image_viewer(image_path, "图片预览", self)
-        except Exception:
-            px = QPixmap(image_path)
-            if px.isNull():
-                return
-            from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel
-            d = QDialog(self)
-            d.setWindowTitle("图片预览")
-            d.resize(600, 600)
-            layout = QVBoxLayout(d)
-            lbl = QLabel()
-            lbl.setPixmap(px.scaled(560, 560, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            lbl.setAlignment(Qt.AlignCenter)
-            layout.addWidget(lbl)
-            d.exec()
+    def _on_use(self, image_path: str) -> None:
+        self._selected_path = image_path
+        self.accept()
+
+    @property
+    def selected_path(self) -> str:
+        return self._selected_path
 
 
 class _AssetManagementDialog(QDialog):
