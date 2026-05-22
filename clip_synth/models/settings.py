@@ -32,6 +32,7 @@ class SettingsModel(Base):
     image_api_key: Mapped[str] = mapped_column(String(512), default="")
     image_base_url: Mapped[str] = mapped_column(String(1024), default="")
     image_api_type: Mapped[str] = mapped_column(String(32), default="openai")
+    image_api_provider: Mapped[str] = mapped_column(String(32), default="newapi")
 
 
 @dataclass
@@ -40,6 +41,7 @@ class AIModelSettings:
     api_key: str = ""
     base_url: str = ""
     api_type: str = "openai"
+    api_provider: str = "newapi"
 
     @property
     def is_configured(self) -> bool:
@@ -51,6 +53,7 @@ class AIModelSettings:
             "api_key": self.api_key,
             "base_url": self.base_url,
             "api_type": self.api_type,
+            "api_provider": self.api_provider,
         }
 
     @classmethod
@@ -60,6 +63,7 @@ class AIModelSettings:
             api_key=data.get("api_key", ""),
             base_url=data.get("base_url", ""),
             api_type=data.get("api_type", "openai"),
+            api_provider=data.get("api_provider", "newapi"),
         )
 
 

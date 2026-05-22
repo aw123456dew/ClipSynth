@@ -42,6 +42,7 @@ class SettingsService:
                     api_key=row.image_api_key or "",
                     base_url=row.image_base_url or "",
                     api_type=row.image_api_type or "openai",
+                    api_provider=row.image_api_provider or "newapi",
                 ),
                 asr_provider=row.asr_provider or "volcengine",
                 tts_params=row.tts_params or "",
@@ -76,6 +77,7 @@ class SettingsService:
             row.image_api_key = settings.image_model.api_key
             row.image_base_url = settings.image_model.base_url
             row.image_api_type = settings.image_model.api_type
+            row.image_api_provider = settings.image_model.api_provider
             row.asr_provider = settings.asr_provider
             row.tts_params = settings.tts_params
             row.gpu_accel_enabled = settings.gpu_accel_enabled

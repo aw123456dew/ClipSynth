@@ -59,11 +59,24 @@ class NovelComicStateService:
             "assets": [a.to_dict() for a in project.assets],
             "created_at": project.created_at,
             "updated_at": project.updated_at,
-            "extra_data": project.extra_data,
+            "extra_data": self._sanitize_extra_data(project.extra_data),
         }
 
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _sanitize_extra_data(data: dict) -> dict:
+        import re as _re
+        def _clean(v):
+            if isinstance(v, str):
+                return _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", v)
+            if isinstance(v, dict):
+                return {k: _clean(v) for k, v in v.items()}
+            if isinstance(v, list):
+                return [_clean(i) for i in v]
+            return v
+        return _clean(data)
 
     def load_project(self, project_id: str) -> Optional[NovelComicProjectState]:
         file_path = self._get_project_file_path(project_id)
@@ -71,8 +84,14 @@ class NovelComicStateService:
             return None
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            raw = file_path.read_text(encoding="utf-8")
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                import re as _re
+                cleaned = _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", raw)
+                data = json.loads(cleaned)
+                logger.warning("项目 JSON 文件 %s 含控制字符，已自动清理", file_path)
 
             chapters = [
                 NovelComicChapterState.from_dict(ch)

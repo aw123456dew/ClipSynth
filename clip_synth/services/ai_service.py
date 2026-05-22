@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import logging
+import time
 from pathlib import Path
 
 from openai import AsyncOpenAI, OpenAI
@@ -15,10 +16,14 @@ class AIModelConfig:
         api_key: str = "",
         base_url: str = "",
         api_type: str = "openai",
+        api_provider: str = "newapi",
     ):
         self.model_name = model_name
         self.api_key = api_key
-        if api_type == "openai":
+        self.api_provider = api_provider
+        if api_provider == "toapi":
+            self.base_url = base_url.strip().rstrip("/")
+        elif api_type == "openai":
             self.base_url = self._normalize_base_url(base_url)
         else:
             self.base_url = base_url.strip().rstrip("/")
@@ -45,6 +50,7 @@ class AIModelConfig:
             "api_key": self.api_key,
             "base_url": self.base_url,
             "api_type": self.api_type,
+            "api_provider": self.api_provider,
         }
 
     @classmethod
@@ -54,6 +60,7 @@ class AIModelConfig:
             api_key=data.get("api_key", ""),
             base_url=data.get("base_url", ""),
             api_type=data.get("api_type", "openai"),
+            api_provider=data.get("api_provider", "newapi"),
         )
 
 
@@ -103,6 +110,7 @@ class AIService:
                 model=self._config.model_name,
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=50,
+                extra_body={"chat_template_kwargs":{"thinking":False}},
                 temperature=0.1,
             )
             logger.info("请求成功, model=%s, choices=%s", response.model, len(response.choices))
@@ -234,6 +242,8 @@ class AIService:
         size: str = "1024x1024",
         reference_images: list[str] | None = None,
     ) -> bytes:
+        if self._config.api_provider == "toapi":
+            return self._generate_image_toapi(prompt, size, reference_images)
         if self._config.api_type == "gemini":
             return self._generate_image_gemini(prompt, size, reference_images)
         return self._generate_image_openai(prompt, size, reference_images)
@@ -419,3 +429,121 @@ class AIService:
         self._config = value
         self._client = None
         self._async_client = None
+
+    def _size_to_ratio(self, size: str) -> str:
+        import math
+        parts = size.lower().replace("x", "×").split("×")
+        if len(parts) != 2:
+            return "1:1"
+        try:
+            w = int(parts[0].strip())
+            h = int(parts[1].strip())
+        except ValueError:
+            return "1:1"
+        if w <= 0 or h <= 0:
+            return "1:1"
+        g = math.gcd(w, h)
+        return f"{w // g}:{h // g}"
+
+    def _size_to_resolution(self, size: str) -> str:
+        for r in ["4K", "2K", "1K"]:
+            if r.lower() in size.lower():
+                return r
+        return "1K"
+
+    def _generate_image_toapi(
+        self,
+        prompt: str,
+        size: str,
+        reference_images: list[str] | None,
+    ) -> bytes:
+        import time
+        import httpx
+
+        base_url = self._config.base_url.rstrip("/")
+        headers = {"Authorization": f"Bearer {self._config.api_key}"}
+
+        ref_urls: list[str] = []
+        if reference_images:
+            logger.info("ToAPI 上传 %d 张参考图", len(reference_images))
+            for path in reference_images:
+                try:
+                    with open(path, "rb") as f:
+                        resp = httpx.post(
+                            f"{base_url}/v1/uploads/images",
+                            headers=headers,
+                            files={"file": (Path(path).name, f.read(), "image/png")},
+                            timeout=120,
+                        )
+                    body = resp.json()
+                    if body.get("success") and body.get("data", {}).get("url"):
+                        url = body["data"]["url"]
+                        ref_urls.append(url)
+                        logger.info("ToAPI 参考图上传成功 %s -> %s", path, url)
+                    else:
+                        logger.warning("ToAPI 上传失败 %s: %s", path, body)
+                except Exception as e:
+                    logger.warning("ToAPI 上传参考图异常 %s: %s", path, e)
+
+        ratio = self._size_to_ratio(size)
+        resolution = self._size_to_resolution(size)
+        gen_body: dict = {
+            "model": self._config.model_name,
+            "prompt": prompt,
+            "n": 1,
+            "size": ratio,
+            "resolution": resolution,
+            "response_format": "url",
+        }
+        if ref_urls:
+            gen_body["reference_images"] = ref_urls
+
+        logger.info("ToAPI 创建生图任务: ratio=%s resolution=%s", ratio, resolution)
+        with httpx.Client(timeout=httpx.Timeout(120)) as http:
+            resp = http.post(
+                f"{base_url}/v1/images/generations",
+                headers={**headers, "Content-Type": "application/json"},
+                json=gen_body,
+            )
+            resp.raise_for_status()
+            task_result = resp.json()
+
+        task_id = task_result.get("id") or task_result.get("task_id")
+        if not task_id:
+            raise RuntimeError(f"ToAPI 创建任务失败，无 task_id: {task_result}")
+
+        logger.info("ToAPI 任务已创建: %s，开始轮询", task_id)
+        deadline = time.time() + 900
+        while time.time() < deadline:
+            time.sleep(3)
+            with httpx.Client(timeout=httpx.Timeout(600)) as http:
+                poll_resp = http.get(
+                    f"{base_url}/v1/images/generations/{task_id}",
+                    headers=headers,
+                )
+                poll_resp.raise_for_status()
+                status_body = poll_resp.json()
+
+            status = status_body.get("status")
+            logger.debug("ToAPI 任务 %s 状态: %s progress=%s", task_id, status, status_body.get("progress"))
+
+            if status == "completed":
+                result_data = status_body.get("result", {})
+                items = result_data.get("data", [])
+                if items and items[0].get("url"):
+                    image_url = items[0]["url"]
+                    logger.info("ToAPI 生成完成, 下载图片: %s", image_url[:80])
+                    with httpx.Client(timeout=httpx.Timeout(900)) as http:
+                        dl_resp = http.get(image_url)
+                        dl_resp.raise_for_status()
+                        data = dl_resp.content
+                        logger.info("ToAPI 图片下载完成, 大小=%d bytes", len(data))
+                        return data
+                raise RuntimeError(f"ToAPI 完成但无图片 URL: {status_body}")
+            elif status == "failed":
+                error_info = status_body.get("error", {})
+                raise RuntimeError(
+                    f"ToAPI 生成失败: {error_info.get('message') or status_body.get('fail_reason') or status_body}"
+                )
+
+        raise TimeoutError("ToAPI 生图任务超时 (900s)")

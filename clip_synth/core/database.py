@@ -66,6 +66,8 @@ class DatabaseManager:
                 conn.execute(text("ALTER TABLE settings ADD COLUMN image_base_url VARCHAR(1024) DEFAULT ''"))
             if "image_api_type" not in columns:
                 conn.execute(text("ALTER TABLE settings ADD COLUMN image_api_type VARCHAR(32) DEFAULT 'openai'"))
+            if "image_api_provider" not in columns:
+                conn.execute(text("ALTER TABLE settings ADD COLUMN image_api_provider VARCHAR(32) DEFAULT 'newapi'"))
 
             conn.commit()
 

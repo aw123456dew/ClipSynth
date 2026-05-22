@@ -52,6 +52,7 @@ def _strip_code_block(text: str) -> str:
 
 def _parse_json(text: str) -> dict | list:
     t = text.strip()
+    t = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", t)
     decoder = json.JSONDecoder()
     try:
         obj, _ = decoder.raw_decode(t)
@@ -460,8 +461,8 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
 - 场景：描述该格的环境、时间、天气、氛围
 - 人物：出现在该格的角色名称
 - 动作/表情：角色的肢体动作和面部表情细节
-- 气泡：如有对话或内心独白，注明气泡类型（云朵状内心独白 / 带尖刺的爆炸形对话 / 颤抖气泡 / 破格气泡 等）和气泡内的文字。每个气泡文字控制在 1-2 行以内，超过的拆成多个气泡依次排列，例如：气泡1："你怎么来了？" 气泡2："我来看看你。" 所有文字内容必须用中文双引号（""）包裹，例如：气泡：(云朵状内心独白)"明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"
-- 说明框：尽量减少使用，能用画面构图和人物动作表情传达的信息，就不要用说明框。优先通过场景氛围、人物微表情、肢体语言来表现情绪和叙事。确需使用时，放在画面底部或顶部，文字控制在 1-2 行以内，注明文字内容，用中文双引号（""）包裹，例如：说明框："其实我想过沈故会有新的女朋友。"
+- 气泡：如有对话或内心独白，注明所属角色、气泡类型及文字。格式：角色名：气泡序号(气泡类型)："文字"，字体加粗。每个气泡文字控制在 1-2 行以内，超过的拆成多个气泡依次排列，例如：张三：气泡1(普通气泡)："你怎么来了？" 李四：气泡2(普通气泡)："我来看看你。" 沈故：(云朵状内心独白)"明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"。**气泡和说明框的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。**
+- 说明框：尽量减少使用，能用画面构图和人物动作表情传达的信息，就不要用说明框。优先通过场景氛围、人物微表情、肢体语言来表现情绪和叙事。确需使用时，放在画面底部或顶部，文字控制在 1-2 行以内，注明文字内容，用中文双引号（""）包裹，例如：说明框："其实我想过沈故会有新的女朋友。"。**语言同样与原文保持一致。**
 
 核心规则：
 1. 一个分镜对应一页漫画，不要拆分到多个分镜描述
@@ -473,7 +474,7 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
    - 唯有在原文明确描写角色离开了当前场景、进入了另一个场所时，该格才能使用另一个场景，否则一律使用绑定场景
 4. 人物和道具只能从已匹配的资产列表中选择，不要自行编造或添加未匹配的角色和物品
 5. 每个格必须有明确的景别和角度
-6. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列
+6. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列,尽量减少气泡文字数量。气泡和说明框的语言必须与分镜原文一致（中文原文用中文，英文原文用英文）
 7. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事，能靠画面表达的就不加说明框
 8. 手机屏幕 / 电脑屏幕 / 平板 / 纸条 / 书本等媒介上显示的文字：这些不是气泡也不是说明框，而是画面内的视觉元素，应在动作/表情或场景描述中直接描述屏幕上的文字内容，例如：动作/表情：陆宴知手指微微收紧，手机屏幕冷光照亮指节，聊天界面上赫然显示谢依璇刚刚发送的信息：「今晚有空吗？」。严禁为此类媒介文字使用气泡或说明框
 9. 气泡和说明框的文字内容必须使用中文双引号（""）包裹，除此之外的其他位置（场景描述、人物描述、动作表情等）严禁使用双引号、单引号、破折号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号、冒号
@@ -566,6 +567,7 @@ class StoryboardDescriptionWorker(QThread):
                         self.progress.emit(sb["index"], done_ctr[0], total, desc)
                 except Exception as e:
                     logger.error("分镜 #%d 描述生成异常: %s", sb['index'], str(e), exc_info=True)
+                    logger.info("分镜 #%d 描述AI返回: %s", sb['index'], content)
                     with lock:
                         errors.append(str(e))
                         sb["description"] = ""
@@ -756,7 +758,7 @@ def _make_comic_on_done(
             except RuntimeError:
                 pass
         finally:
-            batch_counter[0] += 1
+            batch_counter[1] += 1
             update_cb()
     return on_done
 
@@ -773,7 +775,7 @@ def _make_comic_on_error(
             signal.emit(storyboard_index, "")
         except RuntimeError:
             pass
-        batch_counter[0] += 1
+        batch_counter[1] += 1
         update_cb()
     return on_error
 
@@ -781,22 +783,44 @@ def _make_comic_on_error(
 def _save_asset_image_to_project(
     state_service: NovelComicStateService,
     project_id: str,
+    episode_num: int,
     asset_name: str,
     file_path: str,
 ) -> None:
     project = state_service.load_project(project_id)
     if not project:
         return
-    for a in project.assets:
-        if a.name == asset_name:
-            a.image_path = file_path
+    ep_key = f"ep_assets_{episode_num}"
+    ep_data = project.extra_data.get(ep_key, [])
+    found = False
+    for item in ep_data:
+        if item.get("name") == asset_name:
+            item["image_path"] = file_path
+            found = True
             break
-    state_service.save_project(project)
+    if found:
+        project.extra_data[ep_key] = ep_data
+        from clip_synth.models.novel_comic_project_state import NovelComicAsset
+        seen: set[str] = set()
+        merged: list = []
+        for ep in range(1, episode_num + 1):
+            for a in project.extra_data.get(f"ep_assets_{ep}", []):
+                n = a.get("name", "")
+                if n and n not in seen:
+                    seen.add(n)
+                    merged.append(NovelComicAsset(
+                        name=n, desc=a.get("desc", ""),
+                        asset_type=a.get("asset_type", "prop"),
+                        image_path=a.get("image_path", ""),
+                    ))
+        project.assets = merged
+        state_service.save_project(project)
 
 
 def _make_asset_on_done(
     state_service: NovelComicStateService,
     project_id: str,
+    episode_num: int,
     name: str,
     signal,
 ) -> object:
@@ -806,7 +830,7 @@ def _make_asset_on_done(
             safe_name = re.sub(r'[<>:"/\\|?*]', '_', name)
             file_path = str(images_dir / f"asset_{safe_name}.png")
             Path(file_path).write_bytes(image_data)
-            _save_asset_image_to_project(state_service, project_id, name, file_path)
+            _save_asset_image_to_project(state_service, project_id, episode_num, name, file_path)
             try:
                 signal.emit(name, file_path)
             except RuntimeError:
@@ -843,19 +867,51 @@ def _make_asset_on_error(
 
 COMIC_STYLE_PRESETS = [
     {
-        "name": "日式漫画",
+        "name": "韩式条漫风格-清新少女风",
         "prompt": (
-            "Japanese manga style, clean ink lines, screen tones, "
-            "expressive large eyes, dynamic speed lines, black and white with gray halftones, "
-            "shounen aesthetic, dramatic lighting"
+            "韩式条漫风格, 清新少女风，色彩明亮柔和，线条流畅。多用于校园、纯爱等题材。"
         ),
     },
     {
-        "name": "美式漫画",
+        "name": "韩式条漫风格-写实厚涂风",
         "prompt": (
-            "American comic book style, bold outlines, vibrant flat colors, "
-            "halftone dot shading, dynamic action poses, dramatic foreshortening, "
-            "superhero comic aesthetic, Ben-Day dots"
+            "韩式条漫风格, 写实厚涂风，接近真实人体比例，强调肌肉、骨骼、光影和衣物质感，色彩厚重，视觉冲击力强。"
+        ),
+    },
+    {
+        "name": "韩式条漫风格-西幻华丽风",
+        "prompt": (
+            "韩式条漫风格, 西幻华丽风，极尽奢华，细节丰富。"
+        ),
+    },
+    {
+        "name": "国漫仙侠风格1",
+        "prompt": (
+            "国漫仙侠风格，用3D模型还原工笔画般的精绘线条感。布料纹理贴图直接画出衣褶与云纹，边缘光清晰；头发是一条条飘带模型，动画感强。场景山石带描边，云雾是分层半透明片，整体像活过来的国风插画。"
+        ),
+    },
+    {
+        "name": "国漫仙侠风格2",
+        "prompt": (
+            "国漫仙侠风格，PBR厚涂写实仙侠风，追求真实物理光影，皮肤有半透明散射，纱衣有丝绸高光与菲涅尔反射。场景使用大气体积雾，通过光线穿透云层、剑刃高光反射来营造层次。毛孔与刺绣纹理清晰，像电影预演或S级游戏CG。"
+        ),
+    },
+    {
+        "name": "日式少年漫画风",
+        "prompt": (
+            "日式漫画风格, 少年漫画风，线条肯定有力，动态感强，注重“跃动感”和速度线。角色眼睛大而有神，身体结构概括，背景常使用集中线来烘托气势"
+        ),
+    },
+    {
+        "name": "日式少女漫画风",
+        "prompt": (
+            "日式漫画风格, 少女漫画风，画面唯美、装饰性强，强调氛围。标志性的“星光眼”（瞳孔里有大量高光和星星），纤细的睫毛，身材修长。擅长使用花卉、网点纸和流线型的头发来渲染情绪。"
+        ),
+    },
+    {
+        "name": "超级英雄漫画",
+        "prompt": (
+            "美式漫画风格，超级英雄漫画风，角色眼睛大而有神，身体结构概括，背景常使用集中线来烘托气势。"
         ),
     },
     {
@@ -888,14 +944,6 @@ COMIC_STYLE_PRESETS = [
             "chibi style, super deformed, cute and playful, "
             "large head small body, bright pastel colors, simple clean lines, "
             "kawaii aesthetic, cheerful expressions, rounded shapes"
-        ),
-    },
-    {
-        "name": "韩式条漫",
-        "prompt": (
-            "Korean webtoon style, vertical scroll format, clean digital coloring, "
-            "soft gradients, elegant character proportions, polished rendering, "
-            "romance manhwa aesthetic, smooth cel shading"
         ),
     },
     {
@@ -1135,6 +1183,15 @@ class NovelComicGeneratePage(QFrame):
         if not project:
             return
         self._gen_settings = project.extra_data.get("gen_settings", {})
+        changed = False
+        if not self._gen_settings.get("style"):
+            self._gen_settings["style"] = COMIC_STYLE_PRESETS[0]["name"]
+            changed = True
+        if not self._gen_settings.get("prefix") and COMIC_STYLE_PRESETS:
+            self._gen_settings["prefix"] = COMIC_STYLE_PRESETS[0]["prompt"]
+            changed = True
+        if changed:
+            self._save_gen_settings()
 
     def _save_gen_settings(self) -> None:
         project = self._state_service.load_project(self._project_id)
@@ -1300,6 +1357,12 @@ class NovelComicGeneratePage(QFrame):
         return bar
 
     def _refresh_storyboard_list(self) -> None:
+        project = self._state_service.load_project(self._project_id)
+        if project:
+            self._migrate_legacy_project_assets(project)
+            self._rebuild_project_assets(project)
+            self._state_service.save_project(project)
+
         scroll_value = self._scroll_area.verticalScrollBar().value()
 
         while self._storyboard_layout.count():
@@ -1347,7 +1410,7 @@ class NovelComicGeneratePage(QFrame):
     def _on_asset_management(self) -> None:
         chapter_text = self._get_chapter_text()
         dialog = _AssetManagementDialog(
-            self._project_id, chapter_text,
+            self._project_id, self._episode_num, chapter_text,
             self._state_service, self._settings_service,
             self.window(),
         )
@@ -1495,6 +1558,48 @@ class NovelComicGeneratePage(QFrame):
         self._desc_status.setText(f"生成失败: {error_msg}")
         self._desc_status.setStyleSheet("color: #f87171;")
 
+    @staticmethod
+    def _rebuild_project_assets(project) -> None:
+        seen: set[str] = set()
+        merged: list = []
+        for ep in range(1, 100):
+            for a in project.extra_data.get(f"ep_assets_{ep}", []):
+                n = a.get("name", "")
+                if n and n not in seen:
+                    seen.add(n)
+                    merged.append(a)
+        if merged:
+            from clip_synth.models.novel_comic_project_state import NovelComicAsset
+            project.assets = [
+                NovelComicAsset(
+                    name=a.get("name", ""), desc=a.get("desc", ""),
+                    asset_type=a.get("asset_type", "prop"),
+                    image_path=a.get("image_path", ""),
+                )
+                for a in merged
+            ]
+
+    @staticmethod
+    def _migrate_legacy_project_assets(project) -> None:
+        if not project.assets:
+            return
+        has_any_ep_asset = any(
+            project.extra_data.get(f"ep_assets_{ep}")
+            for ep in range(1, 100)
+        )
+        if has_any_ep_asset:
+            return
+        migrated = []
+        for a in project.assets:
+            atype = getattr(a, "asset_type", "prop")
+            migrated.append({
+                "name": a.name,
+                "desc": getattr(a, "desc", ""),
+                "asset_type": atype,
+                "image_path": getattr(a, "image_path", "") or "",
+            })
+        project.extra_data["ep_assets_1"] = migrated
+
     def _on_add_asset(self, storyboard_index: int) -> None:
         dialog = _AddAssetDialog(self._storyboards, storyboard_index, self.window())
         if dialog.exec() == QDialog.Accepted:
@@ -1533,6 +1638,7 @@ class NovelComicGeneratePage(QFrame):
             api_key=settings.image_model.api_key,
             base_url=settings.image_model.base_url,
             api_type=settings.image_model.api_type,
+            api_provider=settings.image_model.api_provider,
         )
         if not image_config.is_configured:
             self._show_alert("无法生成", "请先在系统配置中设置图片生成模型")
@@ -1553,7 +1659,7 @@ class NovelComicGeneratePage(QFrame):
             card.set_generating()
 
         signal = self.comic_image_generated
-        batch_counter = [0]
+        batch_counter = [0, 0]
         ImageGenService.instance().submit(
             image_config, prompt,
             _make_comic_on_done(
@@ -1701,6 +1807,7 @@ class NovelComicGeneratePage(QFrame):
             api_key=settings.image_model.api_key,
             base_url=settings.image_model.base_url,
             api_type=settings.image_model.api_type,
+            api_provider=settings.image_model.api_provider,
         )
         if not image_config.is_configured:
             self._show_alert("无法生成", "请先在系统配置中设置图片生成模型")
@@ -1780,7 +1887,7 @@ class NovelComicGeneratePage(QFrame):
         global_prefix = gen_settings.get("prefix", "").strip()
         prompt = desc
         if global_prefix:
-            prompt = global_prefix + "，分镜内容：" + desc
+            prompt = global_prefix + "，分镜内容：" + prompt
         if asset_descs:
             prompt += "。参考资产形象：" + "；".join(asset_descs)
 
@@ -1790,6 +1897,7 @@ class NovelComicGeneratePage(QFrame):
         prompt += f"，{resolution}分辨率，图片比例{ratio}，尺寸{size}"
         if page_num:
             prompt += f"。请在画面底部居中位置用白色小字生成页码 {page_num}"
+            prompt += f"。画面中的字体加粗"
 
         return prompt, size, reference_paths
 
@@ -2676,6 +2784,7 @@ class _AssetManagementDialog(QDialog):
     def __init__(
         self,
         project_id: str,
+        episode_num: int,
         chapter_text: str,
         state_service: NovelComicStateService,
         settings_service: SettingsService,
@@ -2683,11 +2792,12 @@ class _AssetManagementDialog(QDialog):
     ):
         super().__init__(parent)
         self._project_id = project_id
+        self._episode_num = episode_num
         self._chapter_text = chapter_text
         self._state_service = state_service
         self._settings_service = settings_service
         self._worker: AssetExtractWorker | None = None
-        self.setWindowTitle("资产管理")
+        self.setWindowTitle(f"资产管理 — 第{episode_num}集")
         self.setFixedSize(680, 560)
         self.setObjectName("assetManagementDialog")
         self._current_tab = 0
@@ -2810,24 +2920,60 @@ class _AssetManagementDialog(QDialog):
             btn.style().unpolish(btn)
             btn.style().polish(btn)
 
-    def _load_from_project(self) -> None:
+    def _ep_asset_key(self, ep_num: int) -> str:
+        return f"ep_assets_{ep_num}"
+
+    def _load_ep_assets(self, ep_num: int) -> tuple[list[dict], list[dict], list[dict]]:
         project = self._state_service.load_project(self._project_id)
+        chars: list[dict] = []
+        scenes: list[dict] = []
+        props: list[dict] = []
         if not project:
-            return
-        for asset in project.assets:
-            item = {"name": asset.name, "desc": asset.desc, "image_path": asset.image_path or ""}
-            if asset.asset_type == "character":
-                self._character_data.append(item)
-            elif asset.asset_type == "scene":
-                self._scene_data.append(item)
-            elif asset.asset_type == "prop":
-                self._prop_data.append(item)
+            return chars, scenes, props
+        raw = project.extra_data.get(self._ep_asset_key(ep_num), [])
+        for item in raw:
+            entry = {"name": item.get("name", ""), "desc": item.get("desc", ""), "image_path": item.get("image_path", "")}
+            t = item.get("asset_type", "")
+            if t == "character":
+                chars.append(entry)
+            elif t == "scene":
+                scenes.append(entry)
+            elif t == "prop":
+                props.append(entry)
+        return chars, scenes, props
+
+    def _load_from_project(self) -> None:
+        self._character_data, self._scene_data, self._prop_data = self._load_ep_assets(self._episode_num)
+
+        has_own = bool(self._character_data or self._scene_data or self._prop_data)
+
+        if not has_own and self._episode_num > 1:
+            seen: dict[str, dict] = {}
+            for ep in range(1, self._episode_num):
+                c, s, p = self._load_ep_assets(ep)
+                for items, atype in [(c, "character"), (s, "scene"), (p, "prop")]:
+                    for item in items:
+                        name = item.get("name", "")
+                        if name:
+                            item["asset_type"] = atype
+                            seen[name] = dict(item)
+            for item in seen.values():
+                entry = {"name": item.get("name", ""), "desc": item.get("desc", ""), "image_path": item.get("image_path", "")}
+                t = item.get("asset_type", "")
+                if t == "character":
+                    self._character_data.append(entry)
+                elif t == "scene":
+                    self._scene_data.append(entry)
+                elif t == "prop":
+                    self._prop_data.append(entry)
+
         self._refresh_asset_list("character", self._character_data)
         self._refresh_asset_list("scene", self._scene_data)
         self._refresh_asset_list("prop", self._prop_data)
-        if self._character_data or self._scene_data or self._prop_data:
-            total = len(self._character_data) + len(self._scene_data) + len(self._prop_data)
-            self._extract_status.setText(f"已加载 {total} 个资产")
+        total = len(self._character_data) + len(self._scene_data) + len(self._prop_data)
+        if total:
+            source = "（从前集复制）" if not has_own and self._episode_num > 1 else ""
+            self._extract_status.setText(f"已加载 {total} 个资产{source}")
             self._extract_status.setStyleSheet("color: #4ade80;")
 
     def _save_to_project(self) -> None:
@@ -2836,22 +2982,42 @@ class _AssetManagementDialog(QDialog):
         project = self._state_service.load_project(self._project_id)
         if not project:
             return
-        project.assets = []
-        for item in self._character_data:
-            project.assets.append(NovelComicAsset(
-                name=item["name"], desc=item["desc"], asset_type="character",
-                image_path=item.get("image_path", ""),
-            ))
-        for item in self._scene_data:
-            project.assets.append(NovelComicAsset(
-                name=item["name"], desc=item["desc"], asset_type="scene",
-                image_path=item.get("image_path", ""),
-            ))
-        for item in self._prop_data:
-            project.assets.append(NovelComicAsset(
-                name=item["name"], desc=item["desc"], asset_type="prop",
-                image_path=item.get("image_path", ""),
-            ))
+
+        def _list_to_assets(data: list[dict], atype: str) -> list:
+            return [
+                NovelComicAsset(
+                    name=item["name"], desc=item["desc"], asset_type=atype,
+                    image_path=item.get("image_path", ""),
+                )
+                for item in data
+            ]
+
+        ep_assets = (
+            _list_to_assets(self._character_data, "character")
+            + _list_to_assets(self._scene_data, "scene")
+            + _list_to_assets(self._prop_data, "prop")
+        )
+
+        ep_key = self._ep_asset_key(self._episode_num)
+        project.extra_data[ep_key] = [
+            {"name": a.name, "desc": a.desc, "asset_type": a.asset_type, "image_path": a.image_path}
+            for a in ep_assets
+        ]
+
+        merged: list[NovelComicAsset] = []
+        seen_names: set[str] = set()
+        for ep in range(1, self._episode_num + 1):
+            for a in project.extra_data.get(self._ep_asset_key(ep), []):
+                name = a.get("name", "")
+                if name and name not in seen_names:
+                    seen_names.add(name)
+                    merged.append(NovelComicAsset(
+                        name=name, desc=a.get("desc", ""),
+                        asset_type=a.get("asset_type", "prop"),
+                        image_path=a.get("image_path", ""),
+                    ))
+        project.assets = merged
+
         self._state_service.save_project(project)
 
     def _on_extract_assets(self) -> None:
@@ -2868,18 +3034,24 @@ class _AssetManagementDialog(QDialog):
         self._worker.error.connect(self._on_extract_error)
         self._worker.start()
 
+    def _merge_new_assets(self, existing: list[dict], new_items: list[dict]) -> list[dict]:
+        existing_names = {item["name"] for item in existing}
+        for item in new_items:
+            name = item.get("name", "")
+            if name and name not in existing_names:
+                existing.append({"name": name, "desc": item.get("desc", ""), "image_path": item.get("image_path", "")})
+                existing_names.add(name)
+        return existing
+
     def _on_extract_finished(self, characters: list, scenes: list, props: list) -> None:
-        self._merge_image_paths(self._character_data, characters)
-        self._merge_image_paths(self._scene_data, scenes)
-        self._merge_image_paths(self._prop_data, props)
-        self._character_data = characters
-        self._scene_data = scenes
-        self._prop_data = props
+        self._merge_new_assets(self._character_data, characters)
+        self._merge_new_assets(self._scene_data, scenes)
+        self._merge_new_assets(self._prop_data, props)
         self._refresh_asset_list("character", self._character_data)
         self._refresh_asset_list("scene", self._scene_data)
         self._refresh_asset_list("prop", self._prop_data)
         self._save_to_project()
-        total = len(characters) + len(scenes) + len(props)
+        total = len(self._character_data) + len(self._scene_data) + len(self._prop_data)
         self._extract_status.setText(f"提取完成，共 {total} 个资产")
         self._extract_status.setStyleSheet("color: #4ade80;")
         if characters:
@@ -2893,14 +3065,6 @@ class _AssetManagementDialog(QDialog):
         self._extract_status.setText(f"提取失败: {error_msg}")
         self._extract_status.setStyleSheet("color: #f87171;")
 
-    @staticmethod
-    def _merge_image_paths(old_data: list[dict], new_data: list[dict]) -> None:
-        old_map = {item.get("name", ""): item.get("image_path", "") for item in old_data}
-        for item in new_data:
-            name = item.get("name", "")
-            if name in old_map and old_map[name]:
-                item["image_path"] = old_map[name]
-
     def _refresh_asset_list(self, asset_type: str, data: list[dict]) -> None:
         layout = self._asset_layouts.get(asset_type)
         if layout is None:
@@ -2913,12 +3077,7 @@ class _AssetManagementDialog(QDialog):
                     w.setParent(None)
                     w.deleteLater()
 
-        if not data:
-            empty = QLabel("暂无资产数据")
-            empty.setObjectName("assetEmptyLabel")
-            empty.setAlignment(Qt.AlignCenter)
-            layout.addWidget(empty)
-        else:
+        if data:
             self._asset_rows = getattr(self, '_asset_rows', {})
             self._asset_rows[asset_type] = []
             for asset in data:
@@ -2930,6 +3089,12 @@ class _AssetManagementDialog(QDialog):
                 row.delete_clicked.connect(lambda a=asset, at=asset_type: self._on_delete_asset(a, at))
                 layout.addWidget(row)
                 self._asset_rows[asset_type].append(row)
+
+        if not data:
+            empty = QLabel("暂无资产数据")
+            empty.setObjectName("assetEmptyLabel")
+            empty.setAlignment(Qt.AlignCenter)
+            layout.addWidget(empty)
 
         add_row = _AssetAddRow(asset_type)
         add_row.add_clicked.connect(lambda at=asset_type: self._on_add_asset(at))
@@ -3020,6 +3185,7 @@ class _AssetManagementDialog(QDialog):
             api_key=settings.image_model.api_key,
             base_url=settings.image_model.base_url,
             api_type=settings.image_model.api_type,
+            api_provider=settings.image_model.api_provider,
         )
         if not image_config.is_configured:
             self._extract_status.setText("请先在系统配置中设置图片生成模型")
@@ -3049,7 +3215,7 @@ class _AssetManagementDialog(QDialog):
         ImageGenService.instance().submit(
             image_config, prompt,
             _make_asset_on_done(
-                self._state_service, self._project_id,
+                self._state_service, self._project_id, self._episode_num,
                 asset_name, self.asset_image_generated,
             ),
             _make_asset_on_error(
@@ -3191,6 +3357,7 @@ class _AssetManagementDialog(QDialog):
             api_key=settings.image_model.api_key,
             base_url=settings.image_model.base_url,
             api_type=settings.image_model.api_type,
+            api_provider=settings.image_model.api_provider,
         )
         if not image_config.is_configured:
             self._extract_status.setText("请先在系统配置中设置图片生成模型")
@@ -3268,7 +3435,7 @@ class _AssetManagementDialog(QDialog):
             ImageGenService.instance().submit(
                 image_config, prompt,
                 _make_asset_on_done(
-                    self._state_service, self._project_id,
+                    self._state_service, self._project_id, self._episode_num,
                     asset_name, self.asset_image_generated,
                 ),
                 _make_asset_on_error(
@@ -3308,10 +3475,13 @@ class _AssetItemRow(QFrame):
     upload_clicked = Signal()
     delete_clicked = Signal()
 
-    def __init__(self, asset: dict, parent: QWidget | None = None):
+    def __init__(self, asset: dict, parent: QWidget | None = None, read_only: bool = False):
         super().__init__(parent)
         self._asset = asset
-        self.setObjectName("assetItemRow")
+        self._read_only = read_only
+        self.setObjectName("assetItemRow" + ("ReadOnly" if read_only else ""))
+        if read_only:
+            self.setStyleSheet("background: transparent; border: none;")
         self._thumb_img: QLabel | None = None
         self._thumb_frame: QFrame | None = None
         self._image_path: str = ""
@@ -3383,6 +3553,12 @@ class _AssetItemRow(QFrame):
 
         layout.addLayout(btn_col)
         layout.addWidget(self._delete_btn)
+
+        if self._read_only:
+            self._gen_btn.setVisible(False)
+            self._upload_btn.setVisible(False)
+            self._delete_btn.setVisible(False)
+            self._desc_label.setCursor(Qt.ArrowCursor)
 
     def _on_thumb_click(self, event) -> None:
         if self._image_path and Path(self._image_path).exists():

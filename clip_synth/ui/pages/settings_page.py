@@ -52,6 +52,7 @@ class ConnectionTestThread(QThread):
                     model_name=self._config.model_name,
                     api_key=self._config.api_key,
                     base_url=self._config.base_url,
+                    api_provider=self._config.api_provider,
                 )
             )
             success, message = service.test_connection()
@@ -93,6 +94,7 @@ class ImageGenTestWorker(QThread):
                 api_key=self._config.api_key,
                 base_url=self._config.base_url,
                 api_type=self._config.api_type,
+                api_provider=self._config.api_provider,
             )
             ImageGenService.instance().submit(
                 service_config, "一只小狗", on_done, on_error,
@@ -116,6 +118,7 @@ class ModelConfigGroup(QGroupBox):
         show_image_test: bool = False,
         show_connection_test: bool = True,
         show_api_type: bool = False,
+        show_api_provider: bool = False,
     ):
         super().__init__(title, parent)
         self._settings = settings
@@ -124,7 +127,9 @@ class ModelConfigGroup(QGroupBox):
         self._show_image_test = show_image_test
         self._show_connection_test = show_connection_test
         self._show_api_type = show_api_type
+        self._show_api_provider = show_api_provider
         self._api_type_combo: QComboBox | None = None
+        self._api_provider_combo: QComboBox | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -147,6 +152,16 @@ class ModelConfigGroup(QGroupBox):
         self._base_url_input.setPlaceholderText("例如 https://api.openai.com/v1")
         self._base_url_input.setText(self._settings.base_url)
         layout.addRow("接口地址:", self._base_url_input)
+
+        if self._show_api_provider:
+            self._api_provider_combo = QComboBox()
+            self._api_provider_combo.setObjectName("settingsApiProviderCombo")
+            self._api_provider_combo.addItems(["NewAPI", "ToAPI"])
+            idx = self._api_provider_combo.findText(
+                {"newapi": "NewAPI", "toapi": "ToAPI"}.get(self._settings.api_provider, "NewAPI")
+            )
+            self._api_provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            layout.addRow("API 供应商:", self._api_provider_combo)
 
         if self._show_api_type:
             self._api_type_combo = QComboBox()
@@ -268,11 +283,16 @@ class ModelConfigGroup(QGroupBox):
         api_type = "openai"
         if self._api_type_combo:
             api_type = self._api_type_combo.currentText().lower()
+        api_provider = "newapi"
+        if self._api_provider_combo:
+            raw = self._api_provider_combo.currentText()
+            api_provider = {"NewAPI": "newapi", "ToAPI": "toapi"}.get(raw, "newapi")
         return AIModelSettings(
             model_name=self._model_name_input.text().strip(),
             api_key=self._api_key_input.text().strip(),
             base_url=self._base_url_input.text().strip().rstrip("/"),
             api_type=api_type,
+            api_provider=api_provider,
         )
 
     def update_settings(self, settings: AIModelSettings) -> None:
@@ -284,6 +304,10 @@ class ModelConfigGroup(QGroupBox):
             idx = self._api_type_combo.findText(settings.api_type.capitalize() if settings.api_type else "OpenAI")
             self._api_type_combo.setCurrentIndex(idx if idx >= 0 else 0)
             self._on_api_type_changed()
+        if self._api_provider_combo:
+            display = {"newapi": "NewAPI", "toapi": "ToAPI"}.get(settings.api_provider, "NewAPI")
+            idx = self._api_provider_combo.findText(display)
+            self._api_provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
 
 
 class DoubaoVoiceConfigGroup(QGroupBox):
@@ -438,6 +462,7 @@ class SettingsPage(QFrame):
             show_image_test=True,
             show_connection_test=False,
             show_api_type=True,
+            show_api_provider=True,
         )
         scroll_layout.addWidget(self._image_model_group)
 
