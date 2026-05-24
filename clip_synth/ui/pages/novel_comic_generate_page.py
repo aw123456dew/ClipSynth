@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -50,7 +51,10 @@ def _strip_code_block(text: str) -> str:
     return t
 
 
-def _parse_json(text: str) -> dict | list:
+def _parse_json(text: str) -> dict | list | None:
+    if not text or not text.strip():
+        logger.warning("_parse_json: 输入文本为空")
+        return None
     t = text.strip()
     t = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", t)
     decoder = json.JSONDecoder()
@@ -59,7 +63,11 @@ def _parse_json(text: str) -> dict | list:
         return obj
     except json.JSONDecodeError:
         pass
-    return json.loads(t)
+    try:
+        return json.loads(t)
+    except json.JSONDecodeError as e:
+        logger.error("_parse_json: JSON解析失败 - %s", str(e))
+        return None
 
 
 _running_workers: dict[tuple[str, int, str], QThread] = {}
@@ -203,13 +211,12 @@ STORYBOARD_SPLIT_SYSTEM_PROMPT = """\
 
 核心要求：
 1. 严格保留原文文字，不要做任何修改、润色、删减或添加
-2. 每个分镜的文字量应适合一个漫画页面（通常是一个完整的动作、一个场景片段或一个情绪节拍）
+2. 每个分镜的文字量应适合一个漫画页面（1-3格），即通常是一个动作节拍、一个简短对话回合、或一个场景片段，不要过长也不要过短
 3. 分镜之间要有清晰的叙事断点，例如场景切换、视角转换、对话回合、动作节拍
-4. 不要拆得太碎（一句话一个分镜），也不要太长（一整章一个分镜）
-5. 每个分镜的文本应该是原文中的一个连续段落
-6. 所有分镜按原文顺序排列，覆盖全文，不要遗漏原文内容
-7. 描述文本中严禁使用双引号、单引号、破折号、省略号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号
-8. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。"""
+4. 所有分镜按原文顺序排列，覆盖全文，不要遗漏原文内容
+5. 描述文本中严禁使用双引号、单引号、破折号、省略号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号
+6. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。
+7. 每个 text 字段的内容不得超过 150 个汉字。"""
 
 
 def _save_project_storyboards(
@@ -273,6 +280,7 @@ class StoryboardSplitWorker(QThread):
             )
 
             content = response.choices[0].message.content or ""
+            logger.info("分镜拆分AI返回: %s", response.choices[0])
             logger.info("分镜拆分AI返回: %s", content[:300])
 
             storyboards = self._parse_response(content)
@@ -291,12 +299,32 @@ class StoryboardSplitWorker(QThread):
 
     def _parse_response(self, content: str) -> list[dict]:
         data = _parse_json(content)
+        if data is None:
+            raise ValueError("分镜拆分失败：AI返回的JSON数据为空或无效")
+        
+        if not isinstance(data, (dict, list)):
+            raise ValueError(f"分镜拆分失败：AI返回的数据格式错误，期望dict或list，实际为{type(data).__name__}")
+        
         items = data.get("storyboards", data) if isinstance(data, dict) else data
+        
+        if not isinstance(items, list):
+            raise ValueError(f"分镜拆分失败：storyboards不是列表，实际为{type(items).__name__}")
+        
+        if len(items) == 0:
+            raise ValueError("分镜拆分失败：AI返回的分镜列表为空")
+        
         result = []
         for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                logger.warning(f"分镜项 #{i+1} 不是字典类型，跳过")
+                continue
             text = item.get("text", "")
             if text.strip():
                 result.append({"index": i + 1, "text": text.strip(), "description": "", "assets": []})
+        
+        if len(result) == 0:
+            raise ValueError("分镜拆分失败：解析后没有有效的分镜内容")
+        
         return result
 
 
@@ -328,6 +356,13 @@ MATCH_ASSETS_SYSTEM_PROMPT = """\
 4. 只从提供的资产池中选择，不要编造不存在的资产名称
 5. 根据分镜文本内容判断该分镜发生在哪个场景、出现了哪些人物、使用了哪些道具
 6. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。"""
+
+
+def _get_effective_prefix(gen_settings: dict) -> str:
+    prefix = gen_settings.get("prefix", "").strip()
+    if prefix:
+        return prefix
+    return COMIC_STYLE_PRESETS[0]["prompt"]
 
 
 class MatchAssetsWorker(QThread):
@@ -450,10 +485,16 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
   "storyboards": [
     {
       "index": 1,
-      "description": "整体排版：...\\n\\n格1 (...)\\n- 景别/角度：...\\n- 场景：...\\n- 人物：...\\n- 动作/表情：...\\n- 气泡：...\\n- 说明框：...\\n\\n格2 (...)\\n- 景别/角度：...\\n\\n格N (...)"
+      "description": "整体排版：...\\n\\n格1 (...)\\n- 景别/角度：...\\n- 场景：资产名称-版本\\n- 人物：角色名1, 角色名2\\n- 动作/表情：...\\n- 气泡：...\\n- 说明框：...\\n\\n格2 (...)\\n- 景别/角度：...\\n\\n格N (...)"
+    },
+    {
+      "index": 2,
+      "description": "..."
     }
   ]
 }
+
+传入的分镜数据会包含多个分镜的原文和资产信息，**必须为每个传入的分镜生成对应的 description**。返回的 storyboards 数组必须包含所有传入分镜的条目，每个的描述独立生成，不要合并、不要跳过、不要遗漏。
 
 你的任务是为每个分镜段落生成一页漫画的详细分镜描述。每个分镜可能包含多个格（panel），具体格数和版面由你根据内容节奏决定。
 
@@ -464,24 +505,20 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
 
 格N (形状描述，如：窄长横格 / 大方格 / 竖长格左半页 / 满版出血格 / 三小格并列 等)
 - 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
-- 场景：出现在该格的场景名称
-- 人物：出现在该格的角色名称
+- 场景：直接写你选择的资产名称及版本，不要额外描述场景环境
+- 人物：直接列出角色名即可，例如"张三, 李四"，不要描述外观着装
 - 动作/表情：角色的肢体动作和面部表情细节
-- 气泡：如有对话或内心独白，注明所属角色、气泡类型及文字。格式：角色名：气泡序号(气泡类型)："文字"，字体加粗。每个气泡文字控制在 1-2 行以内，超过的拆成多个气泡依次排列，例如：张三：气泡1(普通气泡)："你怎么来了？" 李四：气泡2(普通气泡)："我来看看你。" 沈故：(云朵状内心独白)"明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"。**气泡和说明框的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。**
-- 说明框：尽量减少使用，能用画面构图和人物动作表情传达的信息，就不要用说明框。优先通过场景氛围、人物微表情、肢体语言来表现情绪和叙事。确需使用时，放在画面底部或顶部，文字控制在 1-2 行以内，注明文字内容，用中文双引号（""）包裹，例如：说明框："其实我想过沈故会有新的女朋友。"。**语言同样与原文保持一致。**
+- 气泡：如有对话或内心独白，注明所属角色、气泡类型及文字。格式：角色名：气泡序号(气泡类型)："文字"。每个气泡文字控制在 1-2 行以内，超过的拆成多个气泡依次排列，例如：张三：气泡1(普通气泡)："你怎么来了？" 李四：气泡2(普通气泡)："我来看看你。" 沈故：(云朵状内心独白)"明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"。**气泡和说明框的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。**
+- 说明框：文字控制在 1-2 行以内，注明文字内容，用中文双引号（""）包裹，例如：说明框："其实我想过沈故会有新的女朋友。"。**语言如果原文太长，可以简化描述。**。原文是中文则用中文，原文是英文则用英文。**。
 
 核心规则：
 1. 一个分镜对应一页漫画，不要拆分到多个分镜描述
 2. 格的数量：画面节奏要快，优先使用 1-2 格，只有在气泡数量超过 4 个以上时才考虑使用 3 格，超过 6 个气泡以上才使用 4 格。在满足气泡容量的前提下尽量用更少的格数来保证大画面表现力
-3. 场景使用规则（极其重要）：
-   - 每个分镜已绑定了一个场景（从资产池中匹配），本页所有格必须统一使用该场景
-   - 严禁使用"无明确背景""纯色背景""网点处理""抽象背景"等空洞描述代替实际场景
-   - 如果某格只聚焦人物局部（如眼睛特写、耳廓特写、手部特写），场景描述应写该局部所处的环境（如"组会会议室，背景虚化，焦点落在耳廓"），而不是省略场景
-   - 唯有在原文明确描写角色离开了当前场景、进入了另一个场所时，该格才能使用另一个场景，否则一律使用绑定场景
+3. 场景使用规则：每个分镜已绑定了场景资产，本页所有格必须统一使用该场景名称
 4. 人物和道具只能从已匹配的资产列表中选择，不要自行编造或添加未匹配的角色和物品
 5. 每个格必须有明确的景别和角度
 6. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列,尽量减少气泡文字数量。你也可以不使用原文文案，但是意思表达出来就行。你也可以加一些声响词，比如 砰， 咚， 咔嚓， 之类的声响词
-7. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事，尽量使用说明框说明画面
+7. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事，内心描述，尽量使用说明框说明画面
 8. 手机屏幕 / 电脑屏幕 / 平板 / 纸条 / 书本等媒介上显示的文字：这些不是气泡也不是说明框，而是画面内的视觉元素，应在动作/表情或场景描述中直接描述屏幕上的文字内容，例如：动作/表情：陆宴知手指微微收紧，手机屏幕冷光照亮指节，聊天界面上赫然显示谢依璇刚刚发送的信息：「今晚有空吗？」。严禁为此类媒介文字使用气泡或说明框
 9. 气泡和说明框的文字内容必须使用中文双引号（""）包裹，除此之外的其他位置（场景描述、人物描述、动作表情等）严禁使用双引号、单引号、破折号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号、冒号
 10. 输出合法 JSON：只输出一个 JSON 对象，不要输出任何其他内容。描述文本中出现的所有英文双引号（"）必须用反斜杠转义（\\"），中文双引号（""）无需转义。所有换行符必须用 \\n 表示，不得出现真正的换行符。JSON 对象内的 description 字符串本身可以包含 \\n 来表示换行。"""
@@ -524,32 +561,34 @@ class StoryboardDescriptionWorker(QThread):
             lock = threading.Lock()
             done_ctr = [0]
 
-            def process_one(sb: dict, idx: int) -> None:
+            batch_size = 5
+            batches: list[list[dict]] = []
+            for i in range(0, total, batch_size):
+                batches.append(self._storyboards[i:i + batch_size])
+
+            def process_batch(batch: list[dict]) -> None:
                 try:
                     svc = AIService(config)
                     cli = svc._ensure_client()
 
-                    context_parts: list[str] = []
-                    for s in sorted(self._storyboards, key=lambda x: x.get("index", 0)):
-                        tag = ">>> 当前要生成的分镜 <<<" if s["index"] == sb["index"] else ""
-                        context_parts.append(
-                            f"--- 分镜 #{s['index']} {tag}---\n"
-                            f"原文: {s['text']}"
+                    batch_parts: list[str] = []
+                    for sb in batch:
+                        assets = sb.get('assets', [])
+                        scene_name = assets[0] if assets else ""
+                        chars_and_props = ', '.join(assets[1:]) if len(assets) > 1 else '(无)'
+                        batch_parts.append(
+                            f"--- 分镜 #{sb['index']} ---\n"
+                            f"原文: {sb['text']}\n"
+                            f"绑定场景资产: {scene_name}\n"
+                            f"已匹配人物/道具资产: {chars_and_props}"
                         )
-                    full_context = "\n\n".join(context_parts)
+                    full_input = "\n\n".join(batch_parts)
 
-                    assets = sb.get('assets', [])
-                    scene_name = assets[0] if assets else ""
-                    chars_and_props = ', '.join(assets[1:]) if len(assets) > 1 else '(无)'
                     prompt = (
-                        "以下是一页漫画的全部原文分镜，请为标记为「当前要生成的分镜」的那个分镜生成详细的一页漫画分镜描述，"
+                        "请为以下 %d 个分镜分别生成详细的一页漫画分镜描述，"
                         "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。"
-                        "你可以参考前后分镜的上下文来理解叙事节奏和人物状态。\n\n"
-                        f"{full_context}\n\n"
-                        f"--- 当前分镜额外信息 ---\n"
-                        f"绑定场景: {scene_name}\n"
-                        f"已匹配人物/道具: {chars_and_props}"
-                    )
+                        "必须为每个分镜生成独立的 description。\n\n%s"
+                    ) % (len(batch), full_input)
 
                     response = cli.chat.completions.create(
                         model=config.model_name,
@@ -558,37 +597,40 @@ class StoryboardDescriptionWorker(QThread):
                             {"role": "user", "content": prompt},
                         ],
                         temperature=0.7,
-                        timeout=900,  # 根据模型设置最大值
+                        timeout=900,
                         response_format={"type": "json_object"},
                     )
 
                     content = response.choices[0].message.content or ""
-                    logger.info("分镜 #%d 描述AI返回: %s", sb['index'], content[:200])
+                    indices = [sb["index"] for sb in batch]
+                    logger.info("批次分镜 %s 描述AI返回: %s", indices, content[:300])
 
-                    desc = self._parse_single(content)
+                    desc_map = self._parse_batch(content, batch)
                     with lock:
-                        results[idx] = {"index": sb["index"], "description": desc}
-                        sb["description"] = desc
-                        done_ctr[0] += 1
-                        self.progress.emit(sb["index"], done_ctr[0], total, desc)
+                        for sb in batch:
+                            idx = sb["index"]
+                            desc = desc_map.get(idx, "")
+                            results[idx - 1] = {"index": idx, "description": desc}
+                            sb["description"] = desc
+                            done_ctr[0] += 1
+                            self.progress.emit(idx, done_ctr[0], total, desc)
                 except Exception as e:
-                    logger.error("分镜 #%d 描述生成异常: %s", sb['index'], str(e), exc_info=True)
+                    indices_str = str([sb["index"] for sb in batch])
+                    logger.error("批次分镜 %s 描述生成异常: %s", indices_str, str(e), exc_info=True)
                     try:
-                        logger.info("分镜 #%d 描述AI返回: %s", sb['index'], content[:200])
+                        logger.info("批次分镜 %s 描述AI返回: %s", indices_str, content[:200])
                     except NameError:
                         pass
                     with lock:
                         errors.append(str(e))
-                        sb["description"] = ""
-                        results[idx] = {"index": sb["index"], "description": ""}
-                        done_ctr[0] += 1
-                        self.progress.emit(sb["index"], done_ctr[0], total, "")
+                        for sb in batch:
+                            sb["description"] = ""
+                            results[sb["index"] - 1] = {"index": sb["index"], "description": ""}
+                            done_ctr[0] += 1
+                            self.progress.emit(sb["index"], done_ctr[0], total, "")
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-                futures = [
-                    pool.submit(process_one, sb, i)
-                    for i, sb in enumerate(self._storyboards)
-                ]
+                futures = [pool.submit(process_batch, b) for b in batches]
                 concurrent.futures.wait(futures)
 
             if errors:
@@ -603,14 +645,50 @@ class StoryboardDescriptionWorker(QThread):
             logger.error("分镜描述生成失败: %s", str(e), exc_info=True)
             self.error.emit(str(e))
 
-    def _parse_single(self, content: str) -> str:
+    def _parse_batch(self, content: str, batch: list[dict]) -> dict[int, str]:
         data = _parse_json(content)
-        if isinstance(data, dict) and "description" in data:
-            return data["description"]
+        
+        if data is None:
+            logger.warning("批次分镜描述解析失败：AI返回的JSON数据为空或无效")
+            return {}
+        
+        if not isinstance(data, (dict, list)):
+            logger.warning(f"批次分镜描述解析失败：AI返回的数据格式错误，期望dict或list，实际为{type(data).__name__}")
+            return {}
+        
         items = data.get("storyboards", data) if isinstance(data, dict) else data
-        if items and len(items) > 0:
-            return items[0].get("description", "")
-        return ""
+        
+        if isinstance(items, dict):
+            items = [items]
+        
+        if not isinstance(items, list):
+            logger.warning(f"批次分镜描述解析失败：storyboards不是列表，实际为{type(items).__name__}")
+            return {}
+        
+        if len(items) == 0:
+            logger.warning("批次分镜描述解析失败：AI返回的分镜列表为空")
+            return {}
+        
+        result: dict[int, str] = {}
+        used: set[int] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                logger.warning("分镜项不是字典类型，跳过")
+                continue
+            idx = item.get("index", 0)
+            desc = item.get("description", "")
+            if idx and desc and any(sb["index"] == idx for sb in batch):
+                result[idx] = desc
+                used.add(idx)
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            if i < len(batch):
+                idx = batch[i]["index"]
+                desc = item.get("description", "")
+                if desc and idx not in used:
+                    result[idx] = desc
+        return result
 
 
 class SingleDescWorker(QThread):
@@ -686,23 +764,40 @@ class SingleDescWorker(QThread):
             logger.info("分镜 #%d 单条描述AI返回: %s", sb['index'], content[:200])
 
             data = _parse_json(content)
-            if isinstance(data, dict) and "description" in data:
+            
+            if data is None:
+                logger.warning(f"分镜 #%d 描述解析失败：AI返回的JSON数据为空或无效", sb['index'])
+                desc = ""
+            elif isinstance(data, dict) and "description" in data:
                 desc = data["description"]
+                if not isinstance(desc, str):
+                    logger.warning(f"分镜 #%d 描述解析失败：description不是字符串类型", sb['index'])
+                    desc = ""
             else:
                 items = data.get("storyboards", data) if isinstance(data, dict) else data
-                desc = items[0].get("description", "") if items else ""
+                if isinstance(items, list) and len(items) > 0 and isinstance(items[0], dict):
+                    desc = items[0].get("description", "")
+                    if not isinstance(desc, str):
+                        logger.warning(f"分镜 #%d 描述解析失败：description不是字符串类型", sb['index'])
+                        desc = ""
+                else:
+                    logger.warning(f"分镜 #%d 描述解析失败：数据格式不正确", sb['index'])
+                    desc = ""
 
-            sb["description"] = desc
-            project = self._state_service.load_project(self._project_id)
-            if project:
-                stored = project.extra_data.get(f"storyboards_ep{self._episode_num}")
-                if isinstance(stored, list):
-                    for s in stored:
-                        if s.get("index") == sb["index"]:
-                            s["description"] = desc
-                            break
-                    project.extra_data[f"storyboards_ep{self._episode_num}"] = stored
-                    self._state_service.save_project(project)
+            if desc.strip():
+                sb["description"] = desc
+                project = self._state_service.load_project(self._project_id)
+                if project:
+                    stored = project.extra_data.get(f"storyboards_ep{self._episode_num}")
+                    if isinstance(stored, list):
+                        for s in stored:
+                            if s.get("index") == sb["index"]:
+                                s["description"] = desc
+                                break
+                        project.extra_data[f"storyboards_ep{self._episode_num}"] = stored
+                        self._state_service.save_project(project)
+            else:
+                logger.warning(f"分镜 #%d 描述为空，不保存", sb['index'])
 
             self.finished.emit(desc)
 
@@ -1389,7 +1484,8 @@ class NovelComicGeneratePage(QFrame):
             self._storyboard_layout.addWidget(empty_label)
             return
 
-        for sb in self._storyboards:
+        total = len(self._storyboards)
+        for i, sb in enumerate(self._storyboards):
             card = _StoryboardCard(sb)
             card.add_asset_clicked.connect(lambda idx=sb["index"]: self._on_add_asset(idx))
             card.remove_asset.connect(
@@ -1561,6 +1657,8 @@ class NovelComicGeneratePage(QFrame):
     def _on_desc_finished(self, descriptions: list[dict]) -> None:
         self._desc_status.setText(f"生成完成，{len(self._storyboards)} 个分镜")
         self._desc_status.setStyleSheet("color: #4ade80;")
+        for sb in self._storyboards:
+            self._refresh_single_card(sb["index"])
 
     def _on_desc_error(self, error_msg: str) -> None:
         self._desc_status.setText(f"生成失败: {error_msg}")
@@ -1899,7 +1997,7 @@ class NovelComicGeneratePage(QFrame):
                     if a.image_path and Path(a.image_path).exists():
                         reference_paths.append(a.image_path)
 
-        global_prefix = gen_settings.get("prefix", "").strip()
+        global_prefix = _get_effective_prefix(gen_settings)
         prompt = desc
         if global_prefix:
             prompt = global_prefix + "，分镜内容：" + prompt
@@ -1912,7 +2010,7 @@ class NovelComicGeneratePage(QFrame):
         prompt += f"，{resolution}分辨率，图片比例{ratio}，尺寸{size}"
         if page_num:
             prompt += f"。请在画面底部居中位置用白色小字生成页码 {page_num}"
-            prompt += f"。画面中的字体加粗"
+            prompt += f"。强制要求：文字清晰锐利，无模糊乱码；画面干净无噪点，主体完整无缺陷，画面中的字体加粗"
 
         return prompt, size, reference_paths
 
@@ -2013,6 +2111,11 @@ class _StoryboardCard(QFrame):
         self._main_layout.setContentsMargins(16, 16, 16, 16)
         self._main_layout.setSpacing(16)
 
+        left_col = QVBoxLayout()
+        left_col.setSpacing(0)
+        left_col.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        left_col.addStretch()
+
         self._image_placeholder = QFrame()
         self._image_placeholder.setObjectName("storyboardImagePlaceholder")
         self._image_placeholder.setFixedSize(120, 160)
@@ -2026,7 +2129,11 @@ class _StoryboardCard(QFrame):
         self._image_label.setScaledContents(True)
         image_layout.addWidget(self._image_label)
         self._image_placeholder.mousePressEvent = self._on_image_click
-        self._main_layout.addWidget(self._image_placeholder)
+        left_col.addWidget(self._image_placeholder)
+
+        left_col.addStretch()
+
+        self._main_layout.addLayout(left_col)
 
         self._right_layout = QVBoxLayout()
         self._right_layout.setSpacing(8)
@@ -2560,6 +2667,61 @@ class _DescEditDialog(QDialog):
         return self._edited
 
 
+class _ChooseRefDialog(QDialog):
+    def __init__(self, candidates: list[tuple[str, str]], parent: QWidget | None = None):
+        super().__init__(parent)
+        self._candidates = candidates
+        self._selected: str | None = None
+        self.setWindowTitle("选择垫图人物")
+        self.setFixedSize(400, 300)
+        self.setObjectName("chooseRefDialog")
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("选择垫图人物")
+        title.setObjectName("dialogTitle")
+        layout.addWidget(title)
+
+        label = QLabel("请选择一个人物作为垫图来源:")
+        label.setObjectName("dialogFieldLabel")
+        layout.addWidget(label)
+
+        self._list = QListWidget()
+        self._list.setObjectName("refCharList")
+        for nm, _ in self._candidates:
+            self._list.addItem(f"{nm}（已有图）")
+        self._list.setCurrentRow(0)
+        self._list.itemDoubleClicked.connect(self.accept)
+        layout.addWidget(self._list, stretch=1)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setObjectName("dialogCancelBtn")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton("确定")
+        confirm_btn.setObjectName("dialogConfirmBtn")
+        confirm_btn.clicked.connect(self.accept)
+        btn_row.addWidget(confirm_btn)
+
+        layout.addLayout(btn_row)
+
+    @property
+    def selected_image_path(self) -> str:
+        row = self._list.currentRow()
+        if row >= 0 and row < len(self._candidates):
+            return self._candidates[row][1]
+        return ""
+
+
 class _StoryboardPreviewDialog(QDialog):
     def __init__(
         self,
@@ -2935,7 +3097,7 @@ class _AssetManagementDialog(QDialog):
             return chars, scenes, props
         raw = project.extra_data.get(self._ep_asset_key(ep_num), [])
         for item in raw:
-            entry = {"name": item.get("name", ""), "desc": item.get("desc", ""), "image_path": item.get("image_path", "")}
+            entry = {"name": item.get("name", ""), "desc": item.get("desc", ""), "image_path": item.get("image_path", ""), "ref_image_path": item.get("ref_image_path", "")}
             t = item.get("asset_type", "")
             if t == "character":
                 chars.append(entry)
@@ -2961,7 +3123,7 @@ class _AssetManagementDialog(QDialog):
                             item["asset_type"] = atype
                             seen[name] = dict(item)
             for item in seen.values():
-                entry = {"name": item.get("name", ""), "desc": item.get("desc", ""), "image_path": item.get("image_path", "")}
+                entry = {"name": item.get("name", ""), "desc": item.get("desc", ""), "image_path": item.get("image_path", ""), "ref_image_path": item.get("ref_image_path", "")}
                 t = item.get("asset_type", "")
                 if t == "character":
                     self._character_data.append(entry)
@@ -3003,8 +3165,15 @@ class _AssetManagementDialog(QDialog):
 
         ep_key = self._ep_asset_key(self._episode_num)
         project.extra_data[ep_key] = [
-            {"name": a.name, "desc": a.desc, "asset_type": a.asset_type, "image_path": a.image_path}
-            for a in ep_assets
+            {
+                "name": a.name, "desc": a.desc, "asset_type": a.asset_type,
+                "image_path": a.image_path,
+                "ref_image_path": item.get("ref_image_path", ""),
+            }
+            for item, a in zip(
+                self._character_data + self._scene_data + self._prop_data,
+                ep_assets,
+            )
         ]
 
         merged: list[NovelComicAsset] = []
@@ -3090,6 +3259,7 @@ class _AssetManagementDialog(QDialog):
                 row.image_clicked.connect(self._on_preview_asset_image)
                 row.upload_clicked.connect(lambda r=row: self._on_upload_asset_image(r))
                 row.delete_clicked.connect(lambda a=asset, at=asset_type: self._on_delete_asset(a, at))
+                row.ref_image_clicked.connect(lambda n=asset["name"]: self._on_select_ref_image(n))
                 layout.addWidget(row)
                 self._asset_rows[asset_type].append(row)
 
@@ -3172,6 +3342,75 @@ class _AssetManagementDialog(QDialog):
         self._save_to_project()
         self._refresh_asset_list(asset_type, data_list)
 
+    def _on_select_ref_image(self, asset_name: str) -> None:
+        menu = QMenu(self)
+        menu.setObjectName("assetRefMenu")
+
+        upload_action = menu.addAction("上传图片")
+        upload_action.triggered.connect(lambda: self._on_upload_ref_image(asset_name))
+
+        choose_action = menu.addAction("从人物资产选择")
+        choose_action.triggered.connect(lambda: self._on_choose_ref_from_assets(asset_name))
+
+        clear_action = menu.addAction("清除垫图")
+        clear_action.triggered.connect(lambda: self._on_clear_ref_image(asset_name))
+
+        row = self._find_asset_row(asset_name)
+        if row:
+            btn = row._ref_btn
+            pos = btn.mapToGlobal(btn.rect().bottomLeft())
+            menu.exec(pos)
+        else:
+            menu.exec(QCursor.pos())
+
+    def _on_upload_ref_image(self, asset_name: str) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择垫图图片", "", "图片文件 (*.png *.jpg *.jpeg *.webp);;所有文件 (*.*)",
+        )
+        if not file_path:
+            return
+        images_dir = self._state_service.get_project_images_dir(self._project_id)
+        safe_name = re.sub(r'[<>:"/\\|?*]', '_', f"ref_{asset_name}")
+        dest = str(images_dir / f"{safe_name}{Path(file_path).suffix}")
+        try:
+            from shutil import copy2
+            copy2(file_path, dest)
+        except Exception as e:
+            logger.error("复制垫图失败: %s", e)
+            return
+        row = self._find_asset_row(asset_name)
+        if row:
+            row.set_ref_image(dest)
+        self._save_to_project()
+
+    def _on_choose_ref_from_assets(self, asset_name: str) -> None:
+        candidates = []
+        for item in self._character_data:
+            img = item.get("image_path", "")
+            nm = item.get("name", "")
+            if img and Path(img).exists():
+                candidates.append((nm, img))
+        if not candidates:
+            QMessageBox.information(self, "无可选垫图", "没有已生成图片的人物资产可供选择")
+            return
+
+        dialog = _ChooseRefDialog(candidates, self.window())
+        if dialog.exec() != QDialog.Accepted:
+            return
+        img_path = dialog.selected_image_path
+        if not img_path:
+            return
+        row = self._find_asset_row(asset_name)
+        if row:
+            row.set_ref_image(img_path)
+        self._save_to_project()
+
+    def _on_clear_ref_image(self, asset_name: str) -> None:
+        row = self._find_asset_row(asset_name)
+        if row:
+            row.set_ref_image("")
+        self._save_to_project()
+
     def _on_gen_asset_image(self, asset_name: str) -> None:
         row = self._find_asset_row(asset_name)
         if row is None:
@@ -3199,19 +3438,29 @@ class _AssetManagementDialog(QDialog):
         asset_desc = self._get_asset_desc(asset_name)
         type_label = {"character": "人物图", "scene": "场景图", "prop": "道具图"}.get(asset_type, asset_type)
 
-        global_prefix = gen_settings.get("prefix", "").strip()
+        global_prefix = _get_effective_prefix(gen_settings)
         prompt = f"资产名称：{asset_name}，资产类型：{type_label}，{asset_desc}"
         if global_prefix:
-            prompt = global_prefix + ", " + asset_name + "，" + prompt
+            prompt = f"{global_prefix}，{asset_name}，{prompt}"
 
         if asset_type == "character":
-            prompt += "，生成人物4视角（正面全身视图，左侧身视图，右侧视图，背面视图），白底图"
+            prompt += "，生成人物4视角（正面全身视图，左侧身视图，右侧视图，背面视图），白底图，需要把人物名字显示在图片上"
         elif asset_type == "scene":
             prompt += "，生成9机位的不同方向的视角图"
         elif asset_type == "prop":
             prompt += "，生成9机位的不同方向的视角图"
 
         row.set_generating()
+
+        ref_image_path = None
+        for data_list in (self._character_data, self._scene_data, self._prop_data):
+            for item in data_list:
+                if item.get("name") == asset_name:
+                    ref_image_path = item.get("ref_image_path", "")
+                    break
+        reference_images = None
+        if ref_image_path and Path(ref_image_path).exists():
+            reference_images = [ref_image_path]
 
         resolution = gen_settings.get("resolution", "1K")
         size = _square_size_from_resolution(resolution)
@@ -3225,6 +3474,7 @@ class _AssetManagementDialog(QDialog):
                 self._project_id, asset_name, self.asset_image_generated,
             ),
             size=size,
+            reference_images=reference_images,
         )
 
     def _on_asset_image_generated(self, asset_name: str, image_path: str) -> None:
@@ -3421,13 +3671,13 @@ class _AssetManagementDialog(QDialog):
             asset_desc = self._get_asset_desc(asset_name)
             type_label = {"character": "人物图", "scene": "场景图", "prop": "道具图"}.get(asset_type, asset_type)
 
-            global_prefix = gen_settings.get("prefix", "").strip()
+            global_prefix = _get_effective_prefix(gen_settings)
             prompt = f"资产名称：{asset_name}，资产类型：{type_label}，{asset_desc}"
             if global_prefix:
                 prompt = global_prefix + ", " + asset_name + "，" + prompt
 
             if asset_type == "character":
-                prompt += "，生成人物4视角（正面全身视图，左侧身视图，右侧视图，背面视图），白底图"
+                prompt += "，生成人物4视角（正面全身视图，左侧身视图，右侧视图，背面视图），白底图，需要把人物名字显示在图片上"
             elif asset_type == "scene":
                 prompt += "，生成9机位的不同方向的视角图"
             elif asset_type == "prop":
@@ -3435,6 +3685,15 @@ class _AssetManagementDialog(QDialog):
 
             resolution = gen_settings.get("resolution", "1K")
             size = _square_size_from_resolution(resolution)
+            ref_image_path = None
+            for data_list, _ in type_map.values():
+                for item in data_list:
+                    if item.get("name") == asset_name:
+                        ref_image_path = item.get("ref_image_path", "")
+                        break
+            reference_images = None
+            if ref_image_path and Path(ref_image_path).exists():
+                reference_images = [ref_image_path]
             ImageGenService.instance().submit(
                 image_config, prompt,
                 _make_asset_on_done(
@@ -3445,6 +3704,7 @@ class _AssetManagementDialog(QDialog):
                     self._project_id, asset_name, self.asset_image_generated,
                 ),
                 size=size,
+                reference_images=reference_images,
             )
 
 
@@ -3477,6 +3737,7 @@ class _AssetItemRow(QFrame):
     image_clicked = Signal(str)
     upload_clicked = Signal()
     delete_clicked = Signal()
+    ref_image_clicked = Signal(str)
 
     def __init__(self, asset: dict, parent: QWidget | None = None, read_only: bool = False):
         super().__init__(parent)
@@ -3488,6 +3749,9 @@ class _AssetItemRow(QFrame):
         self._thumb_img: QLabel | None = None
         self._thumb_frame: QFrame | None = None
         self._image_path: str = ""
+        self._ref_frame: QFrame | None = None
+        self._ref_img: QLabel | None = None
+        self._ref_name_label: QLabel | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -3495,6 +3759,7 @@ class _AssetItemRow(QFrame):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(12)
 
+        # -- 主缩略图 --
         self._thumb_frame = QFrame()
         self._thumb_frame.setObjectName("assetThumbPlaceholder")
         self._thumb_frame.setFixedSize(100, 100)
@@ -3516,6 +3781,32 @@ class _AssetItemRow(QFrame):
         self._thumb_frame.mousePressEvent = self._on_thumb_click
         layout.addWidget(self._thumb_frame)
 
+        # -- 垫图预览区 --
+        self._ref_frame = QFrame()
+        self._ref_frame.setObjectName("assetRefPreview")
+        self._ref_frame.setFixedSize(60, 80)
+        self._ref_frame.setToolTip("垫图图片（点击更换）")
+        self._ref_frame.setCursor(Qt.PointingHandCursor)
+        ref_vlayout = QVBoxLayout(self._ref_frame)
+        ref_vlayout.setContentsMargins(2, 2, 2, 2)
+        ref_vlayout.setSpacing(2)
+        ref_vlayout.setAlignment(Qt.AlignCenter)
+
+        self._ref_img = QLabel()
+        self._ref_img.setAlignment(Qt.AlignCenter)
+        self._ref_img.setScaledContents(True)
+        self._ref_img.setFixedSize(56, 56)
+        ref_vlayout.addWidget(self._ref_img)
+
+        self._ref_name_label = QLabel()
+        self._ref_name_label.setObjectName("assetRefName")
+        self._ref_name_label.setAlignment(Qt.AlignCenter)
+        ref_vlayout.addWidget(self._ref_name_label)
+
+        self._ref_frame.mousePressEvent = self._on_ref_click
+        layout.addWidget(self._ref_frame)
+
+        # -- 名称+描述 --
         info_layout = QVBoxLayout()
         info_layout.setSpacing(4)
 
@@ -3532,6 +3823,7 @@ class _AssetItemRow(QFrame):
 
         layout.addLayout(info_layout, stretch=1)
 
+        # -- 操作按钮 --
         btn_col = QVBoxLayout()
         btn_col.setSpacing(4)
 
@@ -3547,6 +3839,12 @@ class _AssetItemRow(QFrame):
         self._upload_btn.clicked.connect(self.upload_clicked.emit)
         btn_col.addWidget(self._upload_btn)
 
+        self._ref_btn = QPushButton("\U0001f4dd 垫图")
+        self._ref_btn.setObjectName("assetRefBtn")
+        self._ref_btn.setCursor(Qt.PointingHandCursor)
+        self._ref_btn.clicked.connect(lambda: self.ref_image_clicked.emit(self._asset.get("name", "")))
+        btn_col.addWidget(self._ref_btn)
+
         self._delete_btn = QPushButton("\u2715")
         self._delete_btn.setObjectName("assetDeleteBtn")
         self._delete_btn.setCursor(Qt.PointingHandCursor)
@@ -3560,12 +3858,40 @@ class _AssetItemRow(QFrame):
         if self._read_only:
             self._gen_btn.setVisible(False)
             self._upload_btn.setVisible(False)
+            self._ref_btn.setVisible(False)
             self._delete_btn.setVisible(False)
             self._desc_label.setCursor(Qt.ArrowCursor)
+
+        self._sync_ref_preview()
+
+    def _sync_ref_preview(self) -> None:
+        ref_path = self._asset.get("ref_image_path", "")
+        has_ref = bool(ref_path and Path(ref_path).exists())
+        self._ref_frame.setVisible(has_ref)
+        if has_ref:
+            px = QPixmap(ref_path)
+            if not px.isNull():
+                self._ref_img.setPixmap(px.scaled(56, 56, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self._ref_name_label.setText(Path(ref_path).stem[:10])
+            self._ref_btn.setText("\U0001f4f9 垫图")
+            self._ref_btn.setStyleSheet("")
+        else:
+            self._ref_img.clear()
+            self._ref_name_label.setText("")
+            self._ref_btn.setText("\U0001f4dd 垫图")
+
+    def set_ref_image(self, image_path: str) -> None:
+        self._asset["ref_image_path"] = image_path
+        self._sync_ref_preview()
 
     def _on_thumb_click(self, event) -> None:
         if self._image_path and Path(self._image_path).exists():
             self.image_clicked.emit(self._image_path)
+
+    def _on_ref_click(self, event) -> None:
+        ref_path = self._asset.get("ref_image_path", "")
+        if ref_path and Path(ref_path).exists():
+            self.image_clicked.emit(ref_path)
 
     def _on_desc_double_click(self, event) -> None:
         self.desc_edit_requested.emit(

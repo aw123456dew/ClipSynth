@@ -242,11 +242,16 @@ class AIService:
         size: str = "1024x1024",
         reference_images: list[str] | None = None,
     ) -> bytes:
+        if self._is_gemini_model():
+            return self._generate_image_gemini(prompt, size, reference_images)
         if self._config.api_provider == "toapi":
             return self._generate_image_toapi(prompt, size, reference_images)
         if self._config.api_type == "gemini":
             return self._generate_image_gemini(prompt, size, reference_images)
         return self._generate_image_openai(prompt, size, reference_images)
+
+    def _is_gemini_model(self) -> bool:
+        return self._config.model_name.lower().startswith("gemini")
 
     def _generate_image_openai(
         self,
@@ -354,6 +359,9 @@ class AIService:
         import base64
         import httpx
 
+        if self._config.api_provider == "toapi":
+            return self._generate_image_gemini_toapi(prompt, size, reference_images)
+
         parts: list[dict] = []
         if reference_images:
             for path in reference_images:
@@ -377,9 +385,8 @@ class AIService:
             "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         }
 
-        model = self._config.model_name or "gemini-3-pro-image-preview"
-        base = self._config.base_url or "https://4sapi.com/v1beta"
-        base = base.rstrip("/")
+        model = self._config.model_name
+        base = self._config.base_url.rstrip("/")
         url = f"{base}/models/{model}:generateContent"
 
         logger.info("调用 Gemini 生图: %s", url)
@@ -419,6 +426,102 @@ class AIService:
                             return data
 
         raise RuntimeError("Gemini 图片生成未返回图像数据")
+
+    def _generate_image_gemini_toapi(
+        self,
+        prompt: str,
+        size: str,
+        reference_images: list[str] | None,
+    ) -> bytes:
+        import time
+        import httpx
+
+        base_url = self._config.base_url.rstrip("/")
+        headers = {"Authorization": f"Bearer {self._config.api_key}"}
+
+        ref_urls: list[str] = []
+        if reference_images:
+            logger.info("ToAPI Gemini 上传 %d 张参考图", len(reference_images))
+            for path in reference_images:
+                try:
+                    with open(path, "rb") as f:
+                        resp = httpx.post(
+                            f"{base_url}/v1/uploads/images",
+                            headers=headers,
+                            files={"file": (Path(path).name, f.read(), "image/png")},
+                            timeout=120,
+                        )
+                    body = resp.json()
+                    if body.get("success") and body.get("data", {}).get("url"):
+                        url = body["data"]["url"]
+                        ref_urls.append(url)
+                        logger.info("ToAPI Gemini 参考图上传成功 %s -> %s", path, url)
+                    else:
+                        logger.warning("ToAPI Gemini 上传失败 %s: %s", path, body)
+                except Exception as e:
+                    logger.warning("ToAPI Gemini 上传参考图异常 %s: %s", path, e)
+
+        ratio = self._size_to_ratio(size)
+        resolution = self._size_to_resolution(size)
+        gen_body: dict = {
+            "model": self._config.model_name,
+            "prompt": prompt,
+            "n": 1,
+            "size": ratio,
+            "metadata": {"resolution": resolution},
+        }
+        if ref_urls:
+            gen_body["image_urls"] = [{"url": u} for u in ref_urls]
+
+        logger.info("ToAPI Gemini 创建生图任务: ratio=%s resolution=%s", ratio, resolution)
+        with httpx.Client(timeout=httpx.Timeout(120)) as http:
+            resp = http.post(
+                f"{base_url}/v1/images/generations",
+                headers={**headers, "Content-Type": "application/json"},
+                json=gen_body,
+            )
+            resp.raise_for_status()
+            task_result = resp.json()
+
+        task_id = task_result.get("id") or task_result.get("task_id")
+        if not task_id:
+            raise RuntimeError(f"ToAPI Gemini 创建任务失败，无 task_id: {task_result}")
+
+        logger.info("ToAPI Gemini 任务已创建: %s，开始轮询", task_id)
+        deadline = time.time() + 900
+        while time.time() < deadline:
+            time.sleep(3)
+            with httpx.Client(timeout=httpx.Timeout(600)) as http:
+                poll_resp = http.get(
+                    f"{base_url}/v1/images/generations/{task_id}",
+                    headers=headers,
+                )
+                poll_resp.raise_for_status()
+                status_body = poll_resp.json()
+
+            status = status_body.get("status")
+            logger.debug("ToAPI Gemini 任务 %s 状态: %s progress=%s", task_id, status, status_body.get("progress"))
+
+            if status == "completed":
+                result_data = status_body.get("result", {})
+                items = result_data.get("data", [])
+                if items and items[0].get("url"):
+                    image_url = items[0]["url"]
+                    logger.info("ToAPI Gemini 生成完成, 下载图片: %s", image_url[:80])
+                    with httpx.Client(timeout=httpx.Timeout(900)) as http:
+                        dl_resp = http.get(image_url)
+                        dl_resp.raise_for_status()
+                        data = dl_resp.content
+                        logger.info("ToAPI Gemini 图片下载完成, 大小=%d bytes", len(data))
+                        return data
+                raise RuntimeError(f"ToAPI Gemini 完成但无图片 URL: {status_body}")
+            elif status == "failed":
+                error_info = status_body.get("error", {})
+                raise RuntimeError(
+                    f"ToAPI Gemini 生成失败: {error_info.get('message') or status_body.get('fail_reason') or status_body}"
+                )
+
+        raise TimeoutError("ToAPI Gemini 生图任务超时 (900s)")
 
     @property
     def config(self) -> AIModelConfig:

@@ -3888,6 +3888,90 @@ QWidget[objectName^="addAssetTabPage_"] {
     border-color: #f87171;
 }
 
+#assetRefBtn {
+    background-color: #141c30;
+    color: #94a3b8;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+#assetRefBtn:hover {
+    background-color: #1e3260;
+    color: #fbbf24;
+    border-color: #f59e0b;
+}
+
+/* ===== Asset Ref Menu ===== */
+#assetRefMenu {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+    padding: 4px;
+}
+
+#assetRefMenu::item {
+    padding: 8px 24px;
+    color: #e2e8f0;
+    font-size: 13px;
+}
+
+#assetRefMenu::item:selected {
+    background-color: #1e3260;
+    color: #ffffff;
+    border-radius: 4px;
+}
+
+#assetRefPreview {
+    background-color: #0a0f1a;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+}
+
+#assetRefPreview:hover {
+    border-color: #f59e0b;
+    background-color: #141c30;
+}
+
+#assetRefName {
+    color: #94a3b8;
+    font-size: 9px;
+    line-height: 12px;
+}
+
+/* ===== Asset Info layout end ===== */
+
+#chooseRefDialog {
+    background-color: #0d111f;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#refCharList {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #2a3a5a;
+    border-radius: 6px;
+    font-size: 14px;
+    padding: 4px;
+    outline: none;
+}
+
+#refCharList::item {
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+#refCharList::item:selected {
+    background-color: #1e3260;
+    color: #ffffff;
+}
+
+#refCharList::item:hover {
+    background-color: #162040;
+}
+
 #assetAddRow {
     background-color: transparent;
     border: 1px dashed #1e293b;

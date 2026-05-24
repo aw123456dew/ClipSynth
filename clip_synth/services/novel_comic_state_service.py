@@ -87,9 +87,8 @@ class NovelComicStateService:
             raw = file_path.read_text(encoding="utf-8")
             try:
                 data = json.loads(raw)
-            except json.JSONDecodeError:
-                logger.error("项目 JSON 文件损坏，已自动删除损坏项目: %s", file_path)
-                file_path.unlink(missing_ok=True)
+            except json.JSONDecodeError as e:
+                logger.error("项目 JSON 文件损坏，无法加载: %s - %s", file_path, str(e))
                 return None
 
             chapters = [
