@@ -2,6 +2,7 @@ import concurrent.futures
 import json
 import logging
 import re
+import struct
 import threading
 import time
 import zipfile
@@ -31,7 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from clip_synth.services.ai_service import AIModelConfig, AIService
+from clip_synth.services.ai_service import AIModelConfig, AIService, MultiRoundChatManager
 from clip_synth.services.image_gen_service import ImageGenService
 from clip_synth.services.novel_comic_state_service import NovelComicStateService
 from clip_synth.services.settings_service import SettingsService
@@ -70,7 +71,58 @@ def _parse_json(text: str) -> dict | list | None:
         return None
 
 
+_WINDOWS_EPOCH = 11644473600  # seconds between 1601-01-01 and 1970-01-01
+
+
+def _make_zip_ntfs_extra(unix_ts: float) -> bytes:
+    ntfs_ts = int((unix_ts + _WINDOWS_EPOCH) * 10000000)
+    data = struct.pack("<HH", 0x000a, 32)  # tag=NTFS(10), size=32
+    data += struct.pack("<I", 0)  # reserved
+    data += struct.pack("<HH", 1, 24)  # tag1=NTFS(1), size1=24
+    data += struct.pack("<Q", ntfs_ts)  # mtime
+    data += struct.pack("<Q", ntfs_ts)  # atime
+    data += struct.pack("<Q", ntfs_ts)  # ctime
+    return data
+
+
 _running_workers: dict[tuple[str, int, str], QThread] = {}
+
+
+def _make_chat_caller(
+    config: AIModelConfig,
+    chat_manager: MultiRoundChatManager | None,
+) -> callable:
+    svc = AIService(config)
+
+    def _call(system_prompt: str, user_content: str, temperature: float = 0.3, response_format: dict | None = None) -> str:
+        if chat_manager and chat_manager.is_multi_round_enabled(config):
+            return svc.chat_completion_with_history(
+                chat_manager, system_prompt, user_content,
+                temperature=temperature,
+                response_format=response_format,
+            )
+
+        logger.info("Using single-round chat (model: %s)", config.model_name)
+        client = svc._ensure_client()
+        is_gemini = config.model_name.lower().startswith("gemini")
+        kwargs: dict = dict(
+            model=config.model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=temperature,
+            timeout=900,
+            response_format=response_format or {"type": "json_object"},
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        if is_gemini:
+            kwargs["extra_body"] = AIService._get_gemini_extra_body()
+        response = client.chat.completions.create(**kwargs)
+
+        return response.choices[0].message.content or ""
+
+    return _call
 
 
 def _worker_key(project_id: str, episode_num: int, task_type: str) -> tuple[str, int, str]:
@@ -132,11 +184,13 @@ class AssetExtractWorker(QThread):
         self,
         chapter_text: str,
         settings_service: SettingsService,
+        chat_manager: MultiRoundChatManager | None = None,
         parent=None,
     ):
         super().__init__(parent)
         self._chapter_text = chapter_text
         self._settings_service = settings_service
+        self._chat_manager = chat_manager
 
     def run(self) -> None:
         try:
@@ -149,27 +203,17 @@ class AssetExtractWorker(QThread):
                 base_url=text_config.base_url,
             )
 
-            service = AIService(config)
-            client = service._ensure_client()
-
             prompt = (
                 "请分析以下小说文本，提取人物、场景、道具资产，"
                 "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。\n\n"
                 f"小说文本：\n{self._chapter_text}"
             )
 
-            response = client.chat.completions.create(
-                model=config.model_name,
-                messages=[
-                    {"role": "system", "content": ASSET_EXTRACT_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                timeout=900,  # 根据模型设置最大值
-                response_format={"type": "json_object"},
+            caller = _make_chat_caller(config, self._chat_manager)
+            content = caller(
+                ASSET_EXTRACT_SYSTEM_PROMPT, prompt,
+                temperature=0.3, response_format={"type": "json_object"},
             )
-
-            content = response.choices[0].message.content or ""
             logger.info("资产提取AI返回: %s", content[:300])
 
             characters, scenes, props = self._parse_response(content)
@@ -196,6 +240,21 @@ class AssetExtractWorker(QThread):
         return characters, scenes, props
 
 
+STORYBOARD_SEGMENT_SYSTEM_PROMPT = """\
+你是一个专业的文本分段专家。请将以下小说文本按自然场景转换或情节节点切分成大片段。
+
+输出格式要求（最重要）：
+你必须且只能输出一个纯 JSON 数组，不要输出任何 Markdown、表格、标题、解释、代码块标记。整个回复从 [ 开始，到 ] 结束。
+
+["第一段原文...", "第二段原文...", "第三段原文..."]
+
+核心要求：
+1. 按场景转换、时间流逝、情节推进的自然断点来切分
+2. 每段约 1000-1500 字，原文较短则适当缩小段数和每段字数
+3. 严格保留原文文字，不要做任何修改、润色、删减或添加
+4. 所有片段按原文顺序排列，覆盖全文"""
+
+
 STORYBOARD_SPLIT_SYSTEM_PROMPT = """\
 你是一个专业的漫画分镜师，擅长将小说文本拆分为漫画单页的分镜。
 
@@ -204,19 +263,36 @@ STORYBOARD_SPLIT_SYSTEM_PROMPT = """\
 
 {
   "storyboards": [
-    {"text": "第一段原文片段"},
-    {"text": "第二段原文片段"}
+    {
+      "text": "第一页漫画的原文文字",
+      "panel_count_suggestion": 2,
+      "present_characters": ["张三", "李四"],
+      "bubbles": [{"speaker": "张三", "text": "你终于来了。"}, {"speaker": "李四", "text": "没错。"}],
+      "narrative": ["一阵阴风吹过，伴随着血腥味。", "两人对视，空气仿佛凝固。"]
+    },
+    {
+      "text": "第二页漫画的原文文字",
+      "panel_count_suggestion": 1,
+      "present_characters": ["张三"],
+      "bubbles": [{"speaker": "张三", "text": "这话是什么意思？"}],
+      "narrative": ["张三独自站在月光下，影子拖得很长。"]
+    }
   ]
 }
 
 核心要求：
-1. 严格保留原文文字，不要做任何修改、润色、删减或添加
-2. 每个分镜的文字量应适合一个漫画页面（1-3格），即通常是一个动作节拍、一个简短对话回合、或一个场景片段，不要过长也不要过短
-3. 分镜之间要有清晰的叙事断点，例如场景切换、视角转换、对话回合、动作节拍
-4. 所有分镜按原文顺序排列，覆盖全文，不要遗漏原文内容
-5. 描述文本中严禁使用双引号、单引号、破折号、省略号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号
-6. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。
-7. 每个 text 字段的内容不得超过 150 个汉字。"""
+1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加，并且text 不能一次性超过150个汉字
+2. 每个分镜对应一页漫画，一页漫画大概 1-3 格，特别精彩的使用1格，正常的使用2格，除非某个镜头特别复杂，才考虑3-4格，如果某页的内容特别多，我建议分开两页
+3. panel_count_suggestion 是推荐格数，根据本页内容的节奏和复杂度给出合理建议（整数 1-4）
+4. present_characters 列出本页出场的人物名称，不要遗漏
+5. bubbles 列出本页中所有角色的对话，speaker 是说话人，text 是对话内容。text 字段中凡是对话部分都要提取到 bubbles 中
+6. narrative 仅保留角色的内心独白、内心想法或主观看法（心理活动、内心感受、主观评价等），按顺序放入数组。其他所有的叙事描述（场景描写、环境交代、角色动作、面部表情等）**一律省略不放入 narrative**，以精简内容
+7. 分镜之间要有清晰的叙事断点，如场景切换、视角转换、对话回合、动作节拍
+8. 所有分镜按原文顺序排列，覆盖全文，不要遗漏原文内容
+9. **字数限制**：每页气泡（bubbles 中所有 text 内容）和旁白（narrative 中所有字符串）的总字数不得超过 80 个汉字。如果原文段落较长，必须对原文进行浓缩概括，只保留最核心的信息（不得转写语言，原文是中文就要全中文，原文是英文就要全英文）
+10. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符
+11. 所有字段必须使用与原文一致的语言（原文是中文则用中文，英文则用英文），**严禁出现英文的人称代词(he/she/him/her等)或英文单词，中文原文必须全部用中文表达**
+12. 旁白和对话的文字中必须移除无意义的标点符号（如破折号、省略号、书名号、单双引号等），只保留逗号、句号、感叹号、问号、顿号"""
 
 
 def _save_project_storyboards(
@@ -231,6 +307,7 @@ def _save_project_storyboards(
 
 class StoryboardSplitWorker(QThread):
     finished = Signal(list)
+    progress = Signal(str)
     error = Signal(str)
 
     def __init__(
@@ -240,6 +317,7 @@ class StoryboardSplitWorker(QThread):
         episode_num: int,
         settings_service: SettingsService,
         state_service: NovelComicStateService,
+        chat_manager: MultiRoundChatManager | None = None,
     ):
         super().__init__()
         self._chapter_text = chapter_text
@@ -247,6 +325,11 @@ class StoryboardSplitWorker(QThread):
         self._episode_num = episode_num
         self._settings_service = settings_service
         self._state_service = state_service
+        self._chat_manager = chat_manager
+
+    def _call_ai(self, config: AIModelConfig, system_prompt: str, user_text: str) -> str:
+        caller = _make_chat_caller(config, self._chat_manager)
+        return caller(system_prompt, user_text, temperature=0.3, response_format={"type": "json_object"})
 
     def run(self) -> None:
         try:
@@ -259,73 +342,150 @@ class StoryboardSplitWorker(QThread):
                 base_url=text_config.base_url,
             )
 
-            service = AIService(config)
-            client = service._ensure_client()
+            # Phase 1: 按自然场景/情节节点切成 6-8 个片段
+            self.progress.emit("正在分析章节结构...")
+            logger.info("分镜拆分 Phase 1: 场景/情节分段")
 
-            prompt = (
-                "请将以下小说文本拆分为适合漫画制作的分镜段落，"
-                "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。\n\n"
-                f"小说文本：\n{self._chapter_text}"
+            seg_prompt = (
+                "请将以下小说文本按自然场景或情节节点切成 6-8 个片段，"
+                "每个片段约 1000-1500 字。"
+                f"\n\n小说文本：\n{self._chapter_text}"
             )
 
-            response = client.chat.completions.create(
-                model=config.model_name,
-                messages=[
-                    {"role": "system", "content": STORYBOARD_SPLIT_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                timeout=900,   # 根据模型设置最大值
-                response_format={"type": "json_object"},
-            )
+            seg_response = self._call_ai(config, STORYBOARD_SEGMENT_SYSTEM_PROMPT, seg_prompt)
+            logger.info("分段AI返回: %s", seg_response[:300])
 
-            content = response.choices[0].message.content or ""
-            logger.info("分镜拆分AI返回: %s", response.choices[0])
-            logger.info("分镜拆分AI返回: %s", content[:300])
+            segments = _parse_json(seg_response)
+            if isinstance(segments, dict) and "storyboards" in segments:
+                items = segments["storyboards"]
+                segments = [s.get("text", "") for s in items if isinstance(s, dict) and s.get("text", "").strip()]
+            if not isinstance(segments, list) or len(segments) == 0:
+                raise ValueError("分镜拆分失败：AI返回的分段结果无效")
+            segments = [s.strip() for s in segments if isinstance(s, str) and s.strip()]
+            if len(segments) == 0:
+                raise ValueError("分镜拆分失败：分段后没有有效内容")
 
-            storyboards = self._parse_response(content)
+            total_segments = len(segments)
+            logger.info("分镜拆分 Phase 1 完成: %d 个片段", total_segments)
+
+            seg_text_map = {i: s for i, s in enumerate(segments)}
+
+            # Phase 2: 并发处理每个片段，生成分镜
+            results_per_seg: dict[int, list[dict]] = {}
+            errors_per_seg: dict[int, str] = {}
+            done_ctr = [0]
+            lock = threading.Lock()
+
+            def process_segment(seg_idx: int, seg_text: str) -> None:
+                last_error = ""
+                for attempt in range(3):
+                    try:
+                        logger.info("分镜拆分 Phase 2: 片段 #%d (尝试 %d/3)", seg_idx + 1, attempt + 1)
+                        sb_response = self._call_ai(
+                            config,
+                            STORYBOARD_SPLIT_SYSTEM_PROMPT,
+                            f"请为以下小说片段生成分镜数据，将文本拆分为漫画单页分镜：\n\n{seg_text}",
+                        )
+                        logger.info("片段 #%d AI返回: %s", seg_idx + 1, sb_response[:300])
+
+                        sb_data = _parse_json(sb_response)
+                        if sb_data is None:
+                            raise ValueError("JSON解析失败")
+
+                        if isinstance(sb_data, dict) and "storyboards" in sb_data:
+                            items = sb_data["storyboards"]
+                        elif isinstance(sb_data, list):
+                            items = sb_data
+                        else:
+                            raise ValueError("返回格式不正确")
+
+                        if not isinstance(items, list) or len(items) == 0:
+                            raise ValueError("返回的storyboards为空")
+
+                        seg_items: list[dict] = []
+                        for item in items:
+                            if not isinstance(item, dict):
+                                continue
+                            text = item.get("text", "").strip()
+                            if not text:
+                                continue
+                            seg_items.append({
+                                "text": text,
+                                "panel_count_suggestion": item.get("panel_count_suggestion", 1),
+                                "present_characters": item.get("present_characters", []),
+                                "bubbles": item.get("bubbles", []),
+                                "narrative": item.get("narrative", []) if isinstance(item.get("narrative"), list) else ([item["narrative"]] if item.get("narrative", "") else []),
+                                "summary": item.get("summary", ""),
+                            })
+
+                        if len(seg_items) == 0:
+                            raise ValueError("片段解析后没有有效的分镜内容")
+
+                        with lock:
+                            results_per_seg[seg_idx] = seg_items
+                            done_ctr[0] += 1
+                            self.progress.emit(f"正在生成分镜 {done_ctr[0]}/{total_segments}...")
+                        return
+
+                    except (ValueError, json.JSONDecodeError) as e:
+                        last_error = str(e)
+                        logger.warning("片段 #%d 解析失败, 重试 %d/3: %s", seg_idx + 1, attempt + 1, last_error)
+                        if attempt < 2:
+                            continue
+                        with lock:
+                            errors_per_seg[seg_idx] = last_error
+                            done_ctr[0] += 1
+                            self.progress.emit(f"正在生成分镜 {done_ctr[0]}/{total_segments}...")
+                        return
+
+                    except Exception as e:
+                        logger.error("片段 #%d 生成失败: %s", seg_idx + 1, str(e), exc_info=True)
+                        with lock:
+                            errors_per_seg[seg_idx] = str(e)
+                            done_ctr[0] += 1
+                            self.progress.emit(f"正在生成分镜 {done_ctr[0]}/{total_segments}...")
+                        return
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                futures = [
+                    pool.submit(process_segment, seg_idx, seg_text)
+                    for seg_idx, seg_text in enumerate(segments)
+                ]
+                concurrent.futures.wait(futures)
+
+            if errors_per_seg:
+                failed = sorted(errors_per_seg.keys())
+                first = errors_per_seg[failed[0]]
+                raise ValueError(f"分镜拆分失败：{len(errors_per_seg)}/{total_segments} 个片段处理失败（#{[i+1 for i in failed]}），首个错误: {first}")
+
+            all_storyboards: list[dict] = []
+            for seg_idx in sorted(results_per_seg.keys()):
+                for item in results_per_seg[seg_idx]:
+                    all_storyboards.append({
+                        "index": len(all_storyboards) + 1,
+                        "text": item["text"],
+                        "panel_count_suggestion": item["panel_count_suggestion"],
+                        "present_characters": item["present_characters"],
+                        "bubbles": item["bubbles"],
+                        "narrative": item["narrative"],
+                        "summary": item["summary"],
+                        "segment_text": seg_text_map.get(seg_idx, ""),
+                        "description": "",
+                        "assets": [],
+                    })
+
+            if len(all_storyboards) == 0:
+                raise ValueError("分镜拆分失败：所有片段处理后没有有效分镜数据")
+
+            logger.info("分镜拆分完成: %d 个分镜", len(all_storyboards))
             _save_project_storyboards(
-                self._state_service, self._project_id, self._episode_num, storyboards,
+                self._state_service, self._project_id, self._episode_num, all_storyboards,
             )
-            self.finished.emit(storyboards)
+            self.finished.emit(all_storyboards)
 
         except Exception as e:
             logger.error("分镜拆分失败: %s", str(e), exc_info=True)
-            try:
-                logger.info("错误分镜: %s", content[:300])
-            except NameError:
-                pass
             self.error.emit(str(e))
-
-    def _parse_response(self, content: str) -> list[dict]:
-        data = _parse_json(content)
-        if data is None:
-            raise ValueError("分镜拆分失败：AI返回的JSON数据为空或无效")
-        
-        if not isinstance(data, (dict, list)):
-            raise ValueError(f"分镜拆分失败：AI返回的数据格式错误，期望dict或list，实际为{type(data).__name__}")
-        
-        items = data.get("storyboards", data) if isinstance(data, dict) else data
-        
-        if not isinstance(items, list):
-            raise ValueError(f"分镜拆分失败：storyboards不是列表，实际为{type(items).__name__}")
-        
-        if len(items) == 0:
-            raise ValueError("分镜拆分失败：AI返回的分镜列表为空")
-        
-        result = []
-        for i, item in enumerate(items):
-            if not isinstance(item, dict):
-                logger.warning(f"分镜项 #{i+1} 不是字典类型，跳过")
-                continue
-            text = item.get("text", "")
-            if text.strip():
-                result.append({"index": i + 1, "text": text.strip(), "description": "", "assets": []})
-        
-        if len(result) == 0:
-            raise ValueError("分镜拆分失败：解析后没有有效的分镜内容")
-        
-        return result
 
 
 MATCH_ASSETS_SYSTEM_PROMPT = """\
@@ -346,15 +506,15 @@ MATCH_ASSETS_SYSTEM_PROMPT = """\
 }
 
 你将收到：
-1. 分镜列表，每个分镜有编号和文本
+1. 分镜列表，每个分镜包含编号、原文文本、出场人物列表、对话气泡、旁白叙述等详细信息
 2. 资产池，分为人物(characters)、场景(scenes)、道具(props)三类，每项有名称
 
 核心规则：
 1. 每个分镜必须且只能选择一个场景（scene），没有场景的分镜是无效的
-2. 每个分镜可以选择零个或多个人物（characters）
-3. 每个分镜可以选择零个或多个道具（props）
-4. 只从提供的资产池中选择，不要编造不存在的资产名称
-5. 根据分镜文本内容判断该分镜发生在哪个场景、出现了哪些人物、使用了哪些道具
+2. 每个分镜可以选择零个或多个人物（characters），优先参考分镜已有的 present_characters 字段
+3. 每个分镜可以选择零个或多个道具（props），根据分镜的文本、旁白叙述判断使用了哪些道具
+4. 只从提供的资产池中选择，不要编造不存在的资产名称。如果资产池中没有匹配的人物，则从 present_characters 中选择已有角色名
+5. 根据分镜的原文文本、出场人物、对话气泡和旁白叙述综合判断该分镜发生在哪个场景、出现了哪些人物、使用了哪些道具
 6. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。"""
 
 
@@ -377,6 +537,7 @@ class MatchAssetsWorker(QThread):
         episode_num: int,
         settings_service: SettingsService,
         state_service: NovelComicStateService,
+        chat_manager: MultiRoundChatManager | None = None,
     ):
         super().__init__()
         self._storyboards = storyboards
@@ -385,6 +546,7 @@ class MatchAssetsWorker(QThread):
         self._episode_num = episode_num
         self._settings_service = settings_service
         self._state_service = state_service
+        self._chat_manager = chat_manager
 
     def run(self) -> None:
         try:
@@ -397,11 +559,8 @@ class MatchAssetsWorker(QThread):
                 base_url=text_config.base_url,
             )
 
-            service = AIService(config)
-            client = service._ensure_client()
-
-            sb_texts = "\n".join(
-                f"分镜#{sb['index']}: {sb['text'][:200]}"
+            sb_texts = "\n\n".join(
+                self._format_storyboard_for_match(sb)
                 for sb in self._storyboards
             )
             characters = ", ".join(self._asset_names.get("characters", []))
@@ -418,18 +577,11 @@ class MatchAssetsWorker(QThread):
                 f"道具(props): {props if props else '(无)'}"
             )
 
-            response = client.chat.completions.create(
-                model=config.model_name,
-                messages=[
-                    {"role": "system", "content": MATCH_ASSETS_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                timeout=900, # 根据模型设置最大值
-                response_format={"type": "json_object"},
+            caller = _make_chat_caller(config, self._chat_manager)
+            content = caller(
+                MATCH_ASSETS_SYSTEM_PROMPT, prompt,
+                temperature=0.3, response_format={"type": "json_object"},
             )
-
-            content = response.choices[0].message.content or ""
             logger.info("资产匹配AI返回: %s", content[:300])
 
             assets_map = self._parse_response(content)
@@ -443,6 +595,29 @@ class MatchAssetsWorker(QThread):
             except NameError:
                 pass
             self.error.emit(str(e))
+
+    @staticmethod
+    def _format_storyboard_for_match(sb: dict) -> str:
+        parts = [f"--- 分镜 #{sb['index']} ---"]
+        parts.append(f"原文: {sb.get('text', '')[:200]}")
+        chars = sb.get("present_characters", [])
+        if chars:
+            parts.append(f"出场人物: {', '.join(chars)}")
+        bubbles = sb.get("bubbles", [])
+        if bubbles:
+            bubble_texts = "; ".join(
+                f"{b.get('speaker', '')}:{b.get('text', '')}"
+                for b in bubbles if isinstance(b, dict)
+            )
+            if bubble_texts:
+                parts.append(f"对话: {bubble_texts}")
+        narrative = sb.get("narrative", [])
+        if narrative:
+            if isinstance(narrative, list):
+                parts.append(f"旁白: {' | '.join(narrative)}")
+            elif narrative:
+                parts.append(f"旁白: {narrative}")
+        return "\n".join(parts)
 
     def _apply_and_save(self, assets_map: dict) -> None:
         for sb in self._storyboards:
@@ -494,9 +669,9 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
   ]
 }
 
-传入的分镜数据会包含多个分镜的原文和资产信息，**必须为每个传入的分镜生成对应的 description**。返回的 storyboards 数组必须包含所有传入分镜的条目，每个的描述独立生成，不要合并、不要跳过、不要遗漏。
+传入的分镜数据会包含每个分镜的完整数据：原文(text)、旁白(narrative)、对话(bubbles)、出场人物(present_characters)、推荐格数(panel_count_suggestion)、所属段落原文(segment_text)、以及已绑定的场景资产和人物道具资产，**必须为每个传入的分镜生成对应的 description**。返回的 storyboards 数组必须包含所有传入分镜的条目，每个的描述独立生成，不要合并、不要跳过、不要遗漏。
 
-你的任务是为每个分镜段落生成一页漫画的详细分镜描述。每个分镜可能包含多个格（panel），具体格数和版面由你根据内容节奏决定。
+你的任务是为每个分镜段落生成一页漫画的详细分镜描述。每个分镜可能包含多个格（panel），格数参考 panel_count_suggestion，但你可根据内容节奏灵活调整。对话从 bubbles 中提取放入气泡，旁白从 narrative 中提取放入说明框。
 
 输出格式规范：
 
@@ -507,21 +682,30 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
 - 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
 - 场景：直接写你选择的资产名称及版本，不要额外描述场景环境
 - 人物：直接列出角色名即可，例如"张三, 李四"，不要描述外观着装
-- 动作/表情：角色的肢体动作和面部表情细节
-- 气泡：如有对话或内心独白，注明所属角色、气泡类型及文字。格式：角色名：气泡序号(气泡类型)："文字"。每个气泡文字控制在 1-2 行以内，超过的拆成多个气泡依次排列，例如：张三：气泡1(普通气泡)："你怎么来了？" 李四：气泡2(普通气泡)："我来看看你。" 沈故：(云朵状内心独白)"明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"。**气泡和说明框的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。**
-- 说明框：文字控制在 1-2 行以内，注明文字内容，用中文双引号（""）包裹，例如：说明框："其实我想过沈故会有新的女朋友。"。**语言如果原文太长，可以简化描述。**。原文是中文则用中文，原文是英文则用英文。**。
+- 动作/表情：角色的肢体动作和面部表情细节（画师照着画的部分）
+- 气泡：所有对话和内心独白必须放在气泡中。注明所属角色、气泡类型及文字。格式：角色名：气泡序号(气泡类型)："文字"。每个气泡文字控制在 1-2 行以内，超过的拆成多个气泡依次排列，例如：张三：气泡1(普通气泡)："你怎么来了？" 李四：气泡2(普通气泡)："我来看看你。" 沈故：(云朵状内心独白)"明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"。气泡的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。
+- 说明框：将原文text中所有非对话的文字（即旁白，包括叙事、心理描述、环境交代等）原封不动地分配到各个格子中，禁止概括、禁止改写。每段控制在 1-2 行以内，用中文双引号（""）包裹。气泡和说明框的语言必须与原文一致。
+
+说明框与气泡的分工铁律：
+- 气泡负责一切对话、内心独白。原文中的对话内容必须全部进入气泡。
+- 说明框负责承载原文text中所有非对话的文字（即旁白，包括叙事、心理描述、环境交代等），必须使用原文原句，禁止概括、禁止改写。
+- 动作/表情负责描述画师需要画的视觉内容（肢体动作、面部表情、画面构图），不承载任何文字。
+- 原文text字段的全部文字必须完整分配到气泡或说明框中，不能有任何遗漏或自己发挥。
 
 核心规则：
 1. 一个分镜对应一页漫画，不要拆分到多个分镜描述
-2. 格的数量：画面节奏要快，优先使用 1-2 格，只有在气泡数量超过 4 个以上时才考虑使用 3 格，超过 6 个气泡以上才使用 4 格。在满足气泡容量的前提下尽量用更少的格数来保证大画面表现力
+2. 格的数量：画面节奏要快，优先使用 1-2 格，只有在气泡数量+说明框数量超过 4 个以上时才考虑使用 3 格，超过 6 个以上才使用 4 格。在满足气泡容量的前提下尽量用更少的格数来保证大画面表现力
 3. 场景使用规则：每个分镜已绑定了场景资产，本页所有格必须统一使用该场景名称
 4. 人物和道具只能从已匹配的资产列表中选择，不要自行编造或添加未匹配的角色和物品
 5. 每个格必须有明确的景别和角度
-6. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列,尽量减少气泡文字数量。你也可以不使用原文文案，但是意思表达出来就行。你也可以加一些声响词，比如 砰， 咚， 咔嚓， 之类的声响词
-7. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事，内心描述，尽量使用说明框说明画面
-8. 手机屏幕 / 电脑屏幕 / 平板 / 纸条 / 书本等媒介上显示的文字：这些不是气泡也不是说明框，而是画面内的视觉元素，应在动作/表情或场景描述中直接描述屏幕上的文字内容，例如：动作/表情：陆宴知手指微微收紧，手机屏幕冷光照亮指节，聊天界面上赫然显示谢依璇刚刚发送的信息：「今晚有空吗？」。严禁为此类媒介文字使用气泡或说明框
-9. 气泡和说明框的文字内容必须使用中文双引号（""）包裹，除此之外的其他位置（场景描述、人物描述、动作表情等）严禁使用双引号、单引号、破折号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号、冒号
-10. 输出合法 JSON：只输出一个 JSON 对象，不要输出任何其他内容。描述文本中出现的所有英文双引号（"）必须用反斜杠转义（\\"），中文双引号（""）无需转义。所有换行符必须用 \\n 表示，不得出现真正的换行符。JSON 对象内的 description 字符串本身可以包含 \\n 来表示换行。"""
+6. 原文text的全部文字必须完整分配到气泡或说明框中，不得遗漏。对话进气泡，其他所有文字（即旁白，包括叙事、心理描述、环境交代等）进说明框，说明框必须使用原文原句。如果一个格全是对话可以只有气泡，全是旁白可以只有说明框。
+7. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列，尽量减少气泡文字数量。你也可以不使用原文文案，但是意思表达出来就行。你也可以加一些声响词，比如 砰， 咚， 咔嚓， 之类的声响词
+8. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事
+9. 手机屏幕 / 电脑屏幕 / 平板 / 纸条 / 书本等媒介上显示的文字：这些不是气泡也不是说明框，而是画面内的视觉元素，应在动作/表情或场景描述中直接描述屏幕上的文字内容，例如：动作/表情：陆宴知手指微微收紧，手机屏幕冷光照亮指节，聊天界面上赫然显示谢依璇刚刚发送的信息：「今晚有空吗？」。严禁为此类媒介文字使用气泡或说明框
+10. 气泡和说明框的文字内容必须使用中文双引号（""）包裹，除此之外的其他位置（场景描述、人物描述、动作表情等）严禁使用双引号、单引号、破折号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号、冒号
+11. 气泡和说明框内部的文字中，必须移除原文中的无意义标点（破折号、省略号、书名号、单双引号等），只保留逗号、句号、感叹号、问号、顿号
+12. 输出合法 JSON：只输出一个 JSON 对象，不要输出任何其他内容。描述文本中出现的所有英文双引号（"）必须用反斜杠转义（\\"），中文双引号（""）无需转义。所有换行符必须用 \\n 表示，不得出现真正的换行符。JSON 对象内的 description 字符串本身可以包含 \\n 来表示换行。
+13. **违禁内容处理**：生成描述时，必须自动检测动作/表情、气泡、说明框中的所有文字。如果发现任何可能涉及敏感、违规、不适的内容（包括但不限于血腥、暴力、色情、粗俗用语等），必须自动替换为合规的表达方式，或改为暗示/含蓄表达。例如"他裸露的身体"改为"他衣衫不整地"；"一刀砍下他的头"改为"刀光闪过"；"色情描写"改为"暧昧的氛围"。禁止直接输出任何可能被内容审核拦截的文字，确保所有描述都能通过安全审核。"""
 
 
 class StoryboardDescriptionWorker(QThread):
@@ -536,6 +720,7 @@ class StoryboardDescriptionWorker(QThread):
         episode_num: int,
         settings_service: SettingsService,
         state_service: NovelComicStateService,
+        chat_manager: MultiRoundChatManager | None = None,
     ):
         super().__init__()
         self._storyboards = storyboards
@@ -543,6 +728,7 @@ class StoryboardDescriptionWorker(QThread):
         self._episode_num = episode_num
         self._settings_service = settings_service
         self._state_service = state_service
+        self._chat_manager = chat_manager
 
     def run(self) -> None:
         try:
@@ -561,6 +747,9 @@ class StoryboardDescriptionWorker(QThread):
             lock = threading.Lock()
             done_ctr = [0]
 
+            chat_mgr = self._chat_manager
+            chat_caller = _make_chat_caller(config, chat_mgr)
+
             batch_size = 5
             batches: list[list[dict]] = []
             for i in range(0, total, batch_size):
@@ -568,20 +757,39 @@ class StoryboardDescriptionWorker(QThread):
 
             def process_batch(batch: list[dict]) -> None:
                 try:
-                    svc = AIService(config)
-                    cli = svc._ensure_client()
-
                     batch_parts: list[str] = []
                     for sb in batch:
                         assets = sb.get('assets', [])
                         scene_name = assets[0] if assets else ""
                         chars_and_props = ', '.join(assets[1:]) if len(assets) > 1 else '(无)'
-                        batch_parts.append(
-                            f"--- 分镜 #{sb['index']} ---\n"
-                            f"原文: {sb['text']}\n"
-                            f"绑定场景资产: {scene_name}\n"
-                            f"已匹配人物/道具资产: {chars_and_props}"
-                        )
+
+                        lines = [
+                            f"--- 分镜 #{sb['index']} ---",
+                            f"原文: {sb.get('text', '')}",
+                        ]
+                        conversation = sb.get("bubbles", [])
+                        if conversation:
+                            cb = "; ".join(
+                                f"{b.get('speaker','')}: {b.get('text','')}"
+                                for b in conversation if isinstance(b, dict)
+                            )
+                            lines.append(f"对话: {cb}")
+                        narrative = sb.get("narrative", [])
+                        if narrative:
+                            if isinstance(narrative, list):
+                                lines.append(f"旁白: {' | '.join(narrative)}")
+                            elif narrative:
+                                lines.append(f"旁白: {narrative}")
+                        chars = sb.get("present_characters", [])
+                        if chars:
+                            lines.append(f"出场人物: {', '.join(chars)}")
+                        lines.append(f"建议格数: {sb.get('panel_count_suggestion', 1)}")
+                        lines.append(f"绑定场景资产: {scene_name}")
+                        lines.append(f"已匹配人物/道具资产: {chars_and_props}")
+                        seg_text = sb.get("segment_text", "")
+                        if seg_text:
+                            lines.append(f"所属段落原文: {seg_text[:500]}")
+                        batch_parts.append("\n".join(lines))
                     full_input = "\n\n".join(batch_parts)
 
                     prompt = (
@@ -590,18 +798,10 @@ class StoryboardDescriptionWorker(QThread):
                         "必须为每个分镜生成独立的 description。\n\n%s"
                     ) % (len(batch), full_input)
 
-                    response = cli.chat.completions.create(
-                        model=config.model_name,
-                        messages=[
-                            {"role": "system", "content": STORYBOARD_DESC_SYSTEM_PROMPT},
-                            {"role": "user", "content": prompt},
-                        ],
-                        temperature=0.7,
-                        timeout=900,
-                        response_format={"type": "json_object"},
+                    content = chat_caller(
+                        STORYBOARD_DESC_SYSTEM_PROMPT, prompt,
+                        temperature=0.7, response_format={"type": "json_object"},
                     )
-
-                    content = response.choices[0].message.content or ""
                     indices = [sb["index"] for sb in batch]
                     logger.info("批次分镜 %s 描述AI返回: %s", indices, content[:300])
 
@@ -703,6 +903,7 @@ class SingleDescWorker(QThread):
         episode_num: int,
         settings_service: SettingsService,
         state_service: NovelComicStateService,
+        chat_manager: MultiRoundChatManager | None = None,
     ):
         super().__init__()
         self._storyboard = storyboard
@@ -711,6 +912,7 @@ class SingleDescWorker(QThread):
         self._episode_num = episode_num
         self._settings_service = settings_service
         self._state_service = state_service
+        self._chat_manager = chat_manager
 
     def run(self) -> None:
         try:
@@ -723,16 +925,33 @@ class SingleDescWorker(QThread):
                 base_url=text_config.base_url,
             )
 
-            service = AIService(config)
-            client = service._ensure_client()
+            chat_caller = _make_chat_caller(config, self._chat_manager)
 
             context_parts: list[str] = []
             for s in sorted(self._all_storyboards, key=lambda x: x.get("index", 0)):
                 tag = ">>> 当前要生成的分镜 <<<" if s["index"] == self._storyboard["index"] else ""
-                context_parts.append(
-                    f"--- 分镜 #{s['index']} {tag}---\n"
-                    f"原文: {s['text']}"
-                )
+                s_lines = [f"--- 分镜 #{s['index']} {tag}---"]
+                if s["index"] == self._storyboard["index"]:
+                    s_lines.append(f"原文: {s.get('text', '')}")
+                    bubbles = s.get("bubbles", [])
+                    if bubbles:
+                        cb = "; ".join(f"{b.get('speaker','')}: {b.get('text','')}" for b in bubbles if isinstance(b, dict))
+                        s_lines.append(f"对话: {cb}")
+                    narrative = s.get("narrative", [])
+                    if narrative and isinstance(narrative, list):
+                        s_lines.append(f"旁白: {' | '.join(narrative)}")
+                    elif narrative:
+                        s_lines.append(f"旁白: {narrative}")
+                    chars = s.get("present_characters", [])
+                    if chars:
+                        s_lines.append(f"出场人物: {', '.join(chars)}")
+                    s_lines.append(f"建议格数: {s.get('panel_count_suggestion', 1)}")
+                    seg_text = s.get("segment_text", "")
+                    if seg_text:
+                        s_lines.append(f"所属段落原文: {seg_text[:500]}")
+                else:
+                    s_lines.append(f"摘要: {s.get('summary', '') or s.get('text', '')[:100]}")
+                context_parts.append("\n".join(s_lines))
             full_context = "\n\n".join(context_parts)
 
             sb = self._storyboard
@@ -740,7 +959,7 @@ class SingleDescWorker(QThread):
             scene_name = assets[0] if assets else ""
             chars_and_props = ', '.join(assets[1:]) if len(assets) > 1 else '(无)'
             prompt = (
-                "以下是一页漫画的全部原文分镜，请为标记为「当前要生成的分镜」的那个分镜生成详细的一页漫画分镜描述，"
+                "以下是一页漫画的全部分镜摘要，请为标记为「当前要生成的分镜」的那个分镜生成详细的一页漫画分镜描述，"
                 "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。"
                 "你可以参考前后分镜的上下文来理解叙事节奏和人物状态。\n\n"
                 f"{full_context}\n\n"
@@ -749,18 +968,10 @@ class SingleDescWorker(QThread):
                 f"已匹配人物/道具: {chars_and_props}"
             )
 
-            response = client.chat.completions.create(
-                model=config.model_name,
-                messages=[
-                    {"role": "system", "content": STORYBOARD_DESC_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.7,
-                timeout=900, # 根据模型设置最大值
-                response_format={"type": "json_object"},
+            content = chat_caller(
+                STORYBOARD_DESC_SYSTEM_PROMPT, prompt,
+                temperature=0.7, response_format={"type": "json_object"},
             )
-
-            content = response.choices[0].message.content or ""
             logger.info("分镜 #%d 单条描述AI返回: %s", sb['index'], content[:200])
 
             data = _parse_json(content)
@@ -1240,6 +1451,20 @@ class NovelComicGeneratePage(QFrame):
                     all_text_parts.append(ch.text)
         return "\n".join(all_text_parts)
 
+    def _get_chat_manager(self) -> MultiRoundChatManager | None:
+        settings = self._settings_service.load()
+        config = AIModelConfig(
+            model_name=settings.text_model.model_name,
+            api_key=settings.text_model.api_key,
+            base_url=settings.text_model.base_url,
+        )
+        mgr = MultiRoundChatManager(self._project_id, self._episode_num, self._state_service)
+        if mgr.is_multi_round_enabled(config):
+            logger.info("启用多轮对话模式, model=%s, project=%s, ep=%d",
+                        config.model_name, self._project_id, self._episode_num)
+            return mgr
+        return None
+
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1358,9 +1583,15 @@ class NovelComicGeneratePage(QFrame):
 
         image_files.sort(key=lambda x: x[0])
         try:
+            base_ts = time.time() - len(image_files)
             with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for i, (_, fp) in enumerate(image_files, start=1):
-                    zf.write(fp, f"{i}.png")
+                for i, (idx, fp) in enumerate(image_files, start=1):
+                    zi = zipfile.ZipInfo.from_file(fp, f"{i}.png")
+                    ts = base_ts + idx
+                    zi.date_time = time.localtime(ts)[:6]
+                    zi.extra = _make_zip_ntfs_extra(ts)
+                    with open(fp, "rb") as f:
+                        zf.writestr(zi, f.read())
             self._desc_status.setText(f"导出完成：{len(image_files)} 张图片 → {save_path}")
             self._desc_status.setStyleSheet("color: #4ade80;")
         except Exception as e:
@@ -1530,12 +1761,18 @@ class NovelComicGeneratePage(QFrame):
         self._split_status.setText("拆分中...")
         self._split_status.setStyleSheet("color: #4fc3f7;")
 
+        chat_mgr = self._get_chat_manager()
+        if chat_mgr:
+            chat_mgr.clear_history()
+
         key = _worker_key(self._project_id, self._episode_num, "split")
         worker = StoryboardSplitWorker(
             chapter_text, self._project_id, self._episode_num,
             self._settings_service, self._state_service,
+            chat_manager=chat_mgr,
         )
         _running_workers[key] = worker
+        worker.progress.connect(self._split_status.setText)
         worker.finished.connect(self._on_split_finished)
         worker.finished.connect(lambda: _running_workers.pop(key, None))
         worker.error.connect(self._on_split_error)
@@ -1589,6 +1826,7 @@ class NovelComicGeneratePage(QFrame):
             self._storyboards, asset_names,
             self._project_id, self._episode_num,
             self._settings_service, self._state_service,
+            chat_manager=self._get_chat_manager(),
         )
         _running_workers[key] = worker
         worker.finished.connect(self._on_match_finished)
@@ -1634,6 +1872,7 @@ class NovelComicGeneratePage(QFrame):
             self._storyboards,
             self._project_id, self._episode_num,
             self._settings_service, self._state_service,
+            chat_manager=self._get_chat_manager(),
         )
         _running_workers[key] = worker
         self._desc_worker = worker
@@ -1755,14 +1994,19 @@ class NovelComicGeneratePage(QFrame):
 
         prompt, size, reference_paths = self._build_comic_prompt(sb, project, gen_settings, page_num=sb.get("index", 1))
 
-        if reference_paths:
-            logger.info("分镜 #%d 找到 %d 张参考图: %s", storyboard_index, len(reference_paths), reference_paths)
-        else:
-            logger.info("分镜 #%d 没有参考图", storyboard_index)
-
         card = self._storyboard_cards.get(storyboard_index)
         if card:
             card.set_generating()
+
+        review_mode = card.is_review_mode() if card else False
+
+        if review_mode:
+            reference_paths = []
+            logger.info("过审模式：分镜 #%d 跳过参考图", storyboard_index)
+        elif reference_paths:
+            logger.info("分镜 #%d 找到 %d 张参考图: %s", storyboard_index, len(reference_paths), reference_paths)
+        else:
+            logger.info("分镜 #%d 没有参考图", storyboard_index)
 
         signal = self.comic_image_generated
         batch_counter = [0, 0]
@@ -1775,6 +2019,8 @@ class NovelComicGeneratePage(QFrame):
             _make_comic_on_error(storyboard_index, signal, batch_counter, lambda: None),
             size=size,
             reference_images=reference_paths if reference_paths else None,
+            resolution=gen_settings.get("resolution"),
+            aspect_ratio=gen_settings.get("aspect_ratio"),
         )
 
     def _on_history_images(self, storyboard_index: int) -> None:
@@ -1827,6 +2073,7 @@ class NovelComicGeneratePage(QFrame):
         worker = SingleDescWorker(
             sb, self._storyboards, self._project_id, self._episode_num,
             self._settings_service, self._state_service,
+            chat_manager=self._get_chat_manager(),
         )
         _running_workers[key] = worker
         worker.finished.connect(
@@ -1967,6 +2214,13 @@ class NovelComicGeneratePage(QFrame):
                 card.set_generating()
 
             prompt, size, reference_paths = self._build_comic_prompt(sb, project, gen_settings, page_num=idx)
+
+            review_mode = card.is_review_mode() if card else False
+            if review_mode:
+                batch_refs = None
+            else:
+                batch_refs = reference_paths if reference_paths else None
+
             ImageGenService.instance().submit(
                 image_config, prompt,
                 _make_comic_on_done(
@@ -1979,7 +2233,9 @@ class NovelComicGeneratePage(QFrame):
                     self._update_comic_batch_status,
                 ),
                 size=size,
-                reference_images=reference_paths if reference_paths else None,
+                reference_images=batch_refs,
+                resolution=gen_settings.get("resolution"),
+                aspect_ratio=gen_settings.get("aspect_ratio"),
             )
 
     def _build_comic_prompt(
@@ -2184,6 +2440,13 @@ class _StoryboardCard(QFrame):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
 
+        self._review_btn = QPushButton("过审模式")
+        self._review_btn.setObjectName("storyboardReviewBtn")
+        self._review_btn.setCursor(Qt.PointingHandCursor)
+        self._review_btn.setToolTip("开启后生成该分镜漫画图时不传入参考图")
+        self._review_btn.setCheckable(True)
+        btn_row.addWidget(self._review_btn)
+
         gen_img_btn = QPushButton("\U0001f5bc  生成图片")
         gen_img_btn.setObjectName("storyboardActionBtn")
         gen_img_btn.setCursor(Qt.PointingHandCursor)
@@ -2247,6 +2510,9 @@ class _StoryboardCard(QFrame):
         if self._gen_img_btn:
             self._gen_img_btn.setText("生成中...")
             self._gen_img_btn.setEnabled(False)
+
+    def is_review_mode(self) -> bool:
+        return self._review_btn.isChecked()
 
     def set_gen_error(self) -> None:
         if self._gen_img_btn:
@@ -3201,10 +3467,23 @@ class _AssetManagementDialog(QDialog):
         self._extract_status.setText("提取中...")
         self._extract_status.setStyleSheet("color: #4fc3f7;")
 
-        self._worker = AssetExtractWorker(self._chapter_text, self._settings_service)
+        cm = self._get_chat_manager()
+        self._worker = AssetExtractWorker(self._chapter_text, self._settings_service, chat_manager=cm)
         self._worker.finished.connect(self._on_extract_finished)
         self._worker.error.connect(self._on_extract_error)
         self._worker.start()
+
+    def _get_chat_manager(self) -> MultiRoundChatManager | None:
+        settings = self._settings_service.load()
+        config = AIModelConfig(
+            model_name=settings.text_model.model_name,
+            api_key=settings.text_model.api_key,
+            base_url=settings.text_model.base_url,
+        )
+        mgr = MultiRoundChatManager(self._project_id, self._episode_num, self._state_service)
+        if mgr.is_multi_round_enabled(config):
+            return mgr
+        return None
 
     def _merge_new_assets(self, existing: list[dict], new_items: list[dict]) -> list[dict]:
         existing_names = {item["name"] for item in existing}
@@ -3475,6 +3754,8 @@ class _AssetManagementDialog(QDialog):
             ),
             size=size,
             reference_images=reference_images,
+            resolution=resolution,
+            aspect_ratio="1:1",
         )
 
     def _on_asset_image_generated(self, asset_name: str, image_path: str) -> None:
@@ -3577,22 +3858,23 @@ class _AssetManagementDialog(QDialog):
                 self.killTimer(self._poll_timer)
                 self._poll_timer = None
             _asset_batch_counter.pop(self._project_id, None)
+            return
         self._update_batch_status()
 
     def _on_batch_gen_assets_menu(self) -> None:
         menu = QMenu(self)
         menu.setObjectName("batchGenMenu")
 
-        all_action = menu.addAction("\U0001f4e6  全部资产")
+        all_action = menu.addAction("📦  全部")
         all_action.triggered.connect(lambda: self._run_batch_asset_gen("all"))
 
-        char_action = menu.addAction("\U0001f9d1  仅人物")
+        char_action = menu.addAction("🧑  仅人物")
         char_action.triggered.connect(lambda: self._run_batch_asset_gen("character"))
 
-        scene_action = menu.addAction("\U0001f3de  仅场景")
+        scene_action = menu.addAction("🏞  仅场景")
         scene_action.triggered.connect(lambda: self._run_batch_asset_gen("scene"))
 
-        prop_action = menu.addAction("\U0001f52e  仅道具")
+        prop_action = menu.addAction("🔮  仅道具")
         prop_action.triggered.connect(lambda: self._run_batch_asset_gen("prop"))
 
         pos = self._batch_asset_btn.mapToGlobal(self._batch_asset_btn.rect().bottomLeft())
@@ -3621,6 +3903,7 @@ class _AssetManagementDialog(QDialog):
         ImageGenService.instance().set_concurrency(concurrency)
 
         all_assets: list[tuple[str, str]] = []
+        skipped_count = 0
         type_map: dict[str, tuple[list, str]] = {
             "character": (self._character_data, "character"),
             "scene": (self._scene_data, "scene"),
@@ -3629,16 +3912,28 @@ class _AssetManagementDialog(QDialog):
         if filter_type == "all":
             for data_list, atype in type_map.values():
                 for item in data_list:
+                    img = item.get("image_path", "")
+                    if img and Path(img).exists():
+                        skipped_count += 1
+                        continue
                     all_assets.append((item["name"], atype))
         else:
             data_list, atype = type_map[filter_type]
             for item in data_list:
+                img = item.get("image_path", "")
+                if img and Path(img).exists():
+                    skipped_count += 1
+                    continue
                 all_assets.append((item["name"], atype))
 
         if not all_assets:
-            self._extract_status.setText("没有需要生成的资产")
+            msg = "所有资产已有图片，无需生成" if skipped_count > 0 else "没有需要生成的资产"
+            self._extract_status.setText(msg)
             self._extract_status.setStyleSheet("color: #f87171;")
             return
+
+        if skipped_count > 0:
+            logger.info("跳过 %d 个已有图片的资产", skipped_count)
 
         count = len(all_assets)
         ctr = _asset_batch_counter.get(self._project_id)
@@ -3705,6 +4000,8 @@ class _AssetManagementDialog(QDialog):
                 ),
                 size=size,
                 reference_images=reference_images,
+                resolution=resolution,
+                aspect_ratio="1:1",
             )
 
 

@@ -138,3 +138,29 @@ class NovelComicStateService:
 
         logger.info("删除小说转漫画项目: %s", project_id)
         return True
+
+    def get_chat_history_path(self, project_id: str, episode_num: int) -> Path:
+        chat_dir = self.get_project_images_dir(project_id) / "chat_history"
+        chat_dir.mkdir(parents=True, exist_ok=True)
+        return chat_dir / f"ep_{episode_num}.jsonl"
+
+    def load_chat_history(self, project_id: str, episode_num: int) -> list[dict]:
+        path = self.get_chat_history_path(project_id, episode_num)
+        if not path.exists():
+            return []
+        result = []
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        result.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        return result
+
+    def save_chat_history(self, project_id: str, episode_num: int, messages: list[dict]) -> None:
+        path = self.get_chat_history_path(project_id, episode_num)
+        with open(path, "a", encoding="utf-8") as f:
+            for msg in messages:
+                f.write(json.dumps(msg, ensure_ascii=False) + "\n")

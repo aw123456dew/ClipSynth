@@ -21,7 +21,7 @@ class AIModelConfig:
         self.model_name = model_name
         self.api_key = api_key
         self.api_provider = api_provider
-        if api_provider == "toapi":
+        if api_provider in ("toapi", "grasai"):
             self.base_url = base_url.strip().rstrip("/")
         elif api_type == "openai":
             self.base_url = self._normalize_base_url(base_url)
@@ -241,17 +241,42 @@ class AIService:
         prompt: str,
         size: str = "1024x1024",
         reference_images: list[str] | None = None,
+        resolution: str | None = None,
+        aspect_ratio: str | None = None,
     ) -> bytes:
-        if self._is_gemini_model():
-            return self._generate_image_gemini(prompt, size, reference_images)
         if self._config.api_provider == "toapi":
             return self._generate_image_toapi(prompt, size, reference_images)
+        if self._config.api_provider == "grasai":
+            return self._generate_image_grasai(prompt, size, reference_images, resolution, aspect_ratio)
         if self._config.api_type == "gemini":
             return self._generate_image_gemini(prompt, size, reference_images)
         return self._generate_image_openai(prompt, size, reference_images)
 
     def _is_gemini_model(self) -> bool:
         return self._config.model_name.lower().startswith("gemini")
+
+    @staticmethod
+    def _get_gemini_extra_body() -> dict:
+        return {
+            "safetySettings": [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_NONE"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_NONE"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", 
+                "threshold": "BLOCK_NONE"
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT", 
+                "threshold": "BLOCK_NONE"
+            }
+        ]
+        }
 
     def _generate_image_openai(
         self,
@@ -359,7 +384,7 @@ class AIService:
         import base64
         import httpx
 
-        if self._config.api_provider == "toapi":
+        if self._config.api_provider == "toapi" or self._config.api_provider == "grasai":
             return self._generate_image_gemini_toapi(prompt, size, reference_images)
 
         parts: list[dict] = []
@@ -468,7 +493,7 @@ class AIService:
             "prompt": prompt,
             "n": 1,
             "size": ratio,
-            "metadata": {"resolution": resolution},
+            "metadata": {"resolution": resolution, "moderation": "low", "quality": "high"},
         }
         if ref_urls:
             gen_body["image_urls"] = [{"url": u} for u in ref_urls]
@@ -650,3 +675,178 @@ class AIService:
                 )
 
         raise TimeoutError("ToAPI 生图任务超时 (900s)")
+
+    def chat_completion_with_history(
+        self,
+        chat_manager: "MultiRoundChatManager",
+        system_prompt: str,
+        user_content: str,
+        temperature: float = 0.3,
+        timeout: float | None = 900,
+        response_format: dict | None = None,
+    ) -> str:
+        messages = chat_manager.get_full_messages(self._config, system_prompt, user_content)
+        client = self._ensure_client()
+
+        kwargs: dict = dict(
+            model=self._config.model_name,
+            messages=messages,
+            temperature=temperature,
+            timeout=timeout,
+        )
+        if response_format:
+            kwargs["response_format"] = response_format
+
+        if self._is_gemini_model():
+            kwargs["extra_body"] = self._get_gemini_extra_body()
+
+
+        response = client.chat.completions.create(**kwargs)
+        assistant_msg = response.choices[0].message
+        content = assistant_msg.content or ""
+        messages.append(assistant_msg)
+        chat_manager.save_exchange(user_content, assistant_msg)
+        return content
+
+    def _generate_image_grasai(
+        self,
+        prompt: str,
+        size: str,
+        reference_images: list[str] | None,
+        resolution: str | None = None,
+        aspect_ratio: str | None = None,
+    ) -> bytes:
+        import base64
+        import time
+        import httpx
+
+        base_url = self._config.base_url.rstrip("/")
+        if base_url.endswith("/v1"):
+            base_url = base_url[:-3]
+        headers = {"Authorization": f"Bearer {self._config.api_key}"}
+
+        urls: list[str] = []
+        if reference_images:
+            for path in reference_images:
+                try:
+                    with open(path, "rb") as f:
+                        img_data = f.read()
+                    ext = Path(path).suffix.lower()
+                    mime = "image/png" if ext == ".png" else "image/jpeg"
+                    b64 = base64.b64encode(img_data).decode("utf-8")
+                    urls.append(f"data:{mime};base64,{b64}")
+                except Exception as e:
+                    logger.warning("Grasai 读取参考图失败 %s: %s", path, e)
+
+        body: dict = {
+            "model": self._config.model_name or "nano-banana-pro",
+            "prompt": prompt,
+            "aspectRatio": aspect_ratio or "1:1",
+            "imageSize": resolution or "1K",
+            "urls": urls,
+            "webHook": "-1"
+        }
+        call_url = f"{base_url}/v1/draw/nano-banana"
+        if self._config.api_type == 'openai':
+            body['quality'] = "high"
+            body["moderation"] = "low"
+            call_url = f"{base_url}/v1/draw/completions"
+
+        logger.info("Grasai 提交生图任务: %s", call_url)
+        with httpx.Client(timeout=httpx.Timeout(120)) as http:
+            resp = http.post(
+                call_url,
+                headers={**headers, "Content-Type": "application/json"},
+                json=body,
+            )
+            resp.raise_for_status()
+            task_data = resp.json()
+
+        task_id = task_data.get('data').get('id')
+        if not task_id:
+            raise RuntimeError(f"Grasai 创建任务失败，无 task_id: {task_data}")
+
+        logger.info("Grasai 任务已创建: %s，开始轮询", task_id)
+        deadline = time.time() + 900
+        while time.time() < deadline:
+            time.sleep(3)
+            with httpx.Client(timeout=httpx.Timeout(600)) as http:
+                poll_resp = http.post(
+                    f"{base_url}/v1/draw/result",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={"id": task_id},
+                )
+                poll_resp.raise_for_status()
+                result_data = poll_resp.json().get('data', {})
+                
+            status = result_data.get("status", "")
+
+            if status == "succeeded":
+                results = result_data.get("results", [])
+                if results:
+                    image_url = results[0].get("url", "")
+                    if image_url:
+                        logger.info("Grasai 下载图片: %s", image_url[:80])
+                        with httpx.Client(timeout=httpx.Timeout(900)) as http:
+                            dl_resp = http.get(image_url)
+                            dl_resp.raise_for_status()
+                            return dl_resp.content
+                raise RuntimeError(f"Grasai 任务完成但未返回图片数据: {result_data}")
+
+            if status in ("failed", "error"):
+                error_msg = result_data.get("error", result_data.get("failure_reason", "未知错误"))
+                raise RuntimeError(f"Grasai 生图失败: {error_msg}")
+
+        raise TimeoutError("Grasai 生图任务超时 (900s)")
+
+
+class MultiRoundChatManager:
+    def __init__(
+        self,
+        project_id: str,
+        episode_num: int,
+        state_service,
+    ):
+        self._project_id = project_id
+        self._episode_num = episode_num
+        self._state_service = state_service
+        self._lock = __import__("threading").Lock()
+
+    def is_multi_round_enabled(self, config: AIModelConfig) -> bool:
+        return config.model_name.lower() == "deepseek-v4-pro"
+
+    def get_full_messages(
+        self,
+        config: AIModelConfig,
+        system_prompt: str,
+        user_content: str,
+    ) -> list[dict]:
+        history = self._state_service.load_chat_history(self._project_id, self._episode_num)
+        messages: list[dict] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        for msg in history:
+            messages.append(msg)
+        messages.append({"role": "user", "content": user_content})
+        return messages
+
+    def save_exchange(
+        self,
+        user_content: str,
+        assistant_message,
+    ) -> None:
+        with self._lock:
+            user_msg = {"role": "user", "content": user_content}
+            if hasattr(assistant_message, "model_dump"):
+                assistant_msg = assistant_message.model_dump(exclude_none=True)
+            elif hasattr(assistant_message, "to_dict"):
+                assistant_msg = assistant_message.to_dict()
+            else:
+                assistant_msg = {"role": "assistant", "content": str(assistant_message)}
+            exchange = [user_msg, assistant_msg]
+            self._state_service.save_chat_history(self._project_id, self._episode_num, exchange)
+
+    def clear_history(self) -> None:
+        path = self._state_service.get_chat_history_path(self._project_id, self._episode_num)
+        path.unlink(missing_ok=True)
+        logger.info("已清除聊天历史: %s", path)

@@ -3708,6 +3708,26 @@ QSlider::sub-page:horizontal {
     border-color: #2a3a5a;
 }
 
+#storyboardReviewBtn {
+    background-color: #141c30;
+    color: #94a3b8;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+}
+
+#storyboardReviewBtn:hover {
+    background-color: #1e3260;
+    border-color: #2a3a5a;
+}
+
+#storyboardReviewBtn:checked {
+    background-color: #1a2a45;
+    color: #fbbf24;
+    border-color: #fbbf24;
+}
+
 #storyboardEmptyLabel {
     color: #4a5568;
     font-size: 14px;

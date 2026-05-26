@@ -70,9 +70,13 @@ class NovelComicChapterInputDialog(QDialog):
     def chapter_text(self) -> str:
         return self._text_edit.toPlainText().strip()
 
+    def set_text(self, text: str) -> None:
+        self._text_edit.setPlainText(text)
+
 
 class NovelComicChapterCard(QFrame):
     generate_comic = Signal(int)
+    edit_chapter = Signal(int)
 
     def __init__(
         self,
@@ -101,6 +105,8 @@ class NovelComicChapterCard(QFrame):
         text_label.setObjectName("chapterTextLabel")
         text_label.setWordWrap(True)
         text_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        text_label.setCursor(Qt.PointingHandCursor)
+        text_label.mouseDoubleClickEvent = lambda e: self.edit_chapter.emit(self._episode_num)
         layout.addWidget(text_label, stretch=1)
 
         self._gen_btn = QPushButton("生成漫画")
@@ -201,6 +207,7 @@ class NovelComicChapterPage(QFrame):
                 chapter=chapter,
             )
             card.generate_comic.connect(self._on_generate_comic)
+            card.edit_chapter.connect(self._on_edit_chapter)
             self._chapter_cards.append(card)
             self._chapters_layout.addWidget(card)
 
@@ -221,6 +228,20 @@ class NovelComicChapterPage(QFrame):
             text = dialog.chapter_text
             if text:
                 self._project.chapters.append(NovelComicChapterState(text=text))
+                self._state_service.save_project(self._project)
+                self._refresh_chapter_list()
+
+    def _on_edit_chapter(self, episode_num: int) -> None:
+        idx = episode_num - 1
+        if idx < 0 or idx >= len(self._project.chapters):
+            return
+        dialog = NovelComicChapterInputDialog(episode_num, self.window())
+        dialog.set_text(self._project.chapters[idx].text)
+        dialog.setWindowTitle(f"编辑第{episode_num}集")
+        if dialog.exec() == QDialog.Accepted:
+            new_text = dialog.chapter_text
+            if new_text:
+                self._project.chapters[idx].text = new_text
                 self._state_service.save_project(self._project)
                 self._refresh_chapter_list()
 

@@ -9,7 +9,7 @@ logger = logging.getLogger("clip_synth.image_gen")
 
 
 class ImageGenTask:
-    __slots__ = ("task_id", "config", "prompt", "on_done", "on_error", "size", "reference_images")
+    __slots__ = ("task_id", "config", "prompt", "on_done", "on_error", "size", "reference_images", "resolution", "aspect_ratio")
 
     def __init__(
         self,
@@ -20,6 +20,8 @@ class ImageGenTask:
         on_error,
         size: str = "1024x1024",
         reference_images: list[str] | None = None,
+        resolution: str | None = None,
+        aspect_ratio: str | None = None,
     ):
         self.task_id = task_id
         self.config = config
@@ -28,6 +30,8 @@ class ImageGenTask:
         self.on_error = on_error
         self.size = size
         self.reference_images = reference_images
+        self.resolution = resolution
+        self.aspect_ratio = aspect_ratio
 
 
 class ImageGenService:
@@ -75,12 +79,14 @@ class ImageGenService:
         on_error,
         size: str = "1024x1024",
         reference_images: list[str] | None = None,
+        resolution: str | None = None,
+        aspect_ratio: str | None = None,
     ) -> int:
         with self._counter_lock:
             task_id = self._task_counter
             self._task_counter += 1
 
-        task = ImageGenTask(task_id, config, prompt, on_done, on_error, size, reference_images)
+        task = ImageGenTask(task_id, config, prompt, on_done, on_error, size, reference_images, resolution, aspect_ratio)
         self._task_queue.put(task)
         self._started = True
         self._ensure_workers()
@@ -118,6 +124,8 @@ class ImageGenService:
                             prompt=task.prompt,
                             size=task.size,
                             reference_images=task.reference_images,
+                            resolution=task.resolution,
+                            aspect_ratio=task.aspect_ratio,
                         )
                         break
                     except Exception as e:
