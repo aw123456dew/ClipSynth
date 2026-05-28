@@ -1,7 +1,7 @@
 import logging
 import os
 import subprocess
-import time
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -450,11 +450,21 @@ class NovelMixExportPage(QFrame):
     def _on_preview(self) -> None:
         if not self._project:
             return
-        if not self._project.material_videos:
+        video_path = ""
+        if self._project.mix_folder and os.path.exists(self._project.mix_folder):
+            from clip_synth.services.novel_mix_material_matcher import _scan_videos
+            videos = _scan_videos(self._project.mix_folder)
+            if videos:
+                video_path = videos[0]
+        if not video_path and self._project.opening_folder and os.path.exists(self._project.opening_folder):
+            from clip_synth.services.novel_mix_material_matcher import _scan_videos
+            videos = _scan_videos(self._project.opening_folder)
+            if videos:
+                video_path = videos[0]
+        if not video_path:
             logger.warning("没有素材视频可预览")
             return
-        video_path = self._project.material_videos[0].path
-        if not video_path or not os.path.exists(video_path):
+        if not os.path.exists(video_path):
             logger.warning("视频文件不存在")
             return
 
@@ -508,8 +518,8 @@ class NovelMixExportPage(QFrame):
         self._jianying_worker.start()
 
     def _validate_export(self) -> bool:
-        if not self._project.material_videos:
-            logger.warning("没有素材视频")
+        if not self._project.opening_folder and not self._project.mix_folder:
+            logger.warning("没有选择素材文件夹")
             return False
         if self._project.dub_mode == "system":
             if not self._project.audio_files:
@@ -529,10 +539,10 @@ class NovelMixExportPage(QFrame):
         self._project.orientation = "landscape" if self._landscape_btn.isChecked() else "portrait"
         self._project.enable_subtitle = self._subtitle_check.isChecked()
         if self._project.dub_mode == "self":
-            self._project.self_audio_path = self._audio_path_label.text()
-            self._project.self_subtitle_path = self._subtitle_path_label.text()
-            if self._project.self_subtitle_path == "未上传字幕文件":
-                self._project.self_subtitle_path = ""
+            audio_text = self._audio_path_label.text()
+            self._project.self_audio_path = "" if audio_text == "未上传音频文件" else audio_text
+            sub_text = self._subtitle_path_label.text()
+            self._project.self_subtitle_path = "" if sub_text == "未上传字幕文件" else sub_text
 
     def _restore_ui_from_project(self) -> None:
         if not self._project:

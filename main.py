@@ -33,7 +33,8 @@ def main():
 
     if sys.platform == "win32":
         import asyncio
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        if sys.version_info < (3, 14):
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     sys.exit(app.run())
 

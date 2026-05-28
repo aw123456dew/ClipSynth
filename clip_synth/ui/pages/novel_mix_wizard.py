@@ -108,7 +108,6 @@ class NovelMixWizard(QFrame):
 
         from clip_synth.ui.pages.novel_mix_material_page import NovelMixMaterialPage
         self._material_page = NovelMixMaterialPage()
-        self._material_page.scanning_changed.connect(self._on_scanning_changed)
         self._stack.addWidget(self._material_page)
 
         from clip_synth.ui.pages.novel_mix_dub_page import NovelMixDubPage
@@ -121,12 +120,6 @@ class NovelMixWizard(QFrame):
         self._stack.addWidget(self._export_page)
 
         layout.addWidget(self._stack, stretch=1)
-
-        self._scanning_hint = QLabel("素材扫描中，请稍候...")
-        self._scanning_hint.setObjectName("ttsProgressLabel")
-        self._scanning_hint.setAlignment(Qt.AlignCenter)
-        self._scanning_hint.hide()
-        layout.addWidget(self._scanning_hint)
 
         footer = QFrame()
         footer.setObjectName("wizardFooter")
@@ -202,18 +195,6 @@ class NovelMixWizard(QFrame):
         self._project.current_step = self._current_step
         self._state_service.save_project(self._project)
 
-    def _on_scanning_changed(self, scanning: bool) -> None:
-        if self._current_step != 0:
-            return
-        if scanning:
-            self._next_btn.setEnabled(False)
-            self._next_btn.setText("素材扫描中...")
-            self._scanning_hint.show()
-        else:
-            self._next_btn.setEnabled(True)
-            self._next_btn.setText("下一步")
-            self._scanning_hint.hide()
-
     def _on_prev(self) -> None:
         if self._current_step > 0:
             if self.is_self_dub() and self._current_step == 2:
@@ -228,10 +209,11 @@ class NovelMixWizard(QFrame):
 
     def _on_next(self) -> None:
         if self._current_step == 0:
+            if not self._material_page.validate():
+                return
             self._material_page.save(self._project)
 
-            self._show_dub_mode_dialog()
-            if not self._project.dub_mode:
+            if not self._show_dub_mode_dialog():
                 return
 
             self._save_project()
@@ -253,12 +235,13 @@ class NovelMixWizard(QFrame):
         self._update_step_indicators()
         self._update_nav_buttons()
 
-    def _show_dub_mode_dialog(self) -> None:
+    def _show_dub_mode_dialog(self) -> bool:
         dialog = _DubModeDialog(self)
-        if dialog.exec() != _DubModeDialog.Accepted:
-            return
+        if dialog.exec() != QDialog.Accepted:
+            return False
         self._project.dub_mode = dialog.selected_mode
         self._save_project()
+        return True
 
     def _on_cancel(self) -> None:
         self.cancelled.emit()
@@ -338,7 +321,7 @@ class _DubModeDialog(QDialog):
 
         cancel_btn = QPushButton("取消")
         cancel_btn.setObjectName("dialogCancelBtn")
-        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.clicked.connect(lambda: self.reject())
         layout.addWidget(cancel_btn, alignment=Qt.AlignCenter)
 
     def _select(self, mode: str) -> None:

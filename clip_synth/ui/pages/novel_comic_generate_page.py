@@ -499,7 +499,7 @@ MATCH_ASSETS_SYSTEM_PROMPT = """\
   "storyboards": [
     {
       "index": 1,
-      "scene": "场景名称",
+      "scenes": ["场景A", "场景B"],
       "characters": ["人物A", "人物B"],
       "props": ["道具X"]
     }
@@ -511,11 +511,11 @@ MATCH_ASSETS_SYSTEM_PROMPT = """\
 2. 资产池，分为人物(characters)、场景(scenes)、道具(props)三类，每项有名称
 
 核心规则：
-1. 每个分镜必须且只能选择一个场景（scene），没有场景的分镜是无效的
+1. 每个分镜可以选择零个、一个或多个场景（scenes），根据分镜内容判断发生在哪些场景中。场景字段为数组，哪怕只有一个场景也要用数组格式
 2. 每个分镜可以选择零个或多个人物（characters），优先参考分镜已有的 present_characters 字段
 3. 每个分镜可以选择零个或多个道具（props），根据分镜的文本、旁白叙述判断使用了哪些道具
 4. 只从提供的资产池中选择，不要编造不存在的资产名称。如果资产池中没有匹配的人物，则从 present_characters 中选择已有角色名
-5. 根据分镜的原文文本、出场人物、对话气泡和旁白叙述综合判断该分镜发生在哪个场景、出现了哪些人物、使用了哪些道具
+5. 根据分镜的原文文本、出场人物、对话气泡和旁白叙述综合判断该分镜发生在哪些场景、出现了哪些人物、使用了哪些道具
 6. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。
 7. **上下文延续规则**：道具分为两类——
    - **外观类（需延续）**：服装、配饰、帽子、眼镜、首饰、背包等影响角色外观的物品。一旦某个分镜中出现，后续没有切换场景/时间跳跃/或明确说明脱下/放下/换掉之前，必须一直保留在该角色的 props 中。
@@ -686,10 +686,10 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
 
 格N (形状描述，如：窄长横格 / 大方格 / 竖长格左半页 / 满版出血格 / 三小格并列 等)
 - 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
-- 场景：直接写你选择的资产名称及版本，不要额外描述场景环境，除非正文中有描述到其他场景的时候可以使用多个场景
+- 场景：从分镜绑定的场景资产列表中选一个，直接写资产名称。不同格可选择不同场景
 - 人物：直接列出角色名即可，例如"张三, 李四"，不要描述外观着装
 - 动作/表情：角色的肢体动作和面部表情细节
-- 气泡：每个气泡独立一行，格式：- 角色名的气泡："文字内容"。不要写气泡序号和气泡类型。每个气泡文字控制在 1-2 行以内，长文本拆成多个气泡依次排列，例如：- 张三的气泡："你怎么来了？"\n- 李四的气泡："我来看看你。"\n- 沈故的气泡："明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"。气泡的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。
+- 气泡：每个气泡独立一行，格式：角色名的气泡："文字内容"。不要写气泡序号和气泡类型，不要加额外前缀。每个气泡文字控制在 1-2 行以内，长文本拆成多个气泡依次排列，例如：念念的气泡："好。"\n念念的气泡："妈，我答应你，明天我不去考试了。"\n十年后的妈妈的气泡："真的？"。气泡的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。
 - 说明框：直接放置文字内容，不要标注角色名，格式：说明框："文字内容"。每段控制在 1-2 行以内，用原文原句。说明框的内容来自角色的内心独白、内心想法或主观看法，但**不需要标注是谁的**，直接呈现文字即可。除内心独白外，其他叙事描述（场景描写、环境交代、角色动作等）**不放入说明框**。如有传入 narrative 字段则优先使用，否则从原文自行判断。
 
 说明框与气泡的分工铁律：
@@ -701,7 +701,7 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
 核心规则：
 1. 一个分镜对应一页漫画，不要拆分到多个分镜描述
 2. 格的数量：一个格能表现到位就大胆用 1 格（满版/出血大画面），内容稍多时用 2 格，只有在气泡数量+说明框数量超过 4 个以上时才考虑使用 3 格，超过 6 个以上才使用 4 格。在满足内容容量的前提下尽量用更少的格数来保证大画面表现力
-3. 场景使用规则：每个分镜已绑定了场景资产，本页所有格必须统一使用该场景名称
+3. 场景使用规则：每个分镜已绑定了场景资产列表，每个格可从列表中自由选择一个场景。可以在不同格使用不同场景
 4. 人物和道具只能从已匹配的资产列表中选择，不要自行编造或添加未匹配的角色和物品
 5. 每个格必须有明确的景别和角度
 6. **唯一归属原则**：原文text中的每一句话**有且只有一个归属**——要么放入气泡，要么放入说明框，严禁同一句话同时出现在气泡和说明框中。对话进气泡，旁白/叙事/心理描述等进说明框。如果一个格全是对话可以只有气泡，全是旁白可以只有说明框。
@@ -1614,7 +1614,7 @@ class _ExportDialog(QDialog):
     def __init__(self, max_index: int, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("导出漫画图片")
-        self.setFixedSize(360, 260)
+        self.setFixedSize(420, 300)
         self.setObjectName("exportDialog")
         self._max_index = max_index
         self._setup_ui()
@@ -1652,8 +1652,8 @@ class _ExportDialog(QDialog):
         self._start_spin.setMinimum(1)
         self._start_spin.setMaximum(self._max_index)
         self._start_spin.setValue(1)
-        self._start_spin.setFixedWidth(80)
-        self._start_spin.setFixedHeight(32)
+        self._start_spin.setFixedWidth(120)
+        self._start_spin.setFixedHeight(36)
         self._start_spin.setEnabled(False)
         self._start_spin.valueChanged.connect(self._on_start_changed)
         range_row.addWidget(self._start_spin)
@@ -1667,8 +1667,8 @@ class _ExportDialog(QDialog):
         self._end_spin.setMinimum(1)
         self._end_spin.setMaximum(self._max_index)
         self._end_spin.setValue(min(5, self._max_index))
-        self._end_spin.setFixedWidth(80)
-        self._end_spin.setFixedHeight(32)
+        self._end_spin.setFixedWidth(120)
+        self._end_spin.setFixedHeight(36)
         self._end_spin.setEnabled(False)
         self._end_spin.valueChanged.connect(self._on_end_changed)
         range_row.addWidget(self._end_spin)
@@ -2222,8 +2222,13 @@ class NovelComicGeneratePage(QFrame):
         for sb in self._storyboards:
             match = assets_map.get(sb["index"], {})
             parts = []
+            scenes = match.get("scenes", [])
             scene = match.get("scene", "")
-            if scene:
+            if isinstance(scenes, list):
+                for s in scenes:
+                    if s:
+                        parts.append(s)
+            elif scene:
                 parts.append(scene)
             for name in match.get("characters", []):
                 if name:

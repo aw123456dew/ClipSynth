@@ -1,16 +1,16 @@
 import logging
 import os
-import random
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from clip_synth.models.novel_mix_project_state import NovelMixProjectState
 from clip_synth.services.settings_service import SettingsService
 from clip_synth.services.subtitle_service import SubtitleService
+from clip_synth.utils.gpu_accel import apply_gpu_encoder_to_cmd
 
 logger = logging.getLogger("clip_synth.novel_mix_jianying_export")
 
@@ -60,6 +60,45 @@ def _get_video_resolution(path: str) -> Tuple[int, int]:
     return 1920, 1080
 
 
+def _get_aspect_ratio(w: int, h: int) -> float:
+    if h == 0:
+        return 1.0
+    return w / h
+
+
+def _srt_time_to_seconds(t: str) -> float:
+    parts = t.replace(",", ".").split(":")
+    if len(parts) == 3:
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+    return 0.0
+
+
+def _seconds_to_srt_time(sec: float) -> str:
+    h = int(sec // 3600)
+    m = int((sec % 3600) // 60)
+    s = sec % 60
+    return "{:02d}:{:02d}:{:06.3f}".format(h, m, s).replace(".", ",")
+
+
+def _run_cmd(cmd: List[str], action: str = "处理") -> None:
+    apply_gpu_encoder_to_cmd(cmd)
+    logger.info("[ffmpeg] %s: %s", action, " ".join(cmd))
+    flags = 0
+    if sys.platform == "win32":
+        flags = subprocess.CREATE_NO_WINDOW
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=False,
+        creationflags=flags,
+    )
+    _, stderr = proc.communicate()
+    if proc.returncode != 0:
+        error_msg = stderr.decode("utf-8", errors="replace").strip() or "未知错误"
+        raise RuntimeError("ffmpeg {}失败: {}".format(action, error_msg))
+
+
 class NovelMixJianyingExportService:
     def __init__(self, settings_service: SettingsService):
         self._settings_service = settings_service
@@ -92,21 +131,89 @@ class NovelMixJianyingExportService:
         if not jianying_draft_path:
             raise ValueError("剪映草稿路径未配置，请在系统配置中设置")
 
-        if not project.material_videos:
-            raise RuntimeError("没有素材视频")
-
         total_duration = self._get_total_audio_duration(project)
         if total_duration <= 0:
             raise RuntimeError("音频总时长为零")
 
         target_w, target_h = project.resolution
 
+        from clip_synth.services.novel_mix_material_matcher import select_clips
+
         if progress_callback:
             progress_callback("正在选取素材片段...")
 
-        clips = self._select_random_clips(project, total_duration)
+        clips = select_clips(project, total_duration, progress_callback, is_canceled)
         if not clips:
             raise RuntimeError("未能选取有效素材片段")
+
+        if progress_callback:
+            progress_callback("正在预处理素材片段...")
+
+        processed_clips = []
+        total = len(clips)
+        target_ratio = target_w / target_h
+        for i, clip_info in enumerate(clips):
+            if is_canceled and is_canceled():
+                raise RuntimeError("导出已取消")
+
+            video_path = clip_info["video_path"]
+            start = clip_info["start"]
+            original_duration = clip_info["original_duration"]
+            adjusted_duration = clip_info["duration"]
+            speed = clip_info["speed"]
+            zoom = clip_info["zoom"]
+
+            vid_w, vid_h = _get_video_resolution(video_path)
+            vid_ratio = _get_aspect_ratio(vid_w, vid_h)
+
+            out_path = os.path.join(tempfile.gettempdir(), "novel_mix_jy_clip_{}_{:04d}.mp4".format(project.id, i))
+
+            vf_parts = []
+            zoom_w = int(target_w * zoom)
+            zoom_h = int(target_h * zoom)
+
+            ratio_tolerance = 0.02
+            if abs(vid_ratio - target_ratio) > ratio_tolerance:
+                scale_w = max(zoom_w, int(zoom_h * vid_ratio))
+                scale_h = max(zoom_h, int(zoom_w / vid_ratio))
+                vf_parts.append(
+                    "scale={}:{},crop={}:{}:({}-{})/2:({}-{})/2".format(
+                        scale_w, scale_h,
+                        zoom_w, zoom_h,
+                        scale_w, zoom_w,
+                        scale_h, zoom_h,
+                    )
+                )
+            else:
+                vf_parts.append("scale={}:{}".format(zoom_w, zoom_h))
+
+            if zoom > 1.01:
+                vf_parts.append(
+                    "crop={}:{}:iw/2-{}/2:ih/2-{}/2".format(
+                        target_w, target_h, target_w, target_h
+                    )
+                )
+
+            if abs(speed - 1.0) > 0.01:
+                vf_parts.append("setpts={}*PTS".format(1.0 / speed))
+
+            vf_parts.append("format=yuv420p")
+            vf_filter = ",".join(vf_parts)
+
+            cmd = [
+                "ffmpeg", "-y",
+                "-ss", str(start),
+                "-i", video_path,
+                "-t", str(original_duration),
+                "-vf", vf_filter,
+                "-map", "0:v:0",
+                "-an",
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                out_path,
+            ]
+            _run_cmd(cmd, "预处理素材 {}/{}".format(i + 1, total))
+
+            processed_clips.append((out_path, adjusted_duration))
 
         if progress_callback:
             progress_callback("正在创建剪映草稿...")
@@ -123,31 +230,21 @@ class NovelMixJianyingExportService:
             script.add_track(TrackType.text, "字幕轨道")
 
         current_time = 0.0
-        for i, (video_path, start, duration) in enumerate(clips):
+        for processed_path, clip_duration in processed_clips:
             if is_canceled and is_canceled():
                 raise RuntimeError("导出已取消")
 
-            if progress_callback:
-                progress_callback(f"添加素材 {i+1}/{len(clips)}...")
-
-            if not os.path.exists(video_path):
-                current_time += duration
+            if not os.path.exists(processed_path):
                 continue
-
-            actual_duration = _get_media_duration(video_path)
-            if actual_duration <= 0:
-                current_time += duration
-                continue
-
-            use_duration = min(duration, actual_duration)
 
             video_segment = VideoSegment(
-                video_path,
-                trange("{}s".format(current_time), "{}s".format(max(0.001, use_duration - 0.005))),
+                processed_path,
+                trange("{}s".format(current_time), "{}s".format(max(0.001, clip_duration - 0.005))),
             )
             script.add_segment(video_segment, "视频轨道")
+            current_time += clip_duration
 
-            current_time += use_duration
+        actual_total_duration = current_time
 
         audio_path = self._get_audio_path(project)
         if audio_path and os.path.exists(audio_path):
@@ -155,14 +252,14 @@ class NovelMixJianyingExportService:
             if audio_duration > 0:
                 audio_segment = AudioSegment(
                     audio_path,
-                    trange("0s", "{}s".format(max(0.001, min(total_duration, audio_duration) - 0.005))),
+                    trange("0s", "{}s".format(max(0.001, min(actual_total_duration, audio_duration) - 0.005))),
                 )
                 script.add_segment(audio_segment, "音频轨道")
 
         if has_subtitle:
             subtitle_path = None
             if project.dub_mode == "system":
-                subtitle_path = self._generate_subtitle(project)
+                subtitle_path = self._generate_subtitle(project, actual_total_duration)
             elif project.dub_mode == "self" and project.self_subtitle_path:
                 subtitle_path = project.self_subtitle_path
 
@@ -180,11 +277,16 @@ class NovelMixJianyingExportService:
 
     def _get_total_audio_duration(self, project: NovelMixProjectState) -> float:
         if project.dub_mode == "system":
-            return sum(
-                af.get("duration", 0) or _get_media_duration(af.get("path", ""))
-                for af in project.audio_files
-                if af.get("path")
-            )
+            total = 0.0
+            for af in project.audio_files:
+                path = af.get("path", "")
+                if not path:
+                    continue
+                dur = af.get("duration")
+                if dur is None or dur <= 0:
+                    dur = _get_media_duration(path)
+                total += dur
+            return total
         elif project.dub_mode == "self":
             audio_path = project.self_audio_path
             if audio_path and os.path.exists(audio_path):
@@ -199,48 +301,31 @@ class NovelMixJianyingExportService:
             if len(audio_files) == 1:
                 return audio_files[0]
             merged_path = os.path.join(tempfile.gettempdir(), "novel_mix_jy_audio_{}.mp3".format(project.id))
-            from clip_synth.services.doubao_tts_service import merge_audio_files
-            merge_audio_files(audio_files, merged_path)
+            concat_file = os.path.join(tempfile.gettempdir(), "novel_mix_jy_audio_concat_{}.txt".format(project.id))
+            try:
+                with open(concat_file, "w", encoding="utf-8") as f:
+                    for af in audio_files:
+                        abs_path = Path(af).resolve().as_posix()
+                        f.write("file '{}'\n".format(abs_path))
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-f", "concat", "-safe", "0",
+                    "-i", concat_file,
+                    "-c", "copy",
+                    merged_path,
+                ]
+                _run_cmd(cmd, "合并音频")
+            finally:
+                try:
+                    os.unlink(concat_file)
+                except Exception:
+                    pass
             return merged_path
         elif project.dub_mode == "self":
             return project.self_audio_path
         return ""
 
-    def _select_random_clips(
-        self,
-        project: NovelMixProjectState,
-        total_duration: float,
-    ) -> List[Tuple[str, float, float]]:
-        clips = []
-        remaining = total_duration
-        available = list(project.material_videos)
-
-        if not available:
-            return clips
-
-        random.shuffle(available)
-        idx = 0
-
-        while remaining > 0.1:
-            video = available[idx % len(available)]
-            idx += 1
-            if idx >= len(available):
-                random.shuffle(available)
-
-            vid_duration = video.duration
-            if vid_duration <= 0:
-                vid_duration = _get_media_duration(video.path)
-
-            if vid_duration <= 0:
-                continue
-
-            clip_duration = min(remaining, vid_duration)
-            clips.append((video.path, 0.0, clip_duration))
-            remaining -= clip_duration
-
-        return clips
-
-    def _generate_subtitle(self, project: NovelMixProjectState) -> str | None:
+    def _generate_subtitle(self, project: NovelMixProjectState, max_duration: float = 0.0) -> str | None:
         srt_sections = []
         time_offset = 0.0
 
@@ -248,7 +333,9 @@ class NovelMixJianyingExportService:
             path = af.get("path", "")
             timestamps = af.get("timestamps", [])
             text = af.get("text", "")
-            duration = af.get("duration", 0) or _get_media_duration(path) if path else 0
+            duration = af.get("duration", 0)
+            if duration is None or duration <= 0:
+                duration = _get_media_duration(path) if path else 0
 
             if not timestamps:
                 time_offset += duration
@@ -275,8 +362,24 @@ class NovelMixJianyingExportService:
             else:
                 renumbered.append(line)
 
+        srt_text = "\n".join(renumbered)
+
+        if max_duration > 0:
+            final_lines = []
+            for line in srt_text.split("\n"):
+                if "-->" in line:
+                    parts = line.split(" --> ")
+                    if len(parts) == 2:
+                        end_time_str = parts[1].strip()
+                        end_seconds = _srt_time_to_seconds(end_time_str)
+                        if end_seconds > max_duration:
+                            parts[1] = _seconds_to_srt_time(max_duration)
+                            line = " --> ".join(parts)
+                final_lines.append(line)
+            srt_text = "\n".join(final_lines)
+
         srt_path = os.path.join(tempfile.gettempdir(), "novel_mix_jy_subtitle_{}.srt".format(project.id))
         with open(srt_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(renumbered))
+            f.write(srt_text)
 
         return srt_path

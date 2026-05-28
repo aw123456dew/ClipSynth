@@ -1,241 +1,373 @@
 import logging
 import os
-import subprocess
-import sys
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QDialog,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
+    QScrollArea,
+    QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
-from clip_synth.models.novel_mix_project_state import (
-    NovelMixMaterialVideo,
-    NovelMixProjectState,
-)
+from clip_synth.models.novel_mix_project_state import NovelMixProjectState
 
 logger = logging.getLogger("clip_synth.novel_mix_material")
 
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm"}
 
 
-def _get_video_info(video_path: str) -> dict:
-    info = {"duration": 0.0, "size_mb": 0.0}
+def _count_videos(folder: str) -> int:
+    count = 0
     try:
-        file_size = os.path.getsize(video_path)
-        info["size_mb"] = round(file_size / (1024 * 1024), 2)
-    except OSError:
-        pass
-
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "csv=p=0",
-        video_path,
-    ]
-    try:
-        kwargs = {}
-        if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, **kwargs)
-        if result.returncode == 0:
-            info["duration"] = float(result.stdout.strip())
-    except Exception:
-        pass
-
-    return info
+        for root, dirs, files in os.walk(folder):
+            for f in files:
+                ext = os.path.splitext(f)[1].lower()
+                if ext in VIDEO_EXTENSIONS:
+                    count += 1
+    except Exception as e:
+        logger.error("扫描文件夹视频数量失败 %s: %s", folder, e)
+    return count
 
 
-class ScanWorker(QThread):
-    progress = Signal(int, str)
-    finished = Signal(list)
-
-    def __init__(self, folder: str, parent=None):
+class _ParamGroup(QFrame):
+    def __init__(self, title: str, label_min: str, label_max: str,
+                 min_val: float = 0.0, max_val: float = 10.0,
+                 default_min: float = 1.0, default_max: float = 3.0,
+                 decimals: int = 1, single_step: float = 0.1, parent=None):
         super().__init__(parent)
-        self._folder = folder
+        self.setObjectName("mixParamGroup")
+        self.setMinimumHeight(80)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
-    def run(self) -> None:
-        found = []
-        try:
-            for root, dirs, files in os.walk(self._folder):
-                for f in files:
-                    ext = os.path.splitext(f)[1].lower()
-                    if ext not in VIDEO_EXTENSIONS:
-                        continue
-                    full_path = os.path.join(root, f)
-                    info = _get_video_info(full_path)
-                    found.append(
-                        NovelMixMaterialVideo(
-                            name=f,
-                            path=full_path,
-                            duration=info["duration"],
-                            size_mb=info["size_mb"],
-                        )
-                    )
-                    self.progress.emit(len(found), f)
-        except Exception as e:
-            logger.error("扫描文件夹失败: %s", e)
+        title_label = QLabel(title)
+        title_label.setObjectName("mixParamTitle")
+        layout.addWidget(title_label)
 
-        found.sort(key=lambda v: v.name.lower())
-        self.finished.emit(found)
+        row = QHBoxLayout()
+        row.setSpacing(16)
+
+        min_label = QLabel(label_min)
+        min_label.setObjectName("mixParamLabel")
+        min_label.setFixedWidth(70)
+        row.addWidget(min_label)
+
+        self._min_spin = QDoubleSpinBox()
+        self._min_spin.setObjectName("mixParamSpin")
+        self._min_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self._min_spin.setRange(min_val, max_val)
+        self._min_spin.setValue(default_min)
+        self._min_spin.setDecimals(decimals)
+        self._min_spin.setSingleStep(single_step)
+        self._min_spin.setFixedWidth(120)
+        self._min_spin.setFixedHeight(32)
+        row.addWidget(self._min_spin)
+
+        sep = QLabel("~")
+        sep.setObjectName("mixParamSep")
+        row.addWidget(sep)
+
+        max_label = QLabel(label_max)
+        max_label.setObjectName("mixParamLabel")
+        max_label.setFixedWidth(70)
+        row.addWidget(max_label)
+
+        self._max_spin = QDoubleSpinBox()
+        self._max_spin.setObjectName("mixParamSpin")
+        self._max_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        self._max_spin.setRange(min_val, max_val)
+        self._max_spin.setValue(default_max)
+        self._max_spin.setDecimals(decimals)
+        self._max_spin.setSingleStep(single_step)
+        self._max_spin.setFixedWidth(120)
+        self._max_spin.setFixedHeight(32)
+        row.addWidget(self._max_spin)
+
+        row.addStretch()
+        layout.addLayout(row)
+
+    @property
+    def min_value(self) -> float:
+        return self._min_spin.value()
+
+    @min_value.setter
+    def min_value(self, v: float) -> None:
+        self._min_spin.setValue(v)
+
+    @property
+    def max_value(self) -> float:
+        return self._max_spin.value()
+
+    @max_value.setter
+    def max_value(self, v: float) -> None:
+        self._max_spin.setValue(v)
+
+    def set_values(self, min_v: float, max_v: float) -> None:
+        self._min_spin.setValue(min_v)
+        self._max_spin.setValue(max_v)
 
 
-class NovelMixMaterialPage(QFrame):
-    scanning_changed = Signal(bool)
-
+class _MixParamsPage(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("novelMixMaterialPage")
-        self._scan_worker: ScanWorker | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 24, 32, 24)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(24)
+
+        self._segment_group = _ParamGroup(
+            title="视频连贯切分（秒）",
+            label_min="最小切分",
+            label_max="最大切分",
+            min_val=0.1, max_val=30.0,
+            default_min=1.0, default_max=5.0,
+            decimals=1, single_step=0.5,
+        )
+        layout.addWidget(self._segment_group)
+
+        self._speed_group = _ParamGroup(
+            title="片段随机加速",
+            label_min="最慢",
+            label_max="最快",
+            min_val=0.5, max_val=5.0,
+            default_min=1.0, default_max=2.0,
+            decimals=1, single_step=0.1,
+        )
+        layout.addWidget(self._speed_group)
+
+        self._zoom_group = _ParamGroup(
+            title="素材画面随机放大",
+            label_min="最小倍率",
+            label_max="最大倍率",
+            min_val=1.0, max_val=3.0,
+            default_min=1.0, default_max=1.5,
+            decimals=2, single_step=0.05,
+        )
+        layout.addWidget(self._zoom_group)
+
+        layout.addStretch()
+
+    def get_params(self) -> dict:
+        return {
+            "segment_min": self._segment_group.min_value,
+            "segment_max": self._segment_group.max_value,
+            "speed_min": self._speed_group.min_value,
+            "speed_max": self._speed_group.max_value,
+            "zoom_min": self._zoom_group.min_value,
+            "zoom_max": self._zoom_group.max_value,
+        }
+
+    def set_params(self, params: dict) -> None:
+        self._segment_group.set_values(
+            params.get("segment_min", 1.0),
+            params.get("segment_max", 5.0),
+        )
+        self._speed_group.set_values(
+            params.get("speed_min", 1.0),
+            params.get("speed_max", 2.0),
+        )
+        self._zoom_group.set_values(
+            params.get("zoom_min", 1.0),
+            params.get("zoom_max", 1.5),
+        )
+
+
+class NovelMixMaterialPage(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("novelMixMaterialPage")
+        self._setup_ui()
+
+    def _show_warning(self, message: str) -> None:
+        dialog = QDialog(self.window())
+        dialog.setWindowTitle("提示")
+        dialog.setFixedSize(420, 160)
+        dialog.setObjectName("confirmDialog")
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
+
+        msg_label = QLabel(message)
+        msg_label.setObjectName("dialogTitle")
+        msg_label.setWordWrap(True)
+        layout.addWidget(msg_label)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+        btn_row.addStretch()
+
+        ok_btn = QPushButton("确定")
+        ok_btn.setObjectName("dialogConfirmBtn")
+        ok_btn.clicked.connect(dialog.accept)
+        btn_row.addWidget(ok_btn)
+
+        layout.addLayout(btn_row)
+        dialog.exec()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        title_bar = QFrame()
+        title_bar_layout = QVBoxLayout(title_bar)
+        title_bar_layout.setContentsMargins(32, 24, 32, 8)
+        title_bar_layout.setSpacing(8)
 
         title = QLabel("选择素材文件夹")
         title.setObjectName("wizardStepTitle")
-        layout.addWidget(title)
+        title_bar_layout.addWidget(title)
 
-        desc = QLabel("选择包含视频素材的文件夹，系统将从中随机选取片段拼接")
+        desc = QLabel("分别选择视频开头素材和混剪素材所在的文件夹，并调整混剪参数")
         desc.setObjectName("exportInfo")
         desc.setWordWrap(True)
-        layout.addWidget(desc)
+        title_bar_layout.addWidget(desc)
 
-        folder_row = QHBoxLayout()
-        folder_row.setSpacing(12)
+        layout.addWidget(title_bar)
 
-        self._folder_label = QLabel("当前文件夹: 未选择")
-        self._folder_label.setObjectName("materialFolderLabel")
-        self._folder_label.setWordWrap(True)
-        folder_row.addWidget(self._folder_label, stretch=1)
+        scroll_area = QScrollArea()
+        scroll_area.setObjectName("mixMaterialScrollArea")
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        self._select_btn = QPushButton("选择文件夹")
-        self._select_btn.setObjectName("materialSelectBtn")
-        self._select_btn.setCursor(Qt.PointingHandCursor)
-        self._select_btn.clicked.connect(self._on_select_folder)
-        folder_row.addWidget(self._select_btn)
+        scroll_content = QWidget()
+        scroll_content.setObjectName("mixMaterialScrollContent")
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(32, 12, 32, 24)
+        scroll_layout.setSpacing(16)
 
-        self._refresh_btn = QPushButton("刷新列表")
-        self._refresh_btn.setObjectName("materialRefreshBtn")
-        self._refresh_btn.setCursor(Qt.PointingHandCursor)
-        self._refresh_btn.clicked.connect(self._on_refresh)
-        self._refresh_btn.setEnabled(False)
-        folder_row.addWidget(self._refresh_btn)
+        # --- Opening folder row ---
+        opening_row = QHBoxLayout()
+        opening_row.setSpacing(12)
 
-        layout.addLayout(folder_row)
+        opening_label = QLabel("选择视频开头素材：")
+        opening_label.setObjectName("mixFolderLabel")
+        opening_row.addWidget(opening_label)
 
-        self._count_label = QLabel("共扫描到 0 个视频文件")
-        self._count_label.setObjectName("materialCountLabel")
-        layout.addWidget(self._count_label)
+        self._opening_path_label = QLabel("未选择")
+        self._opening_path_label.setObjectName("mixFolderPath")
+        self._opening_path_label.setWordWrap(True)
+        opening_row.addWidget(self._opening_path_label, stretch=1)
 
-        self._table = QTableWidget()
-        self._table.setObjectName("materialTable")
-        self._table.setColumnCount(4)
-        self._table.setHorizontalHeaderLabels(["序号", "视频名称", "时长", "文件大小"])
-        self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self._table.setColumnWidth(0, 60)
-        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        self._table.setColumnWidth(2, 100)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
-        self._table.setColumnWidth(3, 100)
-        self._table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self._table.setSelectionBehavior(QTableWidget.SelectRows)
-        self._table.setAlternatingRowColors(True)
-        self._table.verticalHeader().setVisible(False)
-        layout.addWidget(self._table, stretch=1)
+        self._opening_btn = QPushButton("选择文件夹")
+        self._opening_btn.setObjectName("mixFolderBtn")
+        self._opening_btn.setCursor(Qt.PointingHandCursor)
+        self._opening_btn.clicked.connect(lambda: self._on_select_folder("opening"))
+        opening_row.addWidget(self._opening_btn)
 
-        self._current_folder = ""
-        self._videos: list[NovelMixMaterialVideo] = []
+        scroll_layout.addLayout(opening_row)
 
-    def _on_select_folder(self) -> None:
+        # --- Mix folder row ---
+        mix_row = QHBoxLayout()
+        mix_row.setSpacing(12)
+
+        mix_label = QLabel("选择混剪素材：    ")
+        mix_label.setObjectName("mixFolderLabel")
+        mix_row.addWidget(mix_label)
+
+        self._mix_path_label = QLabel("未选择")
+        self._mix_path_label.setObjectName("mixFolderPath")
+        self._mix_path_label.setWordWrap(True)
+        mix_row.addWidget(self._mix_path_label, stretch=1)
+
+        self._mix_btn = QPushButton("选择文件夹")
+        self._mix_btn.setObjectName("mixFolderBtn")
+        self._mix_btn.setCursor(Qt.PointingHandCursor)
+        self._mix_btn.clicked.connect(lambda: self._on_select_folder("mix"))
+        mix_row.addWidget(self._mix_btn)
+
+        scroll_layout.addLayout(mix_row)
+
+        # --- Separator ---
+        sep = QFrame()
+        sep.setObjectName("mixParamSeparator")
+        sep.setFixedHeight(1)
+        scroll_layout.addWidget(sep)
+
+        # --- Tab widget with parameter pages ---
+        tab_label = QLabel("混剪参数设置")
+        tab_label.setObjectName("mixParamSectionTitle")
+        scroll_layout.addWidget(tab_label)
+
+        self._tab_widget = QTabWidget()
+        self._tab_widget.setObjectName("mixParamTab")
+
+        self._opening_params_page = _MixParamsPage()
+        self._mix_params_page = _MixParamsPage()
+
+        self._tab_widget.addTab(self._opening_params_page, "开头素材参数")
+        self._tab_widget.addTab(self._mix_params_page, "混剪素材参数")
+
+        scroll_layout.addWidget(self._tab_widget, stretch=1)
+
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area, stretch=1)
+
+        self._opening_folder = ""
+        self._mix_folder = ""
+
+    def _on_select_folder(self, target: str) -> None:
         folder = QFileDialog.getExistingDirectory(self, "选择素材文件夹")
         if not folder:
             return
-        self._current_folder = folder
-        self._start_scan()
+        if target == "opening":
+            self._opening_folder = folder
+            self._opening_path_label.setText(folder)
+        else:
+            self._mix_folder = folder
+            self._mix_path_label.setText(folder)
 
-    def _on_refresh(self) -> None:
-        if self._current_folder:
-            self._start_scan()
+    def validate(self) -> bool:
+        if not self._opening_folder:
+            self._show_warning("请先选择视频开头素材文件夹")
+            return False
+        if not self._mix_folder:
+            self._show_warning("请先选择混剪素材文件夹")
+            return False
 
-    def _set_buttons_enabled(self, enabled: bool) -> None:
-        self._select_btn.setEnabled(enabled)
-        self._refresh_btn.setEnabled(enabled)
+        opening_videos = _count_videos(self._opening_folder)
+        if opening_videos == 0:
+            self._show_warning(
+                f"视频开头素材文件夹中没有找到视频文件：\n{self._opening_folder}"
+            )
+            return False
 
-    def _start_scan(self) -> None:
-        if self._scan_worker is not None and self._scan_worker.isRunning():
-            self._scan_worker.terminate()
-            self._scan_worker.wait(2000)
+        mix_videos = _count_videos(self._mix_folder)
+        if mix_videos == 0:
+            self._show_warning(
+                f"混剪素材文件夹中没有找到视频文件：\n{self._mix_folder}"
+            )
+            return False
 
-        self._folder_label.setText(f"当前文件夹: {self._current_folder}")
-        self._count_label.setText("正在扫描...")
-        self._set_buttons_enabled(False)
-        self._table.setRowCount(0)
-        self.scanning_changed.emit(True)
-
-        self._scan_worker = ScanWorker(self._current_folder)
-        self._scan_worker.progress.connect(self._on_scan_progress)
-        self._scan_worker.finished.connect(self._on_scan_finished)
-        self._scan_worker.start()
-
-    def _on_scan_progress(self, count: int, name: str) -> None:
-        self._count_label.setText(f"正在扫描: 已找到 {count} 个视频...")
-
-    def _on_scan_finished(self, videos: list) -> None:
-        self._videos = videos
-        self._set_buttons_enabled(True)
-        self._refresh_btn.setEnabled(True)
-        self._count_label.setText(f"共扫描到 {len(self._videos)} 个视频文件")
-        self.scanning_changed.emit(False)
-        self._populate_table()
-
-    def _populate_table(self) -> None:
-        self._table.setUpdatesEnabled(False)
-        self._table.setRowCount(len(self._videos))
-
-        for i, video in enumerate(self._videos):
-            self._table.setItem(i, 0, QTableWidgetItem(str(i + 1)))
-            self._table.setItem(i, 1, QTableWidgetItem(video.name))
-            duration_str = _format_duration(video.duration)
-            self._table.setItem(i, 2, QTableWidgetItem(duration_str))
-            self._table.setItem(i, 3, QTableWidgetItem(f"{video.size_mb} MB"))
-
-        self._table.setUpdatesEnabled(True)
+        return True
 
     def save(self, project: NovelMixProjectState) -> None:
-        project.material_folder = self._current_folder
-        project.material_videos = self._videos
+        project.opening_folder = self._opening_folder
+        project.mix_folder = self._mix_folder
+        project.extra_data["opening_params"] = self._opening_params_page.get_params()
+        project.extra_data["mix_params"] = self._mix_params_page.get_params()
 
     def restore(self, project: NovelMixProjectState) -> None:
-        self._current_folder = project.material_folder
-        self._videos = project.material_videos
-        if self._current_folder:
-            self._folder_label.setText(f"当前文件夹: {self._current_folder}")
-            self._refresh_btn.setEnabled(True)
-            self._populate_table()
+        self._opening_folder = project.opening_folder
+        self._mix_folder = project.mix_folder
+        if self._opening_folder:
+            self._opening_path_label.setText(self._opening_folder)
+        if self._mix_folder:
+            self._mix_path_label.setText(self._mix_folder)
 
-    def hideEvent(self, event):
-        if self._scan_worker is not None and self._scan_worker.isRunning():
-            self._scan_worker.terminate()
-            self._scan_worker.wait(2000)
-        super().hideEvent(event)
+        opening_params = project.extra_data.get("opening_params", {})
+        self._opening_params_page.set_params(opening_params)
 
-
-def _format_duration(seconds: float) -> str:
-    if seconds <= 0:
-        return "00:00:00"
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    return f"{h:02d}:{m:02d}:{s:02d}"
+        mix_params = project.extra_data.get("mix_params", {})
+        self._mix_params_page.set_params(mix_params)

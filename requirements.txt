@@ -14,6 +14,7 @@ requests>=2.31.0
 opencv-python>=4.8.0
 Pillow>=10.0
 pyJianYingDraft>=1.0
+scenedetect>=0.7,<0.8
 
 # Dev
 pytest>=8.0

@@ -790,17 +790,7 @@ QComboBox::down-arrow {
     subcontrol-origin: border;
 }
 
-#rangeSpinBox::up-arrow {
-    image: none;
-    border: none;
-}
-
-#rangeSpinBox::down-arrow {
-    image: none;
-    border: none;
-}
-
-/* ===== Export Dialog ===== */
+/* ===== Batch Range Dialog ===== */
 #exportDialog {
     background-color: #0f1525;
     border: 1px solid #1a2340;
@@ -3472,6 +3462,138 @@ QSlider::sub-page:horizontal {
     border-color: #6366f1;
 }
 
+#mixMaterialScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+#mixMaterialScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
+#mixMaterialScrollContent {
+    background-color: transparent;
+}
+
+/* ===== Novel Mix Material Page - New ===== */
+#mixFolderLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+    min-width: 120px;
+}
+
+#mixFolderPath {
+    color: #cbd5e1;
+    font-size: 13px;
+    padding: 6px 12px;
+    background-color: #0a0f1a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    min-height: 20px;
+}
+
+#mixFolderBtn {
+    background-color: #1e293b;
+    color: #a5b4fc;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#mixFolderBtn:hover {
+    background-color: #312e81;
+    color: #e0e7ff;
+    border-color: #6366f1;
+}
+
+#mixParamSeparator {
+    background-color: #1e293b;
+    border: none;
+    margin: 4px 0;
+}
+
+#mixParamSectionTitle {
+    color: #e2e8f0;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 4px 0;
+}
+
+#mixParamTab::pane {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 20px;
+}
+
+#mixParamTab QTabBar::tab {
+    background-color: #0f1520;
+    color: #94a3b8;
+    border: 1px solid #1e293b;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    padding: 10px 24px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-right: 2px;
+}
+
+#mixParamTab QTabBar::tab:selected {
+    background-color: #0c1322;
+    color: #a5b4fc;
+    border-color: #1e293b;
+    border-bottom: 1px solid #0c1322;
+}
+
+#mixParamTab QTabBar::tab:hover:!selected {
+    background-color: #1a2744;
+    color: #e2e8f0;
+}
+
+#mixParamGroup {
+    background-color: #0a0f1a;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 16px 20px;
+}
+
+#mixParamTitle {
+    color: #e2e8f0;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+#mixParamLabel {
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+#mixParamSpin {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 14px;
+    font-weight: 600;
+    min-height: 24px;
+}
+
+#mixParamSpin:focus {
+    border-color: #6366f1;
+}
+
+#mixParamSep {
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 700;
+}
+
 /* ===== Novel Mix Dub Page ===== */
 #novelMixDubPage {
     background-color: #0a0e17;
@@ -3540,6 +3662,22 @@ QSlider::sub-page:horizontal {
 }
 
 #importTxtBtn:hover {
+    background-color: #312e81;
+    color: #e0e7ff;
+    border-color: #6366f1;
+}
+
+#formatTextBtn {
+    background-color: #1e293b;
+    color: #a5b4fc;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#formatTextBtn:hover {
     background-color: #312e81;
     color: #e0e7ff;
     border-color: #6366f1;

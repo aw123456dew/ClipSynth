@@ -33,6 +33,8 @@ class NovelMixProjectState:
     name: str
     material_folder: str = ""
     material_videos: List[NovelMixMaterialVideo] = field(default_factory=list)
+    opening_folder: str = ""
+    mix_folder: str = ""
     dub_mode: str = ""
     narration_text: str = ""
     voice_type: str = "BV700_V2_streaming"

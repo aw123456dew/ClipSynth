@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -305,9 +306,22 @@ class NovelMixDubPage(QFrame):
         self._text_edit.setPlaceholderText("在这里输入或粘贴小说/故事文本...")
         left_panel.addWidget(self._text_edit, stretch=1)
 
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(12)
+
         self._char_count_label = QLabel("已输入 0 字")
         self._char_count_label.setObjectName("charCountLabel")
-        left_panel.addWidget(self._char_count_label)
+        bottom_row.addWidget(self._char_count_label)
+
+        bottom_row.addStretch()
+
+        self._format_btn = QPushButton("格式化文本")
+        self._format_btn.setObjectName("formatTextBtn")
+        self._format_btn.setCursor(Qt.PointingHandCursor)
+        self._format_btn.clicked.connect(self._on_format_text)
+        bottom_row.addWidget(self._format_btn)
+
+        left_panel.addLayout(bottom_row)
 
         self._text_edit.textChanged.connect(self._on_text_changed)
 
@@ -441,6 +455,18 @@ class NovelMixDubPage(QFrame):
                 self._text_edit.setPlainText(content)
             except Exception as e:
                 logger.error("读取文本文件失败: %s", e)
+
+    def _on_format_text(self) -> None:
+        text = self._text_edit.toPlainText()
+        if not text.strip():
+            return
+
+        text = re.sub(r'[\[\]「」""]', '', text)
+        text = re.sub(r'[！？。]', ',', text)
+        text = re.sub(r',+', ',', text)
+        text = re.sub(r'，+', ',', text)
+
+        self._text_edit.setPlainText(text)
 
     def _on_generate_all(self) -> None:
         if self._tts_worker is not None and self._tts_worker.isRunning():
