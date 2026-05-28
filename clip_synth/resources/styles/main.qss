@@ -2609,6 +2609,260 @@ QComboBox::down-arrow {
     background: transparent;
 }
 
+#videoProcessTab::pane {
+    background-color: transparent;
+    border: none;
+}
+
+#videoProcessTab QTabBar::tab {
+    background-color: #0f1520;
+    color: #94a3b8;
+    border: 1px solid #1e293b;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    padding: 10px 24px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-right: 2px;
+    margin-top: 4px;
+}
+
+#videoProcessTab QTabBar::tab:selected {
+    background-color: #0c1322;
+    color: #a5b4fc;
+    border-color: #1e293b;
+    border-bottom: 1px solid #0c1322;
+}
+
+#videoProcessTab QTabBar::tab:hover:!selected {
+    background-color: #1a2744;
+    color: #e2e8f0;
+}
+
+#videoCutPlaceholder {
+    background-color: transparent;
+}
+
+/* ===== Video Cut Page ===== */
+#videoCutPage {
+    background-color: transparent;
+}
+
+#cutFolderBtn {
+    background-color: #1e293b;
+    color: #a5b4fc;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 20px;
+}
+
+#cutFolderBtn:hover {
+    background-color: #312e81;
+    color: #e0e7ff;
+    border-color: #6366f1;
+}
+
+#cutFolderLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    padding: 8px 4px;
+}
+
+#cutAlgoLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 4px;
+}
+
+#cutAlgoCombo {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    min-height: 20px;
+}
+
+#cutAlgoCombo:hover {
+    border-color: #6366f1;
+}
+
+#cutAlgoCombo::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 30px;
+    border: none;
+}
+
+#cutAlgoCombo::down-arrow {
+    image: none;
+    border: none;
+}
+
+#cutAlgoCombo QAbstractItemView {
+    background-color: #0d111f;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+
+#cutAlgoCombo QAbstractItemView::item {
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+#cutAlgoCombo QAbstractItemView::item:hover {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#cutAlgoCombo QAbstractItemView::item:selected {
+    background-color: #1a2744;
+    color: #60a5fa;
+}
+
+#cutThresholdSpin {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 13px;
+    min-height: 20px;
+}
+
+#cutThresholdSpin:focus {
+    border-color: #6366f1;
+}
+
+#cutThresholdSpin::up-button, #cutThresholdSpin::down-button {
+    width: 18px;
+    background-color: #1a2340;
+    border: none;
+    border-radius: 0;
+}
+
+#cutThresholdSpin::up-button:hover, #cutThresholdSpin::down-button:hover {
+    background-color: #0d1f3c;
+}
+
+#cutVideoListFrame {
+    background-color: #0c1322;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+
+#cutVideoScroll {
+    border: none;
+    background-color: transparent;
+}
+
+#cutVideoScroll > QWidget > QWidget {
+    background-color: transparent;
+}
+
+#cutVideoListContent {
+    background-color: transparent;
+}
+
+#cutVideoItem {
+    background-color: transparent;
+    border-bottom: 1px solid #1a2340;
+    min-height: 40px;
+}
+
+#cutVideoItem:hover {
+    background-color: #111827;
+}
+
+#cutVideoName {
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+#cutVideoProgress {
+    background-color: #0a0f1a;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 11px;
+    color: #e2e8f0;
+}
+
+#cutVideoProgress::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    border-radius: 3px;
+}
+
+#cutVideoStatus {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 70px;
+}
+
+#cutVideoStatusDone {
+    color: #34d399;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 70px;
+}
+
+#cutVideoStatusFail {
+    color: #f87171;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 70px;
+}
+
+#cutEmptyHint {
+    color: #64748b;
+    font-size: 14px;
+    padding: 32px 16px;
+}
+
+#cutVideoCount {
+    color: #64748b;
+    font-size: 13px;
+}
+
+#cutStartBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 32px;
+    min-width: 140px;
+    min-height: 20px;
+}
+
+#cutStartBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#cutStartBtn:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4338ca, stop:1 #4f46e5);
+}
+
+#cutStartBtn:disabled {
+    background: #1e293b;
+    color: #475569;
+}
+
 /* ===== Voice Selection Page ===== */
 #voiceSelectionPage {
     background-color: #0a0e17;

@@ -20,7 +20,7 @@ from clip_synth.services.settings_service import SettingsService
 from clip_synth.ui.pages.settings_page import SettingsPage
 from clip_synth.ui.pages.short_drama_mix_page import ShortDramaMixPage
 from clip_synth.ui.pages.short_drama_narrate_page import ShortDramaNarratePage
-from clip_synth.ui.pages.video_dedup_page import VideoDedupPage
+from clip_synth.ui.pages.video_process_page import VideoProcessPage
 
 logger = logging.getLogger(__name__)
 
@@ -157,8 +157,8 @@ class ContentArea(QFrame):
         self._stack.addWidget(self._narrate_page)
         self._pages["short_drama_narrate"] = self._stack.count() - 1
 
-        dedup_page = VideoDedupPage()
-        self._stack.addWidget(dedup_page)
+        video_process_page = VideoProcessPage()
+        self._stack.addWidget(video_process_page)
         self._pages["video_dedup"] = self._stack.count() - 1
 
         self._settings_page = SettingsPage(self._settings_service)

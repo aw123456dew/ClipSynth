@@ -208,6 +208,13 @@ def run_pyinstaller(
     for mod in collected_submodules:
         pyinstaller_args.extend(["--collect-submodules", mod])
 
+    collected_data = [
+        "cv2",
+        "PIL",
+    ]
+    for mod in collected_data:
+        pyinstaller_args.extend(["--collect-data", mod])
+
     data_files = [
         (str(PROJECT_ROOT / "clip_synth/resources/styles/main.qss"), "clip_synth/resources/styles"),
         (str(PROJECT_ROOT / "clip_synth/resources/icons/icon.ico"), "clip_synth/resources/icons"),
