@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSizePolicy,
     QSpinBox,
@@ -282,7 +283,7 @@ STORYBOARD_SPLIT_SYSTEM_PROMPT = """\
 
 核心要求：
 1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加，并且text 不能一次性超过150个汉字
-2. 每个分镜对应一页漫画，一页漫画大概 1-3 格，特别精彩的使用1格，正常的使用2格，除非某个镜头特别复杂，才考虑3-4格，如果某页的内容特别多，我建议分开两页
+2. 每个分镜对应一页漫画，一页漫画 1-3 格。一个格能表达清楚就只用 1 格（大画面），内容较多时用 2 格，复杂时才用 3-4 格。
 3. panel_count_suggestion 是推荐格数，根据本页内容的节奏和复杂度给出合理建议（整数 1-4）
 4. present_characters 列出本页出场的人物名称，不要遗漏
 5. bubbles 列出本页中所有角色的对话，speaker 是说话人，text 是对话内容。text 字段中凡是对话部分都要提取到 bubbles 中
@@ -515,7 +516,10 @@ MATCH_ASSETS_SYSTEM_PROMPT = """\
 3. 每个分镜可以选择零个或多个道具（props），根据分镜的文本、旁白叙述判断使用了哪些道具
 4. 只从提供的资产池中选择，不要编造不存在的资产名称。如果资产池中没有匹配的人物，则从 present_characters 中选择已有角色名
 5. 根据分镜的原文文本、出场人物、对话气泡和旁白叙述综合判断该分镜发生在哪个场景、出现了哪些人物、使用了哪些道具
-6. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。"""
+6. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。
+7. **上下文延续规则**：道具分为两类——
+   - **外观类（需延续）**：服装、配饰、帽子、眼镜、首饰、背包等影响角色外观的物品。一旦某个分镜中出现，后续没有切换场景/时间跳跃/或明确说明脱下/放下/换掉之前，必须一直保留在该角色的 props 中。
+   - **使用类（不需延续）**：手机、证件、书本、工具、武器、食物等功能性物品。仅在原文明确提到使用时添加，提到放下/收起后移除，不自动延续到后续分镜。"""
 
 
 def _get_effective_prefix(gen_settings: dict) -> str:
@@ -671,7 +675,9 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
 
 传入的分镜数据会包含每个分镜的完整数据：原文(text)、旁白(narrative)、对话(bubbles)、出场人物(present_characters)、推荐格数(panel_count_suggestion)、所属段落原文(segment_text)、以及已绑定的场景资产和人物道具资产，**必须为每个传入的分镜生成对应的 description**。返回的 storyboards 数组必须包含所有传入分镜的条目，每个的描述独立生成，不要合并、不要跳过、不要遗漏。
 
-你的任务是为每个分镜段落生成一页漫画的详细分镜描述。每个分镜可能包含多个格（panel），格数参考 panel_count_suggestion，但你可根据内容节奏灵活调整。对话从 bubbles 中提取放入气泡，旁白从 narrative 中提取放入说明框。
+你的任务是为每个分镜段落生成一页漫画的详细分镜描述。每个分镜可能包含多个格（panel），格数参考 panel_count_suggestion，但你可根据内容节奏灵活调整。
+
+传入的数据可能包含原文(text)、对话(bubbles)、旁白(narrative)、出场人物(present_characters)、已绑定的场景资产和人物道具资产。如果 bubbles/narrative/present_characters 字段为空，请从原文(text)自行分析：识别对话内容放入气泡，识别角色的内心独白/主观看法放入说明框，其他叙事描写不放入说明框。
 
 输出格式规范：
 
@@ -680,25 +686,25 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
 
 格N (形状描述，如：窄长横格 / 大方格 / 竖长格左半页 / 满版出血格 / 三小格并列 等)
 - 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
-- 场景：直接写你选择的资产名称及版本，不要额外描述场景环境
+- 场景：直接写你选择的资产名称及版本，不要额外描述场景环境，除非正文中有描述到其他场景的时候可以使用多个场景
 - 人物：直接列出角色名即可，例如"张三, 李四"，不要描述外观着装
-- 动作/表情：角色的肢体动作和面部表情细节（画师照着画的部分）
-- 气泡：所有对话和内心独白必须放在气泡中。注明所属角色、气泡类型及文字。格式：角色名：气泡序号(气泡类型)："文字"。每个气泡文字控制在 1-2 行以内，超过的拆成多个气泡依次排列，例如：张三：气泡1(普通气泡)："你怎么来了？" 李四：气泡2(普通气泡)："我来看看你。" 沈故：(云朵状内心独白)"明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"。气泡的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。
-- 说明框：将原文text中所有非对话的文字（即旁白，包括叙事、心理描述、环境交代等）原封不动地分配到各个格子中，禁止概括、禁止改写。每段控制在 1-2 行以内，用中文双引号（""）包裹。气泡和说明框的语言必须与原文一致。
+- 动作/表情：角色的肢体动作和面部表情细节
+- 气泡：每个气泡独立一行，格式：- 角色名的气泡："文字内容"。不要写气泡序号和气泡类型。每个气泡文字控制在 1-2 行以内，长文本拆成多个气泡依次排列，例如：- 张三的气泡："你怎么来了？"\n- 李四的气泡："我来看看你。"\n- 沈故的气泡："明明当初分手的时候，沈故红着眼，咬牙切齿地对我说话。"。气泡的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。
+- 说明框：直接放置文字内容，不要标注角色名，格式：说明框："文字内容"。每段控制在 1-2 行以内，用原文原句。说明框的内容来自角色的内心独白、内心想法或主观看法，但**不需要标注是谁的**，直接呈现文字即可。除内心独白外，其他叙事描述（场景描写、环境交代、角色动作等）**不放入说明框**。如有传入 narrative 字段则优先使用，否则从原文自行判断。
 
 说明框与气泡的分工铁律：
-- 气泡负责一切对话、内心独白。原文中的对话内容必须全部进入气泡。
-- 说明框负责承载原文text中所有非对话的文字（即旁白，包括叙事、心理描述、环境交代等），必须使用原文原句，禁止概括、禁止改写。
+- 气泡负责一切对话。原文中的对话内容必须全部进入气泡。
+- 说明框负责承载角色的内心独白与主观看法。如有传入 narrative 字段则从中提取，否则从原文自行判断。
 - 动作/表情负责描述画师需要画的视觉内容（肢体动作、面部表情、画面构图），不承载任何文字。
-- 原文text字段的全部文字必须完整分配到气泡或说明框中，不能有任何遗漏或自己发挥。
+- 同一句话**严禁同时出现在气泡和说明框中**，每句话唯一归属。
 
 核心规则：
 1. 一个分镜对应一页漫画，不要拆分到多个分镜描述
-2. 格的数量：画面节奏要快，优先使用 1-2 格，只有在气泡数量+说明框数量超过 4 个以上时才考虑使用 3 格，超过 6 个以上才使用 4 格。在满足气泡容量的前提下尽量用更少的格数来保证大画面表现力
+2. 格的数量：一个格能表现到位就大胆用 1 格（满版/出血大画面），内容稍多时用 2 格，只有在气泡数量+说明框数量超过 4 个以上时才考虑使用 3 格，超过 6 个以上才使用 4 格。在满足内容容量的前提下尽量用更少的格数来保证大画面表现力
 3. 场景使用规则：每个分镜已绑定了场景资产，本页所有格必须统一使用该场景名称
 4. 人物和道具只能从已匹配的资产列表中选择，不要自行编造或添加未匹配的角色和物品
 5. 每个格必须有明确的景别和角度
-6. 原文text的全部文字必须完整分配到气泡或说明框中，不得遗漏。对话进气泡，其他所有文字（即旁白，包括叙事、心理描述、环境交代等）进说明框，说明框必须使用原文原句。如果一个格全是对话可以只有气泡，全是旁白可以只有说明框。
+6. **唯一归属原则**：原文text中的每一句话**有且只有一个归属**——要么放入气泡，要么放入说明框，严禁同一句话同时出现在气泡和说明框中。对话进气泡，旁白/叙事/心理描述等进说明框。如果一个格全是对话可以只有气泡，全是旁白可以只有说明框。
 7. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列，尽量减少气泡文字数量。你也可以不使用原文文案，但是意思表达出来就行。你也可以加一些声响词，比如 砰， 咚， 咔嚓， 之类的声响词
 8. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事
 9. 手机屏幕 / 电脑屏幕 / 平板 / 纸条 / 书本等媒介上显示的文字：这些不是气泡也不是说明框，而是画面内的视觉元素，应在动作/表情或场景描述中直接描述屏幕上的文字内容，例如：动作/表情：陆宴知手指微微收紧，手机屏幕冷光照亮指节，聊天界面上赫然显示谢依璇刚刚发送的信息：「今晚有空吗？」。严禁为此类媒介文字使用气泡或说明框
@@ -721,6 +727,7 @@ class StoryboardDescriptionWorker(QThread):
         settings_service: SettingsService,
         state_service: NovelComicStateService,
         chat_manager: MultiRoundChatManager | None = None,
+        single_batch: bool = False,
     ):
         super().__init__()
         self._storyboards = storyboards
@@ -729,6 +736,7 @@ class StoryboardDescriptionWorker(QThread):
         self._settings_service = settings_service
         self._state_service = state_service
         self._chat_manager = chat_manager
+        self._single_batch = single_batch
 
     def run(self) -> None:
         try:
@@ -750,10 +758,13 @@ class StoryboardDescriptionWorker(QThread):
             chat_mgr = self._chat_manager
             chat_caller = _make_chat_caller(config, chat_mgr)
 
-            batch_size = 5
-            batches: list[list[dict]] = []
-            for i in range(0, total, batch_size):
-                batches.append(self._storyboards[i:i + batch_size])
+            if self._single_batch:
+                batches = [self._storyboards]
+            else:
+                batch_size = 5
+                batches: list[list[dict]] = []
+                for i in range(0, total, batch_size):
+                    batches.append(self._storyboards[i:i + batch_size])
 
             def process_batch(batch: list[dict]) -> None:
                 try:
@@ -1276,12 +1287,96 @@ COMIC_STYLE_PRESETS = [
 ]
 
 
+class _SplitModeDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("选择拆分模式")
+        self.setFixedSize(420, 280)
+        self.setObjectName("splitModeDialog")
+        self._mode: str = "ai"
+        self._lines_per_storyboard: int = 2
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("分镜拆分方式")
+        title.setObjectName("dialogTitle")
+        layout.addWidget(title)
+
+        self._ai_radio = QRadioButton("AI智能分析")
+        self._ai_radio.setObjectName("splitModeRadio")
+        self._ai_radio.setChecked(True)
+        self._ai_radio.toggled.connect(self._on_mode_changed)
+        layout.addWidget(self._ai_radio)
+
+        ai_desc = QLabel("AI自动分析章节结构，按场景/情节智能拆分分镜")
+        ai_desc.setObjectName("dialogFieldLabel")
+        ai_desc.setStyleSheet("color: #94a3b8; font-size: 12px; padding-left: 24px;")
+        layout.addWidget(ai_desc)
+
+        self._manual_radio = QRadioButton("手动设置")
+        self._manual_radio.setObjectName("splitModeRadio")
+        self._manual_radio.toggled.connect(self._on_mode_changed)
+        layout.addWidget(self._manual_radio)
+
+        manual_row = QHBoxLayout()
+        manual_row.setContentsMargins(24, 0, 0, 0)
+        manual_row.setSpacing(8)
+
+        manual_hint = QLabel("合并规则：")
+        manual_hint.setObjectName("dialogFieldLabel")
+        manual_row.addWidget(manual_hint)
+
+        self._lines_combo = QComboBox()
+        self._lines_combo.setObjectName("splitModeCombo")
+        self._lines_combo.addItems(["2句1行", "3句1行", "4句1行", "5句1行"])
+        self._lines_combo.setFixedWidth(120)
+        self._lines_combo.setEnabled(False)
+        manual_row.addWidget(self._lines_combo)
+
+        layout.addLayout(manual_row)
+
+        layout.addStretch()
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setObjectName("dialogCancelBtn")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton("确定")
+        confirm_btn.setObjectName("dialogConfirmBtn")
+        confirm_btn.clicked.connect(self.accept)
+        btn_row.addWidget(confirm_btn)
+
+        layout.addLayout(btn_row)
+
+    def _on_mode_changed(self) -> None:
+        is_manual = self._manual_radio.isChecked()
+        self._lines_combo.setEnabled(is_manual)
+
+    @property
+    def mode(self) -> str:
+        return "manual" if self._manual_radio.isChecked() else "ai"
+
+    @property
+    def lines_per_storyboard(self) -> int:
+        text = self._lines_combo.currentText()
+        return {"2句1行": 2, "3句1行": 3, "4句1行": 4, "5句1行": 5}.get(text, 2)
+
+
 class _GenerateSettingsDialog(QDialog):
     def __init__(self, current_settings: dict, parent: QWidget | None = None):
         super().__init__(parent)
         self._settings = dict(current_settings)
         self.setWindowTitle("生图设置")
-        self.setFixedSize(560, 660)
+        self.setFixedSize(560, 700)
         self.setObjectName("genSettingsDialog")
         self._setup_ui()
 
@@ -1355,6 +1450,12 @@ class _GenerateSettingsDialog(QDialog):
         self._resolution_combo.setCurrentIndex(idx3 if idx3 >= 0 else 0)
         layout.addWidget(self._resolution_combo)
 
+        self._rewrite_cb = QCheckBox("失败时重新生成提示词重试")
+        self._rewrite_cb.setObjectName("genSettingsCheckbox")
+        self._rewrite_cb.setChecked(self._settings.get("prompt_rewrite", True))
+        self._rewrite_cb.setToolTip("生图失败时，自动调用AI文案模型重写提示词并重试（最多2次）")
+        layout.addWidget(self._rewrite_cb)
+
         prefix_label = QLabel("全局前缀提示词")
         prefix_label.setObjectName("dialogFieldLabel")
         layout.addWidget(prefix_label)
@@ -1402,11 +1503,232 @@ class _GenerateSettingsDialog(QDialog):
         self._settings["prefix"] = self._prefix_edit.toPlainText().strip()
         self._settings["aspect_ratio"] = self._ratio_combo.currentText()
         self._settings["resolution"] = self._resolution_combo.currentText()
+        self._settings["prompt_rewrite"] = self._rewrite_cb.isChecked()
         self.accept()
 
     @property
     def result(self) -> dict:
         return self._settings
+
+
+class _BatchRangeDialog(QDialog):
+    def __init__(self, max_index: int, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("指定生图区域")
+        self.setFixedSize(360, 240)
+        self.setObjectName("batchRangeDialog")
+        self._max_index = max_index
+        self._start = 1
+        self._end = min(5, max_index)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("指定生图区域")
+        title.setObjectName("dialogTitle")
+        layout.addWidget(title)
+
+        hint = QLabel(f"分镜总数：{self._max_index} 个")
+        hint.setObjectName("dialogFieldLabel")
+        layout.addWidget(hint)
+
+        start_row = QHBoxLayout()
+        start_row.setSpacing(12)
+
+        start_label = QLabel("开始分镜：")
+        start_label.setObjectName("dialogFieldLabel")
+        start_row.addWidget(start_label)
+
+        self._start_spin = QSpinBox()
+        self._start_spin.setObjectName("rangeSpinBox")
+        self._start_spin.setMinimum(1)
+        self._start_spin.setMaximum(self._max_index)
+        self._start_spin.setValue(self._start)
+        self._start_spin.setFixedWidth(100)
+        self._start_spin.setFixedHeight(36)
+        self._start_spin.valueChanged.connect(self._on_start_changed)
+        start_row.addWidget(self._start_spin)
+
+        start_row.addStretch()
+        layout.addLayout(start_row)
+
+        end_row = QHBoxLayout()
+        end_row.setSpacing(12)
+
+        end_label = QLabel("结束分镜：")
+        end_label.setObjectName("dialogFieldLabel")
+        end_row.addWidget(end_label)
+
+        self._end_spin = QSpinBox()
+        self._end_spin.setObjectName("rangeSpinBox")
+        self._end_spin.setMinimum(1)
+        self._end_spin.setMaximum(self._max_index)
+        self._end_spin.setValue(self._end)
+        self._end_spin.setFixedWidth(100)
+        self._end_spin.setFixedHeight(36)
+        self._end_spin.valueChanged.connect(self._on_end_changed)
+        end_row.addWidget(self._end_spin)
+
+        end_row.addStretch()
+        layout.addLayout(end_row)
+
+        layout.addStretch()
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setObjectName("dialogCancelBtn")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton("确定")
+        confirm_btn.setObjectName("dialogConfirmBtn")
+        confirm_btn.clicked.connect(self.accept)
+        btn_row.addWidget(confirm_btn)
+
+        layout.addLayout(btn_row)
+
+    def _on_start_changed(self, value: int) -> None:
+        if value > self._end_spin.value():
+            self._end_spin.setValue(value)
+
+    def _on_end_changed(self, value: int) -> None:
+        if value < self._start_spin.value():
+            self._start_spin.setValue(value)
+
+    @property
+    def start_index(self) -> int:
+        return self._start_spin.value()
+
+    @property
+    def end_index(self) -> int:
+        return self._end_spin.value()
+
+
+class _ExportDialog(QDialog):
+    def __init__(self, max_index: int, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("导出漫画图片")
+        self.setFixedSize(360, 260)
+        self.setObjectName("exportDialog")
+        self._max_index = max_index
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("导出漫画图片")
+        title.setObjectName("dialogTitle")
+        layout.addWidget(title)
+
+        self._all_radio = QRadioButton("全部导出")
+        self._all_radio.setObjectName("exportModeRadio")
+        self._all_radio.setChecked(True)
+        self._all_radio.toggled.connect(self._on_mode_changed)
+        layout.addWidget(self._all_radio)
+
+        self._range_radio = QRadioButton("指定区域")
+        self._range_radio.setObjectName("exportModeRadio")
+        self._range_radio.toggled.connect(self._on_mode_changed)
+        layout.addWidget(self._range_radio)
+
+        range_row = QHBoxLayout()
+        range_row.setContentsMargins(24, 0, 0, 0)
+        range_row.setSpacing(8)
+
+        start_label = QLabel("从")
+        start_label.setObjectName("dialogFieldLabel")
+        range_row.addWidget(start_label)
+
+        self._start_spin = QSpinBox()
+        self._start_spin.setObjectName("rangeSpinBox")
+        self._start_spin.setMinimum(1)
+        self._start_spin.setMaximum(self._max_index)
+        self._start_spin.setValue(1)
+        self._start_spin.setFixedWidth(80)
+        self._start_spin.setFixedHeight(32)
+        self._start_spin.setEnabled(False)
+        self._start_spin.valueChanged.connect(self._on_start_changed)
+        range_row.addWidget(self._start_spin)
+
+        to_label = QLabel("到")
+        to_label.setObjectName("dialogFieldLabel")
+        range_row.addWidget(to_label)
+
+        self._end_spin = QSpinBox()
+        self._end_spin.setObjectName("rangeSpinBox")
+        self._end_spin.setMinimum(1)
+        self._end_spin.setMaximum(self._max_index)
+        self._end_spin.setValue(min(5, self._max_index))
+        self._end_spin.setFixedWidth(80)
+        self._end_spin.setFixedHeight(32)
+        self._end_spin.setEnabled(False)
+        self._end_spin.valueChanged.connect(self._on_end_changed)
+        range_row.addWidget(self._end_spin)
+
+        range_row.addStretch()
+        layout.addLayout(range_row)
+
+        self._hint_label = QLabel(f"共 {self._max_index} 个分镜")
+        self._hint_label.setObjectName("dialogFieldLabel")
+        self._hint_label.setStyleSheet("color: #94a3b8; font-size: 12px; padding-left: 24px;")
+        layout.addWidget(self._hint_label)
+
+        layout.addStretch()
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setObjectName("dialogCancelBtn")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton("导出")
+        confirm_btn.setObjectName("dialogConfirmBtn")
+        confirm_btn.clicked.connect(self.accept)
+        btn_row.addWidget(confirm_btn)
+
+        layout.addLayout(btn_row)
+
+    def _on_mode_changed(self) -> None:
+        is_range = self._range_radio.isChecked()
+        self._start_spin.setEnabled(is_range)
+        self._end_spin.setEnabled(is_range)
+        if is_range:
+            self._hint_label.setText(f"分镜 {self._start_spin.value()} ~ {self._end_spin.value()}")
+        else:
+            self._hint_label.setText(f"共 {self._max_index} 个分镜")
+
+    def _on_start_changed(self, value: int) -> None:
+        if value > self._end_spin.value():
+            self._end_spin.setValue(value)
+        self._hint_label.setText(f"分镜 {self._start_spin.value()} ~ {self._end_spin.value()}")
+
+    def _on_end_changed(self, value: int) -> None:
+        if value < self._start_spin.value():
+            self._start_spin.setValue(value)
+        self._hint_label.setText(f"分镜 {self._start_spin.value()} ~ {self._end_spin.value()}")
+
+    @property
+    def is_all(self) -> bool:
+        return self._all_radio.isChecked()
+
+    @property
+    def start_index(self) -> int:
+        return self._start_spin.value()
+
+    @property
+    def end_index(self) -> int:
+        return self._end_spin.value()
 
 
 class NovelComicGeneratePage(QFrame):
@@ -1435,6 +1757,7 @@ class NovelComicGeneratePage(QFrame):
         self._batch_comic_total = 0
         self._batch_comic_ctr: list[int] = [0]
         self._comic_poll_timer: object | None = None
+        self._split_mode: str = "ai"
         self.setObjectName("novelComicGeneratePage")
         self.comic_image_generated.connect(self._on_comic_image_generated)
         self._setup_ui()
@@ -1539,17 +1862,29 @@ class NovelComicGeneratePage(QFrame):
         if not project:
             return
 
+        dialog = _ExportDialog(len(self._storyboards), self.window())
+        if dialog.exec() != QDialog.Accepted:
+            return
+
         images_dir = self._images_dir()
+
+        target_indices: set[int] = set()
+        if dialog.is_all:
+            target_indices = {sb["index"] for sb in self._storyboards}
+        else:
+            target_indices = set(range(dialog.start_index, dialog.end_index + 1))
+
         missing_indices: list[int] = []
-        for sb in self._storyboards:
-            img = sb.get("generated_image", "")
+        for idx in sorted(target_indices):
+            sb = next((s for s in self._storyboards if s["index"] == idx), None)
+            img = sb.get("generated_image", "") if sb else ""
             if img and Path(img).exists():
                 continue
-            base = images_dir / f"comic_panel_{sb['index']}"
-            matches = sorted(images_dir.glob(f"comic_panel_{sb['index']}_*.png"),
+            base = images_dir / f"comic_panel_{idx}"
+            matches = sorted(images_dir.glob(f"comic_panel_{idx}_*.png"),
                              key=lambda p: p.stat().st_mtime, reverse=True)
             if not matches:
-                missing_indices.append(sb["index"])
+                missing_indices.append(idx)
 
         if missing_indices:
             names = "、".join(f"#{i}" for i in missing_indices)
@@ -1571,15 +1906,16 @@ class NovelComicGeneratePage(QFrame):
             return
 
         image_files: list[tuple[int, Path]] = []
-        for sb in self._storyboards:
-            img = sb.get("generated_image", "")
+        for idx in sorted(target_indices):
+            sb = next((s for s in self._storyboards if s["index"] == idx), None)
+            img = sb.get("generated_image", "") if sb else ""
             if img and Path(img).exists():
-                image_files.append((sb["index"], Path(img)))
+                image_files.append((idx, Path(img)))
             else:
-                matches = sorted(images_dir.glob(f"comic_panel_{sb['index']}_*.png"),
+                matches = sorted(images_dir.glob(f"comic_panel_{idx}_*.png"),
                                  key=lambda p: p.stat().st_mtime, reverse=True)
                 if matches:
-                    image_files.append((sb["index"], matches[0]))
+                    image_files.append((idx, matches[0]))
 
         image_files.sort(key=lambda x: x[0])
         try:
@@ -1658,10 +1994,10 @@ class NovelComicGeneratePage(QFrame):
         self._match_status.setObjectName("assetExtractStatus")
         bar_layout.addWidget(self._match_status)
 
-        self._desc_gen_btn = QPushButton("\U0001f4c4  生成分镜描述")
+        self._desc_gen_btn = QPushButton("\U0001f4c4  生成分镜描述 \u25be")
         self._desc_gen_btn.setObjectName("comicGenActionBtn")
         self._desc_gen_btn.setCursor(Qt.PointingHandCursor)
-        self._desc_gen_btn.clicked.connect(self._on_generate_descriptions)
+        self._desc_gen_btn.clicked.connect(self._on_desc_gen_menu)
         bar_layout.addWidget(self._desc_gen_btn)
 
         self._desc_status = QLabel("")
@@ -1758,6 +2094,16 @@ class NovelComicGeneratePage(QFrame):
             self._split_status.setStyleSheet("color: #f87171;")
             return
 
+        dialog = _SplitModeDialog(self.window())
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        if dialog.mode == "manual":
+            self._split_mode = "manual"
+            self._manual_split_storyboards(chapter_text, dialog.lines_per_storyboard)
+            return
+
+        self._split_mode = "ai"
         self._split_status.setText("拆分中...")
         self._split_status.setStyleSheet("color: #4fc3f7;")
 
@@ -1790,6 +2136,42 @@ class NovelComicGeneratePage(QFrame):
     def _on_split_error(self, error_msg: str) -> None:
         self._split_status.setText(f"拆分失败: {error_msg}")
         self._split_status.setStyleSheet("color: #f87171;")
+
+    def _manual_split_storyboards(self, chapter_text: str, lines_per_sb: int) -> None:
+        import re as _re
+        sentences = _re.split(r'(?<=[。！？\n])\s*', chapter_text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        if not sentences:
+            self._split_status.setText("文本中没有找到有效句子")
+            self._split_status.setStyleSheet("color: #f87171;")
+            return
+
+        groups: list[list[str]] = []
+        for i in range(0, len(sentences), lines_per_sb):
+            group = sentences[i:i + lines_per_sb]
+            groups.append(group)
+
+        storyboards: list[dict] = []
+        for idx, group in enumerate(groups, start=1):
+            cleaned = [s.rstrip("。！？，、；：，.!?,;:…~\n\r ") for s in group]
+            merged_text = "。".join(cleaned).rstrip("。！？，、；：，.!?,;:…~")
+            storyboards.append({
+                "index": idx,
+                "text": merged_text,
+                "panel_count_suggestion": 2,
+                "present_characters": [],
+                "bubbles": [],
+                "narrative": [],
+                "summary": "",
+                "description": "",
+                "assets": [],
+            })
+
+        self._storyboards = storyboards
+        self._save_storyboards()
+        self._refresh_storyboard_list()
+        self._split_status.setText(f"手动拆分完成，共 {len(storyboards)} 个分镜")
+        self._split_status.setStyleSheet("color: #4ade80;")
 
     def _get_flattened_asset_names(self) -> dict:
         project = self._state_service.load_project(self._project_id)
@@ -1860,8 +2242,29 @@ class NovelComicGeneratePage(QFrame):
         self._match_status.setText(f"匹配失败: {error_msg}")
         self._match_status.setStyleSheet("color: #f87171;")
 
-    def _on_generate_descriptions(self) -> None:
+    def _on_desc_gen_menu(self) -> None:
         if not self._storyboards:
+            return
+        menu = QMenu(self)
+        menu.setObjectName("batchGenMenu")
+
+        all_action = menu.addAction("全部生成")
+        all_action.triggered.connect(lambda: self._on_generate_descriptions(False))
+
+        missing_action = menu.addAction("仅缺失")
+        missing_action.triggered.connect(lambda: self._on_generate_descriptions(True))
+
+        pos = self._desc_gen_btn.mapToGlobal(self._desc_gen_btn.rect().bottomLeft())
+        menu.exec(pos)
+
+    def _on_generate_descriptions(self, missing_only: bool = False) -> None:
+        if not self._storyboards:
+            return
+
+        target = [sb for sb in self._storyboards if not missing_only or not sb.get("description")]
+        if not target:
+            self._desc_status.setText("所有分镜已有描述，无需生成")
+            self._desc_status.setStyleSheet("color: #f87171;")
             return
 
         self._desc_status.setText("生成中...")
@@ -1869,10 +2272,11 @@ class NovelComicGeneratePage(QFrame):
 
         key = _worker_key(self._project_id, self._episode_num, "desc")
         worker = StoryboardDescriptionWorker(
-            self._storyboards,
+            target,
             self._project_id, self._episode_num,
             self._settings_service, self._state_service,
             chat_manager=self._get_chat_manager(),
+            single_batch=(self._split_mode == "manual"),
         )
         _running_workers[key] = worker
         self._desc_worker = worker
@@ -1985,12 +2389,17 @@ class NovelComicGeneratePage(QFrame):
             api_type=settings.image_model.api_type,
             api_provider=settings.image_model.api_provider,
         )
+        image_text_config = AIModelConfig(
+            model_name=settings.text_model.model_name,
+            api_key=settings.text_model.api_key,
+            base_url=settings.text_model.base_url,
+        )
         if not image_config.is_configured:
             self._show_alert("无法生成", "请先在系统配置中设置图片生成模型")
             return
 
         project = self._state_service.load_project(self._project_id)
-        gen_settings = project.extra_data.get("gen_settings", {}) if project else {}
+        gen_settings = self._gen_settings
 
         prompt, size, reference_paths = self._build_comic_prompt(sb, project, gen_settings, page_num=sb.get("index", 1))
 
@@ -2020,7 +2429,9 @@ class NovelComicGeneratePage(QFrame):
             size=size,
             reference_images=reference_paths if reference_paths else None,
             resolution=gen_settings.get("resolution"),
-            aspect_ratio=gen_settings.get("aspect_ratio"),
+            aspect_ratio=gen_settings.get("aspect_ratio", "3:4"),
+            text_model_config=image_text_config,
+            prompt_rewrite=gen_settings.get("prompt_rewrite", True),
         )
 
     def _on_history_images(self, storyboard_index: int) -> None:
@@ -2148,6 +2559,9 @@ class NovelComicGeneratePage(QFrame):
         missing_action = menu.addAction("仅生成缺失图片")
         missing_action.triggered.connect(self._on_batch_generate_missing)
 
+        range_action = menu.addAction("指定区域")
+        range_action.triggered.connect(self._on_batch_generate_range)
+
         pos = self._batch_btn.mapToGlobal(self._batch_btn.rect().bottomLeft())
         menu.exec(pos)
 
@@ -2157,9 +2571,13 @@ class NovelComicGeneratePage(QFrame):
     def _on_batch_generate_missing(self) -> None:
         self._run_batch_comic_gen(missing_only=True)
 
-    def _run_batch_comic_gen(self, missing_only: bool) -> None:
+    def _on_batch_generate_range(self) -> None:
+        dialog = _BatchRangeDialog(len(self._storyboards), self.window())
+        if dialog.exec() == QDialog.Accepted:
+            self._run_batch_comic_gen(missing_only=False, index_range=(dialog.start_index, dialog.end_index))
+
+    def _run_batch_comic_gen(self, missing_only: bool, index_range: tuple[int, int] | None = None) -> None:
         project = self._state_service.load_project(self._project_id)
-        gen_settings = project.extra_data.get("gen_settings", {}) if project else {}
 
         settings = self._settings_service.load()
         image_config = AIModelConfig(
@@ -2168,6 +2586,11 @@ class NovelComicGeneratePage(QFrame):
             base_url=settings.image_model.base_url,
             api_type=settings.image_model.api_type,
             api_provider=settings.image_model.api_provider,
+        )
+        image_text_config = AIModelConfig(
+            model_name=settings.text_model.model_name,
+            api_key=settings.text_model.api_key,
+            base_url=settings.text_model.base_url,
         )
         if not image_config.is_configured:
             self._show_alert("无法生成", "请先在系统配置中设置图片生成模型")
@@ -2179,6 +2602,8 @@ class NovelComicGeneratePage(QFrame):
                 continue
             if missing_only and sb.get("generated_image") and Path(sb["generated_image"]).exists():
                 continue
+            if index_range is not None and (sb["index"] < index_range[0] or sb["index"] > index_range[1]):
+                continue
             targets.append(sb)
 
         if not targets:
@@ -2186,6 +2611,7 @@ class NovelComicGeneratePage(QFrame):
             self._desc_status.setStyleSheet("color: #f87171;")
             return
 
+        gen_settings = self._gen_settings
         concurrency = gen_settings.get("concurrency", 3)
         ImageGenService.instance().set_concurrency(concurrency)
 
@@ -2235,7 +2661,9 @@ class NovelComicGeneratePage(QFrame):
                 size=size,
                 reference_images=batch_refs,
                 resolution=gen_settings.get("resolution"),
-                aspect_ratio=gen_settings.get("aspect_ratio"),
+                aspect_ratio=gen_settings.get("aspect_ratio", "3:4"),
+                text_model_config=image_text_config,
+                prompt_rewrite=gen_settings.get("prompt_rewrite", True),
             )
 
     def _build_comic_prompt(
@@ -3708,6 +4136,11 @@ class _AssetManagementDialog(QDialog):
             api_type=settings.image_model.api_type,
             api_provider=settings.image_model.api_provider,
         )
+        image_text_config = AIModelConfig(
+            model_name=settings.text_model.model_name,
+            api_key=settings.text_model.api_key,
+            base_url=settings.text_model.base_url,
+        )
         if not image_config.is_configured:
             self._extract_status.setText("请先在系统配置中设置图片生成模型")
             self._extract_status.setStyleSheet("color: #f87171;")
@@ -3756,6 +4189,8 @@ class _AssetManagementDialog(QDialog):
             reference_images=reference_images,
             resolution=resolution,
             aspect_ratio="1:1",
+            text_model_config=image_text_config,
+            prompt_rewrite=gen_settings.get("prompt_rewrite", True),
         )
 
     def _on_asset_image_generated(self, asset_name: str, image_path: str) -> None:
@@ -3894,6 +4329,11 @@ class _AssetManagementDialog(QDialog):
             api_type=settings.image_model.api_type,
             api_provider=settings.image_model.api_provider,
         )
+        image_text_config = AIModelConfig(
+            model_name=settings.text_model.model_name,
+            api_key=settings.text_model.api_key,
+            base_url=settings.text_model.base_url,
+        )
         if not image_config.is_configured:
             self._extract_status.setText("请先在系统配置中设置图片生成模型")
             self._extract_status.setStyleSheet("color: #f87171;")
@@ -4002,6 +4442,8 @@ class _AssetManagementDialog(QDialog):
                 reference_images=reference_images,
                 resolution=resolution,
                 aspect_ratio="1:1",
+                text_model_config=image_text_config,
+                prompt_rewrite=gen_settings.get("prompt_rewrite", True),
             )
 
 

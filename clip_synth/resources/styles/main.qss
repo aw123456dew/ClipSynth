@@ -619,6 +619,319 @@ QComboBox::down-arrow {
         stop:0 #4338ca, stop:1 #4f46e5);
 }
 
+/* ===== Split Mode Dialog ===== */
+#splitModeDialog {
+    background-color: #0f1525;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#splitModeDialog #dialogTitle {
+    color: #f1f5f9;
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+#splitModeDialog #dialogFieldLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#splitModeRadio {
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 600;
+    spacing: 8px;
+    padding: 6px 0;
+}
+
+#splitModeRadio::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 10px;
+    border: 2px solid #475569;
+    background-color: #0a0f1a;
+}
+
+#splitModeRadio::indicator:checked {
+    border: 2px solid #6366f1;
+    background-color: #6366f1;
+}
+
+#splitModeRadio::indicator:hover {
+    border-color: #818cf8;
+}
+
+#splitModeCombo {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    min-height: 24px;
+}
+
+#splitModeCombo:disabled {
+    color: #475569;
+    border-color: #1a2340;
+}
+
+#splitModeCombo::drop-down {
+    border: none;
+    width: 24px;
+}
+
+#splitModeCombo::down-arrow {
+    image: none;
+    border: none;
+}
+
+#splitModeCombo QAbstractItemView {
+    background-color: #0f1525;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px;
+    outline: none;
+}
+
+#splitModeCombo QAbstractItemView::item {
+    padding: 6px 12px;
+    border-radius: 4px;
+}
+
+#splitModeCombo QAbstractItemView::item:selected {
+    background-color: #1e3260;
+    color: #4fc3f7;
+}
+
+#splitModeCombo QAbstractItemView::item:hover {
+    background-color: #1a2340;
+}
+
+/* ===== Gen Settings Dialog ===== */
+#genSettingsCheckbox {
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 600;
+    spacing: 8px;
+    padding: 6px 0;
+}
+
+#genSettingsCheckbox::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 2px solid #475569;
+    background-color: #0a0f1a;
+}
+
+#genSettingsCheckbox::indicator:checked {
+    border: 2px solid #6366f1;
+    background-color: #6366f1;
+}
+
+#genSettingsCheckbox::indicator:hover {
+    border-color: #818cf8;
+}
+
+/* ===== Batch Range Dialog ===== */
+#batchRangeDialog {
+    background-color: #0f1525;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#batchRangeDialog #dialogTitle {
+    color: #f1f5f9;
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+#batchRangeDialog #dialogFieldLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#rangeSpinBox {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#rangeSpinBox:focus {
+    border-color: #6366f1;
+}
+
+#rangeSpinBox::up-button {
+    border: none;
+    background-color: #1a2340;
+    border-radius: 3px;
+    width: 20px;
+    subcontrol-position: top right;
+    subcontrol-origin: border;
+}
+
+#rangeSpinBox::down-button {
+    border: none;
+    background-color: #1a2340;
+    border-radius: 3px;
+    width: 20px;
+    subcontrol-position: bottom right;
+    subcontrol-origin: border;
+}
+
+#rangeSpinBox::up-arrow {
+    image: none;
+    border: none;
+}
+
+#rangeSpinBox::down-arrow {
+    image: none;
+    border: none;
+}
+
+/* ===== Export Dialog ===== */
+#exportDialog {
+    background-color: #0f1525;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#exportDialog #dialogTitle {
+    color: #f1f5f9;
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+#exportDialog #dialogFieldLabel {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#exportModeRadio {
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 600;
+    spacing: 8px;
+    padding: 6px 0;
+}
+
+#exportModeRadio::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 10px;
+    border: 2px solid #475569;
+    background-color: #0a0f1a;
+}
+
+#exportModeRadio::indicator:checked {
+    border: 2px solid #6366f1;
+    background-color: #6366f1;
+}
+
+#exportModeRadio::indicator:hover {
+    border-color: #818cf8;
+}
+
+/* ===== Login Dialog ===== */
+#loginDialog {
+    background-color: #0f1525;
+    border: 1px solid #1a2340;
+    border-radius: 12px;
+}
+
+#loginTitle {
+    color: #f1f5f9;
+    font-size: 22px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+#loginSubtitle {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#loginNotice {
+    color: #fbbf24;
+    font-size: 12px;
+    font-weight: 500;
+    background-color: #1a1500;
+    border: 1px solid #3d3200;
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+#loginInput {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: "Consolas", "Courier New", monospace;
+    min-height: 20px;
+}
+
+#loginInput:focus {
+    border-color: #6366f1;
+    background-color: #0d1225;
+}
+
+#loginInput::placeholder {
+    color: #475569;
+    font-weight: 400;
+    font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+}
+
+#loginStatus {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 500;
+    min-height: 20px;
+}
+
+#loginConfirmBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4f46e5, stop:1 #6366f1);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 40px;
+    font-size: 14px;
+    font-weight: 700;
+    min-height: 20px;
+}
+
+#loginConfirmBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #6366f1, stop:1 #818cf8);
+}
+
+#loginConfirmBtn:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #4338ca, stop:1 #4f46e5);
+}
+
+#loginConfirmBtn:disabled {
+    background: #334155;
+    color: #64748b;
+}
+
 /* ===== Short Drama Mix Page ===== */
 #shortDramaMixPage {
     background-color: #0a0e17;

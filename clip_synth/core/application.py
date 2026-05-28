@@ -42,17 +42,22 @@ class Application:
         add_ffmpeg_to_path()
         _patch_pyjianying_assets()
 
-        self._qt_app = QApplication(sys.argv)
+        existing_app = QApplication.instance()
+        if existing_app:
+            self._qt_app = existing_app
+        else:
+            self._qt_app = QApplication(sys.argv)
+            self._qt_app.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
+
         self._qt_app.setApplicationName("ClipSynth")
         self._qt_app.setOrganizationName("ClipSynth")
-        self._qt_app.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
 
-        # 设置应用图标（标题栏 + 任务栏）
         icon_path = get_resource_path("clip_synth/resources/icons/icon.ico")
         if os.path.exists(icon_path):
             self._qt_app.setWindowIcon(QIcon(icon_path))
 
-        self._load_stylesheet()
+        if not existing_app:
+            self._load_stylesheet()
 
         self._db_manager = DatabaseManager()
         self._db_manager.initialize()

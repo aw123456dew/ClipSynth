@@ -9,7 +9,7 @@ logger = logging.getLogger("clip_synth.image_gen")
 
 
 class ImageGenTask:
-    __slots__ = ("task_id", "config", "prompt", "on_done", "on_error", "size", "reference_images", "resolution", "aspect_ratio")
+    __slots__ = ("task_id", "config", "prompt", "on_done", "on_error", "size", "reference_images", "resolution", "aspect_ratio", "text_model_config", "prompt_rewrite")
 
     def __init__(
         self,
@@ -22,6 +22,8 @@ class ImageGenTask:
         reference_images: list[str] | None = None,
         resolution: str | None = None,
         aspect_ratio: str | None = None,
+        text_model_config: AIModelConfig | None = None,
+        prompt_rewrite: bool = False,
     ):
         self.task_id = task_id
         self.config = config
@@ -32,6 +34,8 @@ class ImageGenTask:
         self.reference_images = reference_images
         self.resolution = resolution
         self.aspect_ratio = aspect_ratio
+        self.text_model_config = text_model_config
+        self.prompt_rewrite = prompt_rewrite
 
 
 class ImageGenService:
@@ -81,12 +85,14 @@ class ImageGenService:
         reference_images: list[str] | None = None,
         resolution: str | None = None,
         aspect_ratio: str | None = None,
+        text_model_config: AIModelConfig | None = None,
+        prompt_rewrite: bool = False,
     ) -> int:
         with self._counter_lock:
             task_id = self._task_counter
             self._task_counter += 1
 
-        task = ImageGenTask(task_id, config, prompt, on_done, on_error, size, reference_images, resolution, aspect_ratio)
+        task = ImageGenTask(task_id, config, prompt, on_done, on_error, size, reference_images, resolution, aspect_ratio, text_model_config, prompt_rewrite)
         self._task_queue.put(task)
         self._started = True
         self._ensure_workers()
@@ -117,11 +123,13 @@ class ImageGenService:
             try:
                 logger.info("生图任务 #%d 开始: %s", task.task_id, task.prompt[:60])
                 service = AIService(task.config)
-                max_retries = 2
-                for attempt in range(max_retries + 1):
+                current_prompt = task.prompt
+                max_rewrites = 2
+                rewrite_count = 0
+                for attempt in range(max_rewrites + 1):
                     try:
                         image_data = service.generate_image(
-                            prompt=task.prompt,
+                            prompt=current_prompt,
                             size=task.size,
                             reference_images=task.reference_images,
                             resolution=task.resolution,
@@ -130,13 +138,28 @@ class ImageGenService:
                         break
                     except Exception as e:
                         is_timeout = "timeout" in str(e).lower() or "timed out" in str(e).lower()
-                        if is_timeout and attempt < max_retries:
+                        if is_timeout and attempt < max_rewrites:
                             wait = (attempt + 1) * 15
                             logger.warning(
                                 "生图任务 #%d 超时 (attempt %d/%d), %ds 后重试...",
-                                task.task_id, attempt + 1, max_retries + 1, wait,
+                                task.task_id, attempt + 1, max_rewrites + 1, wait,
                             )
                             time.sleep(wait)
+                        elif not is_timeout and task.text_model_config and task.prompt_rewrite and rewrite_count < max_rewrites:
+                            rewrite_count += 1
+                            logger.info(
+                                "生图任务 #%d 失败 (attempt %d/%d), 尝试 AI 重写提示词...",
+                                task.task_id, attempt + 1, max_rewrites + 1,
+                            )
+                            new_prompt = AIService.rewrite_prompt(
+                                task.text_model_config, current_prompt, str(e),
+                            )
+                            if new_prompt and new_prompt != current_prompt:
+                                current_prompt = new_prompt
+                                logger.info("生图任务 #%d 提示词已重写, 重试...", task.task_id)
+                                continue
+                            else:
+                                raise
                         else:
                             raise
                 logger.info("生图任务 #%d 完成, 大小=%d bytes", task.task_id, len(image_data))

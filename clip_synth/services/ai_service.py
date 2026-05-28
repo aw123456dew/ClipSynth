@@ -622,6 +622,7 @@ class AIService:
             "size": ratio,
             "resolution": resolution,
             "response_format": "url",
+            "moderation": "low",
         }
         if ref_urls:
             gen_body["reference_images"] = ref_urls
@@ -744,7 +745,8 @@ class AIService:
             "aspectRatio": aspect_ratio or "1:1",
             "imageSize": resolution or "1K",
             "urls": urls,
-            "webHook": "-1"
+            "webHook": "-1",
+            "moderation": "low",
         }
         call_url = f"{base_url}/v1/draw/nano-banana"
         if self._config.api_type == 'openai':
@@ -798,6 +800,62 @@ class AIService:
                 raise RuntimeError(f"Grasai 生图失败: {error_msg}")
 
         raise TimeoutError("Grasai 生图任务超时 (900s)")
+
+    @staticmethod
+    def rewrite_prompt(
+        text_model_config: "AIModelConfig",
+        failed_prompt: str,
+        error_info: str,
+    ) -> str | None:
+        import httpx
+        import json as _json
+
+        base_url = text_model_config.base_url.rstrip("/")
+        headers = {
+            "Authorization": f"Bearer {text_model_config.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        system_prompt = (
+            "你是一个漫画生图提示词优化专家。用户给你的提示词在图片生成时被内容审核拦截了，"
+            "请你分析可能存在的违规内容（血腥、暴力、色情、敏感词汇等），"
+            "将其改写为合规但不改变画面构图和核心叙事的表达方式。"
+            "只输出优化后的提示词文本，不要任何解释、不要任何 Markdown 格式。"
+        )
+
+        user_prompt = (
+            f"原始提示词：\n{failed_prompt}\n\n"
+            f"错误信息：\n{error_info}\n\n"
+            "请输出优化后的提示词："
+        )
+
+        body = {
+            "model": text_model_config.model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.7,
+        }
+
+        try:
+            with httpx.Client(timeout=httpx.Timeout(60)) as http:
+                resp = http.post(
+                    f"{base_url}/chat/completions",
+                    headers=headers,
+                    json=body,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if content and len(content) > 10:
+                    logger.info("AI 重写提示词成功，长度 %d -> %d", len(failed_prompt), len(content))
+                    return content
+                logger.warning("AI 重写提示词返回内容过短或为空")
+                return None
+        except Exception as e:
+            logger.warning("AI 重写提示词失败: %s", e)
+            return None
 
 
 class MultiRoundChatManager:

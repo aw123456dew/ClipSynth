@@ -70,7 +70,9 @@ class NovelComicStateService:
         import re as _re
         def _clean(v):
             if isinstance(v, str):
-                return _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", v)
+                v = _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", v)
+                v = v.encode("utf-8", errors="replace").decode("utf-8")
+                return v
             if isinstance(v, dict):
                 return {k: _clean(v) for k, v in v.items()}
             if isinstance(v, list):
@@ -85,12 +87,17 @@ class NovelComicStateService:
 
         try:
             raw = file_path.read_text(encoding="utf-8")
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError as e:
-                logger.error("项目 JSON 文件损坏，无法加载: %s - %s", file_path, str(e))
-                return None
+        except UnicodeDecodeError:
+            raw = file_path.read_text(encoding="utf-8", errors="replace")
+            file_path.write_text(raw, encoding="utf-8")
 
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.error("项目 JSON 文件损坏，无法加载: %s - %s", file_path, str(e))
+            return None
+
+        try:
             chapters = [
                 NovelComicChapterState.from_dict(ch)
                 for ch in data.get("chapters", [])
