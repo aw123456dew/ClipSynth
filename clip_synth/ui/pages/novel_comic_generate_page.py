@@ -750,7 +750,7 @@ class StoryboardDescriptionWorker(QThread):
             )
 
             total = len(self._storyboards)
-            results: list[dict | None] = [None] * total
+            results: dict[int, dict] = {}
             errors: list[str] = []
             lock = threading.Lock()
             done_ctr = [0]
@@ -821,7 +821,7 @@ class StoryboardDescriptionWorker(QThread):
                         for sb in batch:
                             idx = sb["index"]
                             desc = desc_map.get(idx, "")
-                            results[idx - 1] = {"index": idx, "description": desc}
+                            results[idx] = {"index": idx, "description": desc}
                             sb["description"] = desc
                             done_ctr[0] += 1
                             self.progress.emit(idx, done_ctr[0], total, desc)
@@ -836,7 +836,7 @@ class StoryboardDescriptionWorker(QThread):
                         errors.append(str(e))
                         for sb in batch:
                             sb["description"] = ""
-                            results[sb["index"] - 1] = {"index": sb["index"], "description": ""}
+                            results[sb["index"]] = {"index": sb["index"], "description": ""}
                             done_ctr[0] += 1
                             self.progress.emit(sb["index"], done_ctr[0], total, "")
 
@@ -847,10 +847,7 @@ class StoryboardDescriptionWorker(QThread):
             if errors:
                 raise RuntimeError(f"{len(errors)}/{total} 个分镜生成失败: {errors[0]}")
 
-            _save_project_storyboards(
-                self._state_service, self._project_id, self._episode_num, self._storyboards,
-            )
-            self.finished.emit(results)
+            self.finished.emit(list(results.values()))
 
         except Exception as e:
             logger.error("分镜描述生成失败: %s", str(e), exc_info=True)
@@ -2305,6 +2302,7 @@ class NovelComicGeneratePage(QFrame):
     def _on_desc_finished(self, descriptions: list[dict]) -> None:
         self._desc_status.setText(f"生成完成，{len(self._storyboards)} 个分镜")
         self._desc_status.setStyleSheet("color: #4ade80;")
+        self._save_storyboards()
         for sb in self._storyboards:
             self._refresh_single_card(sb["index"])
 
