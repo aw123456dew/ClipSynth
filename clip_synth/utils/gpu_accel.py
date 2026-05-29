@@ -25,6 +25,10 @@ def _run_capture(cmd: list) -> str:
         return ""
 
 
+def is_gpu_accel_enabled() -> bool:
+    return _gpu_accel_enabled
+
+
 def set_gpu_accel_enabled(enabled: bool) -> None:
     global _gpu_accel_enabled
     _gpu_accel_enabled = enabled

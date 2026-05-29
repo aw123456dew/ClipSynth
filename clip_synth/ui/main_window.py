@@ -29,7 +29,7 @@ class MainWindow(QMainWindow):
         self._setup_status_bar()
 
     def _setup_window(self) -> None:
-        self.setWindowTitle("ClipSynth - AI Video Editor")
+        self.setWindowTitle("AI推")
         self.resize(1200, 800)
         self.setMinimumSize(1200, 800)
 
@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(redo_action)
 
         help_menu = menu_bar.addMenu("&Help")
-        about_action = QAction("&About ClipSynth", self)
+        about_action = QAction("&About AI推", self)
         about_action.triggered.connect(self._on_about)
         help_menu.addAction(about_action)
 

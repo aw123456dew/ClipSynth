@@ -101,6 +101,26 @@ class VideoCutWorker(QThread):
         self.all_finished.emit()
 
     def _process_single_video(self, video_path: str) -> None:
+        from clip_synth.utils.gpu_accel import detect_gpu, get_video_encoder_args, is_gpu_accel_enabled
+
+        gpu_enabled = is_gpu_accel_enabled()
+        gpu_info = detect_gpu()
+        gpu_type = gpu_info["type"] if gpu_enabled else "none"
+
+        if gpu_type == "nvidia":
+            hwaccel = "cuda"
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "hwaccel;cuda"
+        elif gpu_type == "amd":
+            hwaccel = "dxva2"
+        elif gpu_type == "intel":
+            hwaccel = "qsv"
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "hwaccel;qsv"
+        else:
+            hwaccel = "none"
+
+        encoder_args = get_video_encoder_args()
+        logger.info("视频处理 GPU: enabled=%s, type=%s, hwaccel=%s, encoder_args=%s", gpu_enabled, gpu_type, hwaccel, encoder_args)
+
         from scenedetect import open_video, SceneManager
         from scenedetect.detectors import AdaptiveDetector, ContentDetector, ThresholdDetector
 
@@ -164,10 +184,11 @@ class VideoCutWorker(QThread):
 
             cmd = [
                 "ffmpeg", "-y",
+                "-hwaccel", hwaccel,
                 "-i", video_path,
                 "-ss", str(start_sec),
                 "-t", str(duration),
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+            ] + encoder_args + [
                 "-map", "0:v:0",
                 "-an",
                 out_path,

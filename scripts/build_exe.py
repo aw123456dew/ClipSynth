@@ -141,7 +141,7 @@ def check_ffmpeg_version(ffmpeg_path: str) -> None:
 def run_pyinstaller(
     console: bool = False,
     clean: bool = False,
-    exe_name: str = "ClipSynth",
+    exe_name: str = "AI推",
     icon_path: str | None = None,
     upx_dir: str | None = None,
 ) -> None:

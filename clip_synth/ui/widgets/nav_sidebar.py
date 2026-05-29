@@ -78,7 +78,7 @@ class NavSidebar(QFrame):
         header_layout = QVBoxLayout(header)
         header_layout.setAlignment(Qt.AlignCenter)
 
-        logo = QLabel("ClipSynth")
+        logo = QLabel("AI推")
         logo.setObjectName("navLogo")
         logo.setAlignment(Qt.AlignCenter)
         header_layout.addWidget(logo)

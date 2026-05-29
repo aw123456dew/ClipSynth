@@ -49,8 +49,8 @@ class Application:
             self._qt_app = QApplication(sys.argv)
             self._qt_app.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
 
-        self._qt_app.setApplicationName("ClipSynth")
-        self._qt_app.setOrganizationName("ClipSynth")
+        self._qt_app.setApplicationName("AI推")
+        self._qt_app.setOrganizationName("AI推")
 
         icon_path = get_resource_path("clip_synth/resources/icons/icon.ico")
         if os.path.exists(icon_path):
