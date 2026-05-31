@@ -1054,6 +1054,12 @@ def _image_size_from_settings(ratio: str, resolution: str) -> str:
     if ratio == "9:16":
         w = 576 * factor
         h = 1024 * factor
+    elif ratio == "16:9":
+        w = 1024 * factor
+        h = 576 * factor
+    elif ratio == "1:1":
+        w = 768 * factor
+        h = 768 * factor
     else:
         w = 768 * factor
         h = 1024 * factor
@@ -1446,7 +1452,7 @@ class _GenerateSettingsDialog(QDialog):
 
         self._ratio_combo = QComboBox()
         self._ratio_combo.setObjectName("genSettingsCombo")
-        self._ratio_combo.addItems(["3:4", "9:16"])
+        self._ratio_combo.addItems(["3:4", "9:16", "1:1", "16:9"])
         self._ratio_combo.setFixedHeight(36)
         saved_ratio = self._settings.get("aspect_ratio", "3:4")
         idx2 = self._ratio_combo.findText(saved_ratio)
@@ -3710,11 +3716,13 @@ class _AssetManagementDialog(QDialog):
         state_service: NovelComicStateService,
         settings_service: SettingsService,
         parent: QWidget | None = None,
+        dubbed_text: str = "",
     ):
         super().__init__(parent)
         self._project_id = project_id
         self._episode_num = episode_num
         self._chapter_text = chapter_text
+        self._dubbed_text = dubbed_text
         self._state_service = state_service
         self._settings_service = settings_service
         self._worker: AssetExtractWorker | None = None
@@ -3949,7 +3957,8 @@ class _AssetManagementDialog(QDialog):
         self._state_service.save_project(project)
 
     def _on_extract_assets(self) -> None:
-        if not self._chapter_text.strip():
+        text = self._dubbed_text or self._chapter_text
+        if not text.strip():
             self._extract_status.setText("没有可提取的文本内容")
             self._extract_status.setStyleSheet("color: #f87171;")
             return
@@ -3957,8 +3966,12 @@ class _AssetManagementDialog(QDialog):
         self._extract_status.setText("提取中...")
         self._extract_status.setStyleSheet("color: #4fc3f7;")
 
-        cm = self._get_chat_manager()
-        self._worker = AssetExtractWorker(self._chapter_text, self._settings_service, chat_manager=cm)
+        if self._dubbed_text:
+            from clip_synth.ui.pages.comic_video_page import ComicVideoAssetExtractWorker as Worker
+            self._worker = Worker(self._dubbed_text, self._settings_service)
+        else:
+            cm = self._get_chat_manager()
+            self._worker = AssetExtractWorker(self._chapter_text, self._settings_service, chat_manager=cm)
         self._worker.finished.connect(self._on_extract_finished)
         self._worker.error.connect(self._on_extract_error)
         self._worker.start()

@@ -127,6 +127,7 @@ class NovelComicChapterPage(QFrame):
     back_to_list = Signal()
     open_generate_page = Signal(str, int)
     open_comic_video_dub = Signal(str, int)
+    open_comic_video_image = Signal(str, int, str)
 
     def __init__(
         self,
@@ -258,6 +259,14 @@ class NovelComicChapterPage(QFrame):
         self.open_generate_page.emit(self._project.id, episode_num)
 
     def _on_generate_video(self, episode_num: int) -> None:
+        project = self._state_service.load_project(self._project.id)
+        cache_key = f"comic_video_dub_done_ep{episode_num}"
+        text_key = f"comic_video_dubbed_text_ep{episode_num}"
+        if project and project.extra_data.get(cache_key):
+            dubbed_text = project.extra_data.get(text_key, "")
+            self.open_comic_video_image.emit(self._project.id, episode_num, dubbed_text)
+            return
+
         from clip_synth.ui.pages.comic_video_page import _ComicVideoDubModeDialog
         dialog = _ComicVideoDubModeDialog(self.window())
         if dialog.exec() != QDialog.Accepted:

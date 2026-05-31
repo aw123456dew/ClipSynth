@@ -4467,6 +4467,12 @@ QSlider::sub-page:horizontal {
     border-color: #fbbf24;
 }
 
+#editDescDialog {
+    background-color: #0a0e17;
+    border: 1px solid #1a2340;
+    border-radius: 8px;
+}
+
 #storyboardEmptyLabel {
     color: #4a5568;
     font-size: 14px;
