@@ -215,6 +215,14 @@ class NovelMixJianyingExportService:
 
             processed_clips.append((out_path, adjusted_duration))
 
+        if processed_clips and project.extra_data.get("cover_dir"):
+            from clip_synth.services.novel_mix_export_service import _get_random_cover, _replace_first_frame_with_cover
+            first_clip_path = processed_clips[0][0]
+            cover_img = _get_random_cover(project.extra_data["cover_dir"])
+            if cover_img and os.path.exists(first_clip_path):
+                logger.info("剪映草稿: 使用封面图片替换第一片段封面: %s", cover_img)
+                _replace_first_frame_with_cover(first_clip_path, cover_img)
+
         if progress_callback:
             progress_callback("正在创建剪映草稿...")
 

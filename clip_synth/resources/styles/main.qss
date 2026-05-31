@@ -4413,6 +4413,22 @@ QSlider::sub-page:horizontal {
     border-color: #2a3a5a;
 }
 
+#storyboardDeleteBtn {
+    background-color: transparent;
+    color: #f87171;
+    border: 1px solid #7f1d1d;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 28px;
+}
+
+#storyboardDeleteBtn:hover {
+    background-color: #7f1d1d;
+    color: #fca5a5;
+}
+
 #storyboardReviewBtn {
     background-color: #141c30;
     color: #94a3b8;

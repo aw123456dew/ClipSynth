@@ -12,6 +12,65 @@ from clip_synth.utils.gpu_accel import apply_gpu_encoder_to_cmd
 
 logger = logging.getLogger("clip_synth.novel_mix_export_service")
 
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def _get_random_cover(cover_dir: str) -> str | None:
+    if not cover_dir or not os.path.isdir(cover_dir):
+        return None
+    import random
+    images = []
+    try:
+        for root, dirs, files in os.walk(cover_dir):
+            for f in files:
+                if os.path.splitext(f)[1].lower() in IMAGE_EXTENSIONS:
+                    images.append(os.path.join(root, f))
+    except Exception:
+        return None
+    return random.choice(images) if images else None
+
+
+def _replace_first_frame_with_cover(video_path: str, cover_path: str) -> str:
+    import random
+    out_path = video_path + ".tmp_cover.mp4"
+
+    video_w, video_h = _get_video_resolution(video_path)
+
+    has_audio = False
+    probe_cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "a",
+        "-show_entries", "stream=index",
+        "-of", "csv=p=0",
+        video_path,
+    ]
+    try:
+        kwargs = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(probe_cmd, capture_output=True, text=False, timeout=15, **kwargs)
+        has_audio = bool(result.stdout.decode("utf-8", errors="replace").strip())
+    except Exception:
+        pass
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-i", cover_path,
+        "-filter_complex",
+        "[0:v]trim=start_frame=1,setpts=PTS-STARTPTS[rest];"
+        "[1:v]scale={}:{},setpts=PTS-STARTPTS[cover];"
+        "[cover][rest]concat=n=2:v=1:a=0[out_v]".format(video_w, video_h),
+        "-map", "[out_v]",
+    ]
+    if has_audio:
+        cmd += ["-map", "0:a?", "-c:a", "copy"]
+    cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", out_path]
+    _run_cmd(cmd, "替换视频封面")
+    if os.path.exists(out_path):
+        os.replace(out_path, video_path)
+    return video_path
+
 
 def _get_media_duration(path: str) -> float:
     cmd = [
@@ -135,7 +194,7 @@ class NovelMixExportService:
         if progress_callback:
             progress_callback("正在处理素材片段...")
 
-        clip_paths = self._process_clips(clips, target_w, target_h, project, progress_callback, is_canceled)
+        clip_paths, total_video_duration = self._process_clips(clips, target_w, target_h, project, progress_callback, is_canceled)
 
         if progress_callback:
             progress_callback("正在合并视频...")
@@ -158,7 +217,7 @@ class NovelMixExportService:
             elif project.dub_mode == "self" and project.self_subtitle_path:
                 subtitle_path = project.self_subtitle_path
 
-        self._merge_all(concat_file, audio_path, subtitle_path, target_w, target_h, output_path, project)
+        self._merge_all(concat_file, audio_path, subtitle_path, target_w, target_h, output_path, project, total_video_duration)
 
         for p in clip_paths:
             try:
@@ -231,10 +290,11 @@ class NovelMixExportService:
         project: NovelMixProjectState,
         progress_callback: Callable[[str], None] | None = None,
         is_canceled: Callable[[], bool] | None = None,
-    ) -> List[str]:
+    ) -> Tuple[List[str], float]:
         target_ratio = target_w / target_h
         clip_paths = []
         total = len(clips)
+        total_video_duration = 0.0
 
         for i, clip_info in enumerate(clips):
             if is_canceled and is_canceled():
@@ -248,6 +308,9 @@ class NovelMixExportService:
             original_duration = clip_info["original_duration"]
             speed = clip_info["speed"]
             zoom = clip_info["zoom"]
+            adjusted_duration = clip_info["duration"]
+
+            total_video_duration += adjusted_duration
 
             vid_w, vid_h = _get_video_resolution(video_path)
             vid_ratio = _get_aspect_ratio(vid_w, vid_h)
@@ -302,7 +365,7 @@ class NovelMixExportService:
 
             clip_paths.append(out_path)
 
-        return clip_paths
+        return clip_paths, total_video_duration
 
     def _build_concat_file(self, clip_paths: List[str]) -> str:
         concat_path = os.path.join(tempfile.gettempdir(), "novel_mix_concat.txt")
@@ -362,9 +425,17 @@ class NovelMixExportService:
         target_h: int,
         output_path: str,
         project: NovelMixProjectState,
+        total_video_duration: float,
     ) -> None:
         has_audio = audio_path and os.path.exists(audio_path)
         has_subtitle = subtitle_path and os.path.exists(subtitle_path)
+
+        pad_duration = 0.0
+        if has_audio:
+            audio_duration = _get_media_duration(audio_path)
+            if audio_duration > total_video_duration:
+                pad_duration = audio_duration - total_video_duration
+                logger.info("音频时长 %.2fs > 视频时长 %.2fs, 补充静帧 %.2fs", audio_duration, total_video_duration, pad_duration)
 
         if has_subtitle:
             import shutil
@@ -375,6 +446,10 @@ class NovelMixExportService:
                 if has_audio:
                     shutil.copy2(audio_path, os.path.join(work_dir, "audio.mp3"))
 
+                vf_filter = "subtitles=sub.srt"
+                if pad_duration > 0.1:
+                    vf_filter += f",tpad=stop_mode=clone:stop_duration={pad_duration}"
+
                 cmd = [
                     "ffmpeg", "-y",
                     "-f", "concat", "-safe", "0", "-i", "concat.txt",
@@ -382,7 +457,7 @@ class NovelMixExportService:
                 if has_audio:
                     cmd += ["-i", "audio.mp3"]
                 cmd += [
-                    "-vf", "subtitles=sub.srt",
+                    "-vf", vf_filter,
                     "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
                 ]
                 if has_audio:
@@ -390,7 +465,6 @@ class NovelMixExportService:
                         "-c:a", "aac", "-b:a", "128k",
                         "-map", "0:v:0",
                         "-map", "1:a:0",
-                        "-shortest",
                     ]
                 cmd += ["output.mp4"]
                 _run_cmd_with_cwd(cmd, work_dir, "渲染字幕+合并音频")
@@ -409,16 +483,30 @@ class NovelMixExportService:
             cmd += ["-f", "concat", "-safe", "0", "-i", concat_file]
             if has_audio:
                 cmd += ["-i", audio_path]
+                vf_filter = None
+                if pad_duration > 0.1:
+                    vf_filter = f"tpad=stop_mode=clone:stop_duration={pad_duration}"
                 cmd += [
-                    "-c:v", "copy",
+                    "-c:v", "copy" if not vf_filter else "libx264",
+                ]
+                if vf_filter:
+                    cmd += ["-preset", "ultrafast", "-crf", "23"]
+                    cmd += ["-vf", vf_filter]
+                cmd += [
                     "-c:a", "aac", "-b:a", "128k",
                     "-map", "0:v:0",
                     "-map", "1:a:0",
                 ]
             else:
                 cmd += ["-c:v", "copy"]
-            cmd += ["-shortest", output_path]
+            cmd += [output_path]
             _run_cmd(cmd, "合并导出")
+
+        if os.path.exists(output_path) and project.extra_data.get("cover_dir"):
+            cover_img = _get_random_cover(project.extra_data["cover_dir"])
+            if cover_img:
+                logger.info("使用封面图片替换视频封面: %s", cover_img)
+                _replace_first_frame_with_cover(output_path, cover_img)
 
     def _build_subtitle_style_str(self, project: NovelMixProjectState) -> str:
         font_name = project.subtitle_font or "Microsoft YaHei"

@@ -629,8 +629,14 @@ class MatchAssetsWorker(QThread):
             if idx in assets_map:
                 entry = assets_map[idx]
                 parts = []
-                if entry.get("scene"):
-                    parts.append(entry["scene"])
+                scenes = entry.get("scenes", [])
+                scene = entry.get("scene", "")
+                if isinstance(scenes, list) and scenes:
+                    for s in scenes:
+                        if s:
+                            parts.append(s)
+                elif scene:
+                    parts.append(scene)
                 for c in entry.get("characters", []):
                     parts.append(c)
                 for p in entry.get("props", []):
@@ -646,8 +652,11 @@ class MatchAssetsWorker(QThread):
         result = {}
         for item in items:
             idx = item.get("index", 0)
+            scenes = item.get("scenes", []) or []
+            scene = item.get("scene", "")
             result[idx] = {
-                "scene": item.get("scene", ""),
+                "scenes": scenes if isinstance(scenes, list) else ([scenes] if scenes else []),
+                "scene": scene,
                 "characters": item.get("characters", []) or [],
                 "props": item.get("props", []) or [],
             }
@@ -770,8 +779,9 @@ class StoryboardDescriptionWorker(QThread):
                 try:
                     batch_parts: list[str] = []
                     for sb in batch:
+                        scenes_list = sb.get("scenes_list", []) or []
                         assets = sb.get('assets', [])
-                        scene_name = assets[0] if assets else ""
+                        scene_name = ', '.join(scenes_list) if scenes_list else (assets[0] if assets else "")
                         chars_and_props = ', '.join(assets[1:]) if len(assets) > 1 else '(无)'
 
                         lines = [
@@ -2061,6 +2071,7 @@ class NovelComicGeneratePage(QFrame):
             card.desc_edit_requested.connect(self._on_edit_desc)
             card.text_edit_requested.connect(self._on_edit_text)
             card.preview_clicked.connect(lambda idx=sb["index"]: self._on_preview_comic(idx))
+            card.delete_clicked.connect(self._on_delete_storyboard)
             self._storyboard_cards[sb["index"]] = card
             self._storyboard_layout.addWidget(card)
 
@@ -2074,6 +2085,34 @@ class NovelComicGeneratePage(QFrame):
             if sb["index"] == storyboard_index:
                 card.update_data(sb)
                 break
+
+    def _on_delete_storyboard(self, storyboard_index: int) -> None:
+        dlg = _ConfirmDialog(f"确定删除分镜 #{storyboard_index} 吗？\n删除后分镜序号将重新排列。", self)
+        dlg.setWindowTitle("删除分镜")
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        self._storyboards = [sb for sb in self._storyboards if sb["index"] != storyboard_index]
+        self._renumber_storyboards()
+        self._save_storyboards()
+        self._refresh_storyboard_list()
+
+    def _renumber_storyboards(self) -> None:
+        for i, sb in enumerate(self._storyboards, start=1):
+            old_index = sb["index"]
+            sb["index"] = i
+            if sb.get("generated_image"):
+                old_img = sb["generated_image"]
+                img_path = Path(old_img)
+                if img_path.exists():
+                    try:
+                        new_name = f"comic_panel_{i}{img_path.suffix}"
+                        new_path = img_path.with_name(new_name)
+                        import shutil
+                        shutil.move(str(img_path), str(new_path))
+                        sb["generated_image"] = str(new_path)
+                    except Exception:
+                        pass
 
     def _on_asset_management(self) -> None:
         chapter_text = self._get_chapter_text()
@@ -2221,19 +2260,21 @@ class NovelComicGeneratePage(QFrame):
             parts = []
             scenes = match.get("scenes", [])
             scene = match.get("scene", "")
-            if isinstance(scenes, list):
-                for s in scenes:
-                    if s:
-                        parts.append(s)
+            scene_list: list[str] = []
+            if isinstance(scenes, list) and scenes:
+                scene_list = [s for s in scenes if s]
             elif scene:
-                parts.append(scene)
-            for name in match.get("characters", []):
-                if name:
-                    parts.append(name)
+                scene_list = [scene]
+            for s in scene_list:
+                parts.append(s)
+            char_list = [name for name in match.get("characters", []) if name]
+            for name in char_list:
+                parts.append(name)
             for name in match.get("props", []):
                 if name:
                     parts.append(name)
             sb["assets"] = parts
+            sb["scenes_list"] = scene_list
         self._save_storyboards()
         self._refresh_storyboard_list()
         matched = sum(1 for sb in self._storyboards if sb["assets"])
@@ -2775,6 +2816,7 @@ class _StoryboardCard(QFrame):
     desc_edit_requested = Signal(int, str)
     text_edit_requested = Signal(int, str)
     preview_clicked = Signal(int)
+    delete_clicked = Signal(int)
 
     def __init__(self, data: dict, parent: QWidget | None = None):
         super().__init__(parent)
@@ -2902,6 +2944,14 @@ class _StoryboardCard(QFrame):
             lambda: self.gen_desc_clicked.emit(self._data["index"])
         )
         btn_row.addWidget(self._gen_desc_btn)
+
+        delete_btn = QPushButton("🗑  删除")
+        delete_btn.setObjectName("storyboardDeleteBtn")
+        delete_btn.setCursor(Qt.PointingHandCursor)
+        delete_btn.clicked.connect(
+            lambda: self.delete_clicked.emit(self._data["index"])
+        )
+        btn_row.addWidget(delete_btn)
 
         btn_row.addStretch()
         self._right_layout.addLayout(btn_row)

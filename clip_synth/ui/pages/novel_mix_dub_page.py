@@ -462,7 +462,7 @@ class NovelMixDubPage(QFrame):
             return
 
         text = re.sub(r'[\[\]「」""]', '', text)
-        text = re.sub(r'[！？。]', ',', text)
+        text = re.sub(r'[！？。!?.]', ',', text)
         text = re.sub(r',+', ',', text)
         text = re.sub(r'，+', ',', text)
 

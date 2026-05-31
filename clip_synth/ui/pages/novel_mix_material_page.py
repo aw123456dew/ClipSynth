@@ -289,6 +289,27 @@ class NovelMixMaterialPage(QFrame):
 
         scroll_layout.addLayout(mix_row)
 
+        # --- Cover folder row ---
+        cover_row = QHBoxLayout()
+        cover_row.setSpacing(12)
+
+        cover_label = QLabel("视频封面目录（可选）：")
+        cover_label.setObjectName("mixFolderLabel")
+        cover_row.addWidget(cover_label)
+
+        self._cover_path_label = QLabel("未选择（使用视频第一帧）")
+        self._cover_path_label.setObjectName("mixFolderPath")
+        self._cover_path_label.setWordWrap(True)
+        cover_row.addWidget(self._cover_path_label, stretch=1)
+
+        self._cover_btn = QPushButton("选择文件夹")
+        self._cover_btn.setObjectName("mixFolderBtn")
+        self._cover_btn.setCursor(Qt.PointingHandCursor)
+        self._cover_btn.clicked.connect(lambda: self._on_select_folder("cover"))
+        cover_row.addWidget(self._cover_btn)
+
+        scroll_layout.addLayout(cover_row)
+
         # --- Separator ---
         sep = QFrame()
         sep.setObjectName("mixParamSeparator")
@@ -316,17 +337,21 @@ class NovelMixMaterialPage(QFrame):
 
         self._opening_folder = ""
         self._mix_folder = ""
+        self._cover_folder = ""
 
     def _on_select_folder(self, target: str) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "选择素材文件夹")
+        folder = QFileDialog.getExistingDirectory(self, "选择文件夹")
         if not folder:
             return
         if target == "opening":
             self._opening_folder = folder
             self._opening_path_label.setText(folder)
-        else:
+        elif target == "mix":
             self._mix_folder = folder
             self._mix_path_label.setText(folder)
+        elif target == "cover":
+            self._cover_folder = folder
+            self._cover_path_label.setText(folder)
 
     def validate(self) -> bool:
         if not self._opening_folder:
@@ -357,14 +382,18 @@ class NovelMixMaterialPage(QFrame):
         project.mix_folder = self._mix_folder
         project.extra_data["opening_params"] = self._opening_params_page.get_params()
         project.extra_data["mix_params"] = self._mix_params_page.get_params()
+        project.extra_data["cover_dir"] = self._cover_folder
 
     def restore(self, project: NovelMixProjectState) -> None:
         self._opening_folder = project.opening_folder
         self._mix_folder = project.mix_folder
+        self._cover_folder = project.extra_data.get("cover_dir", "")
         if self._opening_folder:
             self._opening_path_label.setText(self._opening_folder)
         if self._mix_folder:
             self._mix_path_label.setText(self._mix_folder)
+        if self._cover_folder:
+            self._cover_path_label.setText(self._cover_folder)
 
         opening_params = project.extra_data.get("opening_params", {})
         self._opening_params_page.set_params(opening_params)
