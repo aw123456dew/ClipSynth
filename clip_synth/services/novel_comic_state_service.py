@@ -24,7 +24,7 @@ class NovelComicStateService:
         self.data_dir = Path(data_dir)
         self.projects_dir = self.data_dir
         self.projects_dir.mkdir(parents=True, exist_ok=True)
-        logger.info("小说转漫画项目状态服务初始化，数据目录: %s", self.projects_dir)
+        logger.info("AI漫画项目状态服务初始化，数据目录: %s", self.projects_dir)
 
     def _get_project_file_path(self, project_id: str) -> Path:
         return self.projects_dir / f"{project_id}.json"
@@ -45,7 +45,7 @@ class NovelComicStateService:
         )
         self.save_project(project)
         self.get_project_images_dir(project_id)
-        logger.info("创建新小说转漫画项目: %s (ID: %s)", name, project_id)
+        logger.info("创建新AI漫画项目: %s (ID: %s)", name, project_id)
         return project
 
     def save_project(self, project: NovelComicProjectState) -> None:
@@ -120,7 +120,7 @@ class NovelComicStateService:
 
             return project
         except Exception as e:
-            logger.error("加载小说转漫画项目失败: %s", e, exc_info=True)
+            logger.error("加载AI漫画项目失败: %s", e, exc_info=True)
             return None
 
     def list_projects(self) -> list[NovelComicProjectState]:
@@ -143,7 +143,7 @@ class NovelComicStateService:
         if images_dir.exists():
             shutil.rmtree(images_dir)
 
-        logger.info("删除小说转漫画项目: %s", project_id)
+        logger.info("删除AI漫画项目: %s", project_id)
         return True
 
     def get_chat_history_path(self, project_id: str, episode_num: int) -> Path:

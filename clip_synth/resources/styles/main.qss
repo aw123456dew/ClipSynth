@@ -3623,7 +3623,7 @@ QSlider::sub-page:horizontal {
     min-height: 20px;
 }
 
-/* ===== Material Table (小说混剪) ===== */
+/* ===== Material Table (视频配音混剪) ===== */
 #materialTable {
     background-color: #0d111f;
     border: 1px solid #1e293b;

@@ -23,7 +23,7 @@ logger = logging.getLogger("clip_synth.novel_comic")
 class NovelComicNewProjectDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("新建小说转漫画项目")
+        self.setWindowTitle("新建AI漫画项目")
         self.setFixedSize(420, 200)
         self.setObjectName("newProjectDialog")
         self._setup_ui()
@@ -33,7 +33,7 @@ class NovelComicNewProjectDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        title_label = QLabel("新建小说转漫画项目")
+        title_label = QLabel("新建AI漫画项目")
         title_label.setObjectName("dialogTitle")
         layout.addWidget(title_label)
 
@@ -66,7 +66,7 @@ class NovelComicNewProjectDialog(QDialog):
     @property
     def project_name(self) -> str:
         name = self._name_input.text().strip()
-        return name if name else "小说转漫画项目"
+        return name if name else "AI漫画项目"
 
 
 class NovelComicProjectCard(QFrame):
@@ -165,7 +165,7 @@ class NovelComicProjectListPage(QFrame):
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(24, 16, 24, 16)
 
-        title_label = QLabel("小说转漫画")
+        title_label = QLabel("AI漫画")
         title_label.setObjectName("mixTitle")
         toolbar_layout.addWidget(title_label)
 

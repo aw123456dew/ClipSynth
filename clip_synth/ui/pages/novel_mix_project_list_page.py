@@ -23,7 +23,7 @@ logger = logging.getLogger("clip_synth.novel_mix")
 class NovelMixNewProjectDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("新建小说混剪项目")
+        self.setWindowTitle("新建视频配音混剪项目")
         self.setFixedSize(420, 200)
         self.setObjectName("newProjectDialog")
         self._setup_ui()
@@ -33,7 +33,7 @@ class NovelMixNewProjectDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        title_label = QLabel("新建小说混剪项目")
+        title_label = QLabel("新建视频配音混剪项目")
         title_label.setObjectName("dialogTitle")
         layout.addWidget(title_label)
 
@@ -66,7 +66,7 @@ class NovelMixNewProjectDialog(QDialog):
     @property
     def project_name(self) -> str:
         name = self._name_input.text().strip()
-        return name if name else "小说混剪项目"
+        return name if name else "视频配音混剪项目"
 
 
 class NovelMixProjectCard(QFrame):
@@ -165,7 +165,7 @@ class NovelMixProjectListPage(QFrame):
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(24, 16, 24, 16)
 
-        title_label = QLabel("小说混剪")
+        title_label = QLabel("视频配音混剪")
         title_label.setObjectName("mixTitle")
         toolbar_layout.addWidget(title_label)
 

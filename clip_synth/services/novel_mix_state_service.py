@@ -22,7 +22,7 @@ class NovelMixStateService:
         self.data_dir = Path(data_dir)
         self.projects_dir = self.data_dir
         self.projects_dir.mkdir(parents=True, exist_ok=True)
-        logger.info("小说混剪项目状态服务初始化，数据目录: %s", self.projects_dir)
+        logger.info("视频配音混剪项目状态服务初始化，数据目录: %s", self.projects_dir)
 
     def _get_project_file_path(self, project_id: str) -> Path:
         return self.projects_dir / f"{project_id}.json"
@@ -37,7 +37,7 @@ class NovelMixStateService:
             updated_at=time.time(),
         )
         self.save_project(project)
-        logger.info("创建新小说混剪项目: %s (ID: %s)", name, project_id)
+        logger.info("创建新视频配音混剪项目: %s (ID: %s)", name, project_id)
         return project
 
     def save_project(self, project: NovelMixProjectState) -> None:
@@ -133,7 +133,7 @@ class NovelMixStateService:
 
             return project
         except Exception as e:
-            logger.error("加载小说混剪项目失败: %s", e, exc_info=True)
+            logger.error("加载视频配音混剪项目失败: %s", e, exc_info=True)
             return None
 
     def list_projects(self) -> list[NovelMixProjectState]:
@@ -151,5 +151,5 @@ class NovelMixStateService:
         if not file_path.exists():
             return False
         file_path.unlink()
-        logger.info("删除小说混剪项目: %s", project_id)
+        logger.info("删除视频配音混剪项目: %s", project_id)
         return True
