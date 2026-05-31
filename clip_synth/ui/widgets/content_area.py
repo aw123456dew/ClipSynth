@@ -465,6 +465,7 @@ class ContentArea(QFrame):
         chapter_page = NovelComicChapterPage(project, self._novel_comic_state_service)
         chapter_page.back_to_list.connect(self._on_novel_comic_chapter_back)
         chapter_page.open_generate_page.connect(self._switch_to_novel_comic_generate)
+        chapter_page.open_comic_video_dub.connect(self._switch_to_comic_video_dub)
         self._stack.addWidget(chapter_page)
         self._stack.setCurrentIndex(self._stack.count() - 1)
 
@@ -485,4 +486,41 @@ class ContentArea(QFrame):
         self.switch_to("novel_comic")
 
     def _on_novel_comic_generate_back(self) -> None:
+        self._remove_wizard_from_stack()
+
+    def _switch_to_comic_video_dub(self, project_id: str, episode_num: int) -> None:
+        from clip_synth.ui.pages.comic_video_page import ComicVideoDubPage
+
+        project = self._novel_comic_state_service.load_project(project_id)
+        if not project:
+            return
+        chapter_text = ""
+        if episode_num <= len(project.chapters):
+            chapter_text = project.chapters[episode_num - 1].text
+
+        dub_page = ComicVideoDubPage(
+            project_id, episode_num, chapter_text,
+            self._settings_service,
+        )
+        self._comic_video_dub_page = dub_page
+        dub_page.next_page.connect(self._switch_to_comic_video_image)
+        dub_page.back_to_chapters.connect(self._on_novel_comic_video_back)
+        self._stack.addWidget(dub_page)
+        self._stack.setCurrentIndex(self._stack.count() - 1)
+
+    def _switch_to_comic_video_image(self, project_id: str, episode_num: int) -> None:
+        from clip_synth.ui.pages.comic_video_page import ComicVideoImagePage
+
+        image_page = ComicVideoImagePage(
+            project_id, episode_num,
+            self._settings_service,
+        )
+        image_page.back_to_chapters.connect(self._on_novel_comic_video_back)
+        self._stack.addWidget(image_page)
+        self._stack.setCurrentIndex(self._stack.count() - 1)
+
+    def _on_novel_comic_video_back(self) -> None:
+        if hasattr(self, '_comic_video_dub_page') and self._comic_video_dub_page:
+            self._comic_video_dub_page.deleteLater()
+            self._comic_video_dub_page = None
         self._remove_wizard_from_stack()

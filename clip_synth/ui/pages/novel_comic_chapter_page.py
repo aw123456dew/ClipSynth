@@ -76,6 +76,7 @@ class NovelComicChapterInputDialog(QDialog):
 
 class NovelComicChapterCard(QFrame):
     generate_comic = Signal(int)
+    generate_video = Signal(int)
     edit_chapter = Signal(int)
 
     def __init__(
@@ -115,10 +116,17 @@ class NovelComicChapterCard(QFrame):
         self._gen_btn.clicked.connect(lambda: self.generate_comic.emit(self._episode_num))
         layout.addWidget(self._gen_btn)
 
+        self._gen_video_btn = QPushButton("生成漫画视频")
+        self._gen_video_btn.setObjectName("chapterGenVideoBtn")
+        self._gen_video_btn.setCursor(Qt.PointingHandCursor)
+        self._gen_video_btn.clicked.connect(lambda: self.generate_video.emit(self._episode_num))
+        layout.addWidget(self._gen_video_btn)
+
 
 class NovelComicChapterPage(QFrame):
     back_to_list = Signal()
     open_generate_page = Signal(str, int)
+    open_comic_video_dub = Signal(str, int)
 
     def __init__(
         self,
@@ -207,6 +215,7 @@ class NovelComicChapterPage(QFrame):
                 chapter=chapter,
             )
             card.generate_comic.connect(self._on_generate_comic)
+            card.generate_video.connect(self._on_generate_video)
             card.edit_chapter.connect(self._on_edit_chapter)
             self._chapter_cards.append(card)
             self._chapters_layout.addWidget(card)
@@ -247,6 +256,14 @@ class NovelComicChapterPage(QFrame):
 
     def _on_generate_comic(self, episode_num: int) -> None:
         self.open_generate_page.emit(self._project.id, episode_num)
+
+    def _on_generate_video(self, episode_num: int) -> None:
+        from clip_synth.ui.pages.comic_video_page import _ComicVideoDubModeDialog
+        dialog = _ComicVideoDubModeDialog(self.window())
+        if dialog.exec() != QDialog.Accepted:
+            return
+        if dialog.selected_mode == "system":
+            self.open_comic_video_dub.emit(self._project.id, episode_num)
 
     def _on_back(self) -> None:
         self.back_to_list.emit()
