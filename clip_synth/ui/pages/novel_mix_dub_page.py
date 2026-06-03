@@ -461,10 +461,21 @@ class NovelMixDubPage(QFrame):
         if not text.strip():
             return
 
-        text = re.sub(r'[\[\]「」""]', '', text)
-        text = re.sub(r'[！？。!?.]', ',', text)
-        text = re.sub(r',+', ',', text)
-        text = re.sub(r'，+', ',', text)
+        # 移除双引号、单引号
+        text = re.sub(r'["""\'\u2018\u2019\u201c\u201d]', '', text)
+        # 移除方括号、书名号等
+        text = re.sub(r'[\[\]「」【】《》]', '', text)
+        # 省略号替换为逗号
+        text = text.replace('…', ',').replace('...', ',').replace('。。。', ',')
+        # 感叹号、问号、句号、分号替换为逗号
+        text = re.sub(r'[！？。！？;；]', ',', text)
+        # 合并连续逗号
+        text = re.sub(r'[,，]+', ',', text)
+        # 在每个逗号后面换行
+        text = text.replace(',', ',\n')
+        # 每行首尾去空格，去掉空行
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        text = '\n'.join(lines)
 
         self._text_edit.setPlainText(text)
 

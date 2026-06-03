@@ -157,8 +157,8 @@ ASSET_EXTRACT_SYSTEM_PROMPT = """\
 }
 
 资产分类说明：
-1. 人物（characters）：文本中出现的所有具名角色或有明确身份的角色
-2. 场景（scenes）：文本中描述的所有地点、环境、空间
+1. 人物（characters）：文本中出现的所有具名角色、有明确身份的角色，以及**无名的路人、群演、服务人员等**（如"路人""同学A""服务员""司机"等）。即使只在某个场景中出现一次，也**必须提取**。
+2. 场景（scenes）：文本中描述的所有地点、环境、空间，包括**过渡性/一次性场景**如走廊、门口、楼梯间、电梯内、街角、阳台等。哪怕场景只出现一次，也**必须提取**。
 3. 道具（props）：文本中出现的所有物品、装备、工具、武器等
 
 要求：
@@ -167,17 +167,17 @@ ASSET_EXTRACT_SYSTEM_PROMPT = """\
 3. 如果某类资产不存在，返回空数组
 4. 描述必须具体到可以用于 AI 生图的程度，不同类型有不同的描述重点：
 
-   - 人物（characters）：描述性别、年龄、外貌（发型、脸型、五官特点、身材）、着装（衣服款式、颜色、材质）、气质/神态。正文未明确写到的部分，可根据上下文合理预测，不要编造离谱特征
+   - 人物（characters）：仅客观描述外貌特征——性别、年龄、发型、脸型、五官特点、身材、着装（衣服款式、颜色、材质）。**严禁描述角色的表情、神态、情绪、内心想法或性格特点**，只写客观可见的外观。正文未明确写到的部分，可根据上下文合理预测，不要编造离谱特征。
    
-   - 场景（scenes）：只描述环境本身——空间大小、建筑风格、光线氛围、色调、时间、天气、装饰、设施。可以写"街上偶有行人""有几盏路灯"这类背景元素，但绝对不能说具体角色（角色名、他、她等）在场景中做什么
+   - 场景（scenes）：只客观描述环境本身——空间大小、建筑风格、光线氛围、色调、时间、天气、装饰、设施。**必须详细描述场景的空间布局**，例如左侧/右侧/前方/后方各有什么、家具和物品的摆放位置、空间的开阔程度等。**严禁描述场景中的人物数量、人物活动或"很多人""空无一人"等涉及人物的描述**。对于走廊、门口等过渡性场景，同样要描述其空间特征（宽度、长度、左右两侧墙壁材质、地面材质、照明方式等）。
    
-   - 道具（props）：描述物品的外观、材质、颜色、尺寸、状态（新旧/破损/脏污等）。和场景一样，只描述物品本身，不能说角色在使用它
+   - 道具（props）：描述物品的外观、材质、颜色、尺寸、状态（新旧/破损/脏污等）。和场景一样，只描述物品本身，不能说角色在使用它。**重要限制：只描述物品的物理外观，严禁描述物品内部的文字内容或显示内容。** 例如手机只写"黑色智能手机，玻璃背板，银色金属边框"，不写屏幕上显示了什么；笔记本只写"棕色皮革笔记本，A5尺寸"，不写里面写了什么字；书只写"红色封面旧书，书脊有磨损"，不写书的内容。
 
 5. **版本识别规则（重要）**：同一个人物或场景如果以不同的形态/状态出现，必须拆分为多个独立的资产条目，名称中用 `-` 分隔版本标识：
    - 人物示例：`陆宴知-常服版`、`陆宴知-校服版`、`陆宴知-运动装版`、`林清许-古装版`、`林清许-现代装版`
-   - 场景示例：`教室-白天版`、`教室-黄昏版`、`校园-白天版`、`校园-夜晚版`、`公园-晴天版`、`公园-雨天版`
+   - 场景示例：`教室-白天版`、`教室-黄昏版`、`校园-白天版`、`校园-夜晚版`、`公园-晴天版`、`公园-雨天版`、`走廊-白天版`、`走廊-夜晚版`
    - 什么时候拆分：当文本明确提到换装、换场景、时间变化（白天/黑夜/季节）、天气变化、地点氛围变化时，考虑创建新版本
-   - 如果全文只出现一种状态，则不需要加版本后缀，直接用名称即可，如 `教室`
+   - 如果全文只出现一种状态，则不需要加版本后缀，直接用名称即可，如 `教室`、`走廊`、`门口`
    - 版本后缀要简洁，用 2-4 个字概括核心差异，如 `常服版`、`校服版`、`白天版`、`夜晚版`、`雨天版`
    - 同一个基础名称的不同版本，在 desc 中要重点描述它们之间的差异化特征（着装区别、光线氛围区别等）
 
@@ -290,18 +290,16 @@ STORYBOARD_SPLIT_SYSTEM_PROMPT = """\
 }
 
 核心要求：
-1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加，并且text 不能一次性超过150个汉字
+1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加。一个分镜中得对话加旁白，不能超过6句话。
 2. 每个分镜对应一页漫画，一页漫画 1-3 格。一个格能表达清楚就只用 1 格（大画面），内容较多时用 2 格，复杂时才用 3-4 格。
 3. panel_count_suggestion 是推荐格数，根据本页内容的节奏和复杂度给出合理建议（整数 1-4）
 4. present_characters 列出本页出场的人物名称，不要遗漏
 5. bubbles 列出本页中所有角色的对话，speaker 是说话人，text 是对话内容。text 字段中凡是对话部分都要提取到 bubbles 中
 6. narrative 仅保留角色的内心独白、内心想法或主观看法（心理活动、内心感受、主观评价等），按顺序放入数组。其他所有的叙事描述（场景描写、环境交代、角色动作、面部表情等）**一律省略不放入 narrative**，以精简内容
-7. 分镜之间要有清晰的叙事断点，如场景切换、视角转换、对话回合、动作节拍
-8. 所有分镜按原文顺序排列，覆盖全文，不要遗漏原文内容
-9. **字数限制**：每页气泡（bubbles 中所有 text 内容）和旁白（narrative 中所有字符串）的总字数不得超过 80 个汉字。如果原文段落较长，必须对原文进行浓缩概括，只保留最核心的信息（不得转写语言，原文是中文就要全中文，原文是英文就要全英文）
-10. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符
-11. 所有字段必须使用与原文一致的语言（原文是中文则用中文，英文则用英文），**严禁出现英文的人称代词(he/she/him/her等)或英文单词，中文原文必须全部用中文表达**
-12. 旁白和对话的文字中必须移除无意义的标点符号（如破折号、省略号、书名号、单双引号等），只保留逗号、句号、感叹号、问号、顿号"""
+7. 所有分镜按原文顺序排列，覆盖全文，不要遗漏原文内容
+8. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符
+9. 所有字段必须使用与原文一致的语言（原文是中文则用中文，英文则用英文），**严禁出现英文的人称代词(he/she/him/her等)或英文单词，中文原文必须全部用中文表达**
+10. 旁白和对话的文字中必须移除无意义的标点符号（如破折号、省略号、书名号、单双引号等），只保留逗号、句号、感叹号、问号、顿号"""
 
 
 def _save_project_storyboards(
@@ -672,7 +670,7 @@ class MatchAssetsWorker(QThread):
         return result
 
 
-STORYBOARD_DESC_SYSTEM_PROMPT = """\
+STORYBOARD_DESC_AI_PROMPT = """\
 你是一个顶级的漫画分镜师和漫画编辑，擅长将小说片段转化为极致专业的漫画分镜脚本。
 
 输出格式要求（最重要）：
@@ -682,54 +680,170 @@ STORYBOARD_DESC_SYSTEM_PROMPT = """\
   "storyboards": [
     {
       "index": 1,
-      "description": "整体排版：...\\n\\n格1 (...)\\n- 景别/角度：...\\n- 场景：资产名称-版本\\n- 人物：角色名1, 角色名2\\n- 动作/表情：...\\n- 气泡：...\\n- 说明框：...\\n\\n格2 (...)\\n- 景别/角度：...\\n\\n格N (...)"
-    },
-    {
-      "index": 2,
-      "description": "..."
+      "description": "整体排版：...\\n\\n格1 (...)\\n- 景别/角度：...\\n- 场景：资产名称-版本\\n- 人物：角色名1, 角色名2\\n- 动作/表情：...\\n- 角色名1的气泡：...\\n- 角色名2的气泡：...\\n- 说明框：...\\n\\n格2 (...)\\n- 景别/角度：...\\n\\n格N (...)",
+      "matched_assets": {
+        "scenes": ["场景A", "场景B"],
+        "characters": ["人物A", "人物B"],
+        "props": ["道具X"]
+      }
     }
   ]
 }
 
-传入的分镜数据会包含每个分镜的完整数据：原文(text)、旁白(narrative)、对话(bubbles)、出场人物(present_characters)、推荐格数(panel_count_suggestion)、所属段落原文(segment_text)、以及已绑定的场景资产和人物道具资产，**必须为每个传入的分镜生成对应的 description**。返回的 storyboards 数组必须包含所有传入分镜的条目，每个的描述独立生成，不要合并、不要跳过、不要遗漏。
+=== 任务概述 ===
+传入的数据包含每个分镜的信息以及全局资产池（人物、场景、道具三类资产）。
+你的任务：为每个分镜生成一页漫画的分镜描述(description)，同时从全局资产池中为该分镜匹配资产(matched_assets)。
 
-你的任务是为每个分镜段落生成一页漫画的详细分镜描述。每个分镜可能包含多个格（panel），格数参考 panel_count_suggestion，但你可根据内容节奏灵活调整。
+=== 输入数据说明 ===
+每个分镜的输入数据包含以下字段：
+- `原文:` 该分镜对应的原文片段（最终以此为准）
+- `对话:` 已提取的对话列表（说话人: 内容）。优先使用它来填充气泡，但仍需对照 `原文:` 检查是否有遗漏的对话。
+- `旁白:` 已提取的内心独白/主观看法列表。优先使用它来填充说明框，但仍需对照 `原文:` 检查是否有其他非对话句子需要放入说明框。
+- `出场人物:` 该分镜出场的人物列表。作为人物匹配的参考。
+- `建议格数:` 推荐的格数。
+- `所属段落原文:` 所属的完整段落原文（用于指代分析）。
 
-传入的数据可能包含原文(text)、对话(bubbles)、旁白(narrative)、出场人物(present_characters)、已绑定的场景资产和人物道具资产。如果 bubbles/narrative/present_characters 字段为空，请从原文(text)自行分析：识别对话内容放入气泡，识别角色的内心独白/主观看法放入说明框，其他叙事描写不放入说明框。
+=== 三要素的分工定义（最重要） ===
+每个格包含三个文字承载字段：
+1. **动作/表情**（面向画师/AI生图）：仅描述画面中**可见的视觉内容**，用画面语言描述，**不承载原文句子**。
+2. **说明框**（面向读者）：承载**原文中所有非对话的句子**，用原文原句，不标注角色名。
+3. **气泡**（面向读者）：承载原文中所有**对话**。格式：角色名的气泡："对话内容"。
 
-输出格式规范：
+=== 三要素关系的核心规则 ===
+- 说明框和动作/表情可以描述同一件事（说明框用原文句子让读者看懂故事，动作/表情用画面语言让AI画出画面）。
+- 气泡和说明框互斥：同一句话不能同时出现在气泡和说明框中。
+
+=== 输出格式规范 ===
 
 整体排版：
-用一段话概述本页的版面布局方案。例如：采用左右对切、上下结构、三格阶梯式、出格效果等。说明格的数量、大致形状比例（横格/竖格/方格的宽窄高矮）和排列逻辑。
+用一段话概述本页的版面布局方案。阅读动线统一为**从右到左、从上到下**。
 
-格N (形状描述，如：窄长横格 / 大方格 / 竖长格左半页 / 满版出血格 / 三小格并列 等)
+格N (形状描述)
 - 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
-- 场景：从分镜绑定的场景资产列表中选一个，直接写资产名称。不同格可选择不同场景
-- 人物：直接列出角色名即可，例如"张三, 李四"，不要描述外观着装
-- 动作/表情：角色的肢体动作和面部表情细节
-- 气泡：每个气泡独立一行，格式：角色名的气泡："文字内容"。不要写气泡序号和气泡类型，不要加额外前缀。每个气泡文字控制在 1-2 行以内，长文本拆成多个气泡依次排列，例如：念念的气泡："好。"\n念念的气泡："妈，我答应你，明天我不去考试了。"\n十年后的妈妈的气泡："真的？"。气泡的语言必须与原文一致：原文是中文则用中文，原文是英文则用英文。
-- 说明框：直接放置文字内容，不要标注角色名，格式：说明框："文字内容"。每段控制在 1-2 行以内，用原文原句。说明框的内容来自角色的内心独白、内心想法或主观看法，但**不需要标注是谁的**，直接呈现文字即可。除内心独白外，其他叙事描述（场景描写、环境交代、角色动作等）**不放入说明框**。如有传入 narrative 字段则优先使用，否则从原文自行判断。
+- 场景：从 matched_assets.scenes 中选一个
+- 人物：直接列出角色名
+- 动作/表情：**有且仅有一条**，用画面语言描述
+- 气泡：角色名的气泡："文字内容"。每个气泡文字不超过 2 行（约25个汉字），长文本拆成多个气泡依次排列
+- 说明框：**原文中所有非对话的句子**，用原文原句。**每段说明框不超过 2 行（约25个汉字），长文本按原文句号拆分为多个独立的说明框行**
+  例如（说明框拆分示范，每个说明框对应原文的一个句子）：
+  说明框："而我，只是个注定要被偷走人生、给他们当垫脚石的漂亮炮灰。"
+  说明框："更离谱的是，弹幕说那个被骗的大佬，竟是我异地恋男友的死对头室友。"
+  说明框："我看着周蜜那张一百八十斤还理直气壮的脸，气极反笑。"
+  说明框："既然我是炮灰，那这剧情，我今天非掀了不可！"
 
 说明框与气泡的分工铁律：
-- 气泡负责一切对话。原文中的对话内容必须全部进入气泡。
-- 说明框负责承载角色的内心独白与主观看法。如有传入 narrative 字段则从中提取，否则从原文自行判断。
-- 动作/表情负责描述画师需要画的视觉内容（肢体动作、面部表情、画面构图），不承载任何文字。
-- 同一句话**严禁同时出现在气泡和说明框中**，每句话唯一归属。
+- 气泡负责一切对话。
+- 说明框负责原文中所有非对话的句子（叙事、动作、心理、场景等全部放入）。
+- 动作/表情用画面语言描述视觉效果，不用原文句子。
 
-核心规则：
-1. 一个分镜对应一页漫画，不要拆分到多个分镜描述
-2. 格的数量：一个格能表现到位就大胆用 1 格（满版/出血大画面），内容稍多时用 2 格，只有在气泡数量+说明框数量超过 4 个以上时才考虑使用 3 格，超过 6 个以上才使用 4 格。在满足内容容量的前提下尽量用更少的格数来保证大画面表现力
-3. 场景使用规则：每个分镜已绑定了场景资产列表，每个格可从列表中自由选择一个场景。可以在不同格使用不同场景
-4. 人物和道具只能从已匹配的资产列表中选择，不要自行编造或添加未匹配的角色和物品
-5. 每个格必须有明确的景别和角度
-6. **唯一归属原则**：原文text中的每一句话**有且只有一个归属**——要么放入气泡，要么放入说明框，严禁同一句话同时出现在气泡和说明框中。对话进气泡，旁白/叙事/心理描述等进说明框。如果一个格全是对话可以只有气泡，全是旁白可以只有说明框。
-7. 对话气泡和内心独白要标注气泡类型，每个气泡文字不超过 2 行，长文本拆成多个气泡依次排列，尽量减少气泡文字数量。你也可以不使用原文文案，但是意思表达出来就行。你也可以加一些声响词，比如 砰， 咚， 咔嚓， 之类的声响词
-8. 描述语言要有画面感，让画师能直接照着画。优先用画面构图、人物微表情、肢体语言来传递情绪和叙事
-9. 手机屏幕 / 电脑屏幕 / 平板 / 纸条 / 书本等媒介上显示的文字：这些不是气泡也不是说明框，而是画面内的视觉元素，应在动作/表情或场景描述中直接描述屏幕上的文字内容，例如：动作/表情：陆宴知手指微微收紧，手机屏幕冷光照亮指节，聊天界面上赫然显示谢依璇刚刚发送的信息：「今晚有空吗？」。严禁为此类媒介文字使用气泡或说明框
-10. 气泡和说明框的文字内容必须使用中文双引号（""）包裹，除此之外的其他位置（场景描述、人物描述、动作表情等）严禁使用双引号、单引号、破折号、书名号等标点，只使用逗号、句号、感叹号、问号、顿号、冒号
-11. 气泡和说明框内部的文字中，必须移除原文中的无意义标点（破折号、省略号、书名号、单双引号等），只保留逗号、句号、感叹号、问号、顿号
-12. 输出合法 JSON：只输出一个 JSON 对象，不要输出任何其他内容。描述文本中出现的所有英文双引号（"）必须用反斜杠转义（\\"），中文双引号（""）无需转义。所有换行符必须用 \\n 表示，不得出现真正的换行符。JSON 对象内的 description 字符串本身可以包含 \\n 来表示换行。
-13. **违禁内容处理**：生成描述时，必须自动检测动作/表情、气泡、说明框中的所有文字。如果发现任何可能涉及敏感、违规、不适的内容（包括但不限于血腥、暴力、色情、粗俗用语等），必须自动替换为合规的表达方式，或改为暗示/含蓄表达。例如"他裸露的身体"改为"他衣衫不整地"；"一刀砍下他的头"改为"刀光闪过"；"色情描写"改为"暧昧的氛围"。禁止直接输出任何可能被内容审核拦截的文字，确保所有描述都能通过安全审核。"""
+=== 核心规则 ===
+1. 一个分镜对应一页漫画。
+2. 格的数量：内容少用1格，稍多用2格，复杂用3-4格。
+3. 场景从 matched_assets.scenes 中选择。
+4. 人物和道具从 matched_assets 中选择，不自行编造。
+5. 每个格必须有明确的景别和角度。
+6. **原文完整性铁律（最高优先级）**：原文text中的每一句话都必须在说明框或气泡中找到归属。**严禁省略任何一句话**。因果关系句子必须保留。
+7. **长短文本拆分规则**：说明框和气泡的每段文字**不超过 2 行（约25个汉字）**。如果一个说明框或气泡包含多个句子的长文本，必须按原文句号拆分为多个独立的行。例如说明框："第一句。" + 说明框："第二句。" + 说明框："第三句。"。气泡同理，长对话拆为多个气泡行。
+8. 描述语言要有画面感。
+9. **手机/屏幕处理**：人物画面和屏幕特写二选一，严禁混用。有观看者反应时拆为2个格（先屏幕特写，再真实场景反应）。
+10. 气泡和说明框的文字使用中文双引号（""）包裹。
+11. 移除原文中的无意义标点。
+12. 输出合法 JSON：英文双引号用 \\" 转义，中文双引号不用转义。
+13. **违禁内容处理**：自动替换敏感内容。
+14. **角色视线**：看手机时目光落在屏幕上。
+15. **人称代词解析**：根据 `所属段落原文:` 或邻近分镜 `原文:` 分析指代。
+16. **资产池匹配**：从全局资产池中选择。人物优先参考 `出场人物:` 字段。名称必须与资产池完全一致。
+17. **格间因果连贯性**：每格行为必须有前因后果。
+18. **叙事清晰度自检**：生成后逐格自检，确保一眼看懂。"""
+
+
+STORYBOARD_DESC_MANUAL_PROMPT = """\
+你是一个顶级的漫画分镜师和漫画编辑，擅长将小说片段转化为极致专业的漫画分镜脚本。
+
+输出格式要求（最重要）：
+你必须且只能输出一个纯 JSON 对象，不要输出任何 Markdown、表格、标题、解释、代码块标记。整个回复从 { 开始，到 } 结束。
+
+{
+  "storyboards": [
+    {
+      "index": 1,
+      "description": "整体排版：...\\n\\n格1 (...)\\n- 景别/角度：...\\n- 场景：资产名称-版本\\n- 人物：角色名1, 角色名2\\n- 动作/表情：...\\n- 角色名1的气泡：...\\n- 角色名2的气泡：...\\n- 说明框：...\\n\\n格2 (...)\\n- 景别/角度：...\\n\\n格N (...)",
+      "matched_assets": {
+        "scenes": ["场景A", "场景B"],
+        "characters": ["人物A", "人物B"],
+        "props": ["道具X"]
+      }
+    }
+  ]
+}
+
+=== 任务概述 ===
+传入的数据包含每个分镜的信息以及全局资产池（人物、场景、道具三类资产）。
+你的任务：为每个分镜生成一页漫画的分镜描述(description)，同时从全局资产池中为该分镜匹配资产(matched_assets)。
+
+=== 输入数据说明 ===
+每个分镜的输入数据**只有以下字段**（手动分镜模式，无辅助分析数据）：
+- `原文:` 该分镜的文本内容（可能混合了对话和叙事，需要你自行分析）
+- `建议格数:` 推荐的格数
+- **没有** `对话:`、`旁白:`、`出场人物:`、`所属段落原文:` 等辅助字段
+
+**处理规则**：你必须自己从 `原文:` 中分析一切——
+- 识别哪些是对话 → 放入气泡
+- 识别哪些是非对话（叙事、动作、心理、场景等）→ 放入说明框
+- 识别出场了哪些人物 → 用于人物匹配和人物栏
+
+=== 三要素的分工定义（最重要） ===
+每个格包含三个文字承载字段：
+1. **动作/表情**（面向画师/AI生图）：仅描述画面中**可见的视觉内容**，用画面语言描述，**不承载原文句子**。
+2. **说明框**（面向读者）：承载**原文中所有非对话的句子**，用原文原句，不标注角色名。
+3. **气泡**（面向读者）：承载原文中所有**对话**。格式：角色名的气泡："对话内容"。
+
+=== 三要素关系的核心规则 ===
+- 说明框和动作/表情可以描述同一件事（说明框用原文句子让读者看懂故事，动作/表情用画面语言让AI画出画面）。
+- 气泡和说明框互斥：同一句话不能同时出现在气泡和说明框中。
+
+=== 输出格式规范 ===
+
+整体排版：
+用一段话概述本页的版面布局方案。阅读动线统一为**从右到左、从上到下**。
+
+格N (形状描述)
+- 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
+- 场景：从 matched_assets.scenes 中选一个
+- 人物：直接列出角色名
+- 动作/表情：**有且仅有一条**，用画面语言描述
+- 气泡：角色名的气泡："文字内容"。每个气泡文字不超过 2 行（约25个汉字），长文本拆成多个气泡依次排列
+- 说明框：**原文中所有非对话的句子**，用原文原句。**每段说明框不超过 2 行（约25个汉字），长文本按原文句号拆分为多个独立的说明框行**
+  例如（说明框拆分示范）：
+  说明框："而我，只是个注定要被偷走人生、给他们当垫脚石的漂亮炮灰。"
+  说明框："更离谱的是，弹幕说那个被骗的大佬，竟是我异地恋男友的死对头室友。"
+  说明框："我看着周蜜那张一百八十斤还理直气壮的脸，气极反笑。"
+  说明框："既然我是炮灰，那这剧情，我今天非掀了不可！"
+
+说明框与气泡的分工铁律：
+- 气泡负责一切对话。
+- 说明框负责原文中所有非对话的句子（叙事、动作、心理、场景等全部放入）。
+- 动作/表情用画面语言描述视觉效果，不用原文句子。
+
+=== 核心规则 ===
+1. 一个分镜对应一页漫画。
+2. 格的数量：内容少用1格，稍多用2格，复杂用3-4格。
+3. 场景从 matched_assets.scenes 中选择。
+4. 人物和道具从 matched_assets 中选择，不自行编造。
+5. 每个格必须有明确的景别和角度。
+6. **原文完整性铁律（最高优先级）**：原文text中的每一句话都必须在说明框或气泡中找到归属。**严禁省略任何一句话**。特别是表达因果关系的句子（如"对面不知道说了什么""弹幕又开始跟着燃了"中的"又"）必须保留在说明框中。
+7. **长短文本拆分规则**：说明框和气泡的每段文字**不超过 2 行（约25个汉字）**。如果一个说明框或气泡包含多个句子的长文本，必须按原文句号拆分为多个独立的行。例如说明框："第一句。" + 说明框："第二句。" + 说明框："第三句。"。气泡同理，长对话拆为多个气泡行。
+8. 描述语言要有画面感。
+9. **手机/屏幕处理**：人物画面和屏幕特写二选一，严禁混用。有观看者反应时拆为2个格（先屏幕特写，再真实场景反应）。
+10. 气泡和说明框的文字使用中文双引号（""）包裹。
+11. 移除原文中的无意义标点。
+12. 输出合法 JSON：英文双引号用 \\" 转义，中文双引号不用转义。
+13. **违禁内容处理**：自动替换敏感内容。
+14. **角色视线**：看手机时目光落在屏幕上。
+15. **人称代词解析**：原文中的"他/她"等代词，利用原文上下文或邻近分镜的 `原文:` 分析指代。
+16. **资产池匹配**：从全局资产池中选择。人物根据原文分析自行确定。名称必须与资产池完全一致。
+17. **格间因果连贯性**：每格行为必须有前因后果。
+18. **叙事清晰度自检**：生成后逐格自检，确保一眼看懂。"""
 
 
 class StoryboardDescriptionWorker(QThread):
@@ -746,6 +860,8 @@ class StoryboardDescriptionWorker(QThread):
         state_service: NovelComicStateService,
         chat_manager: MultiRoundChatManager | None = None,
         single_batch: bool = False,
+        all_assets: dict | None = None,
+        desc_mode: str = "ai",
     ):
         super().__init__()
         self._storyboards = storyboards
@@ -755,6 +871,25 @@ class StoryboardDescriptionWorker(QThread):
         self._state_service = state_service
         self._chat_manager = chat_manager
         self._single_batch = single_batch
+        self._all_assets = all_assets or {"characters": [], "scenes": [], "props": []}
+        self._desc_mode = desc_mode
+        if desc_mode == "manual":
+            self._system_prompt = STORYBOARD_DESC_MANUAL_PROMPT
+        else:
+            self._system_prompt = STORYBOARD_DESC_AI_PROMPT
+
+    def _format_asset_pool(self) -> str:
+        parts = []
+        chars = self._all_assets.get("characters", [])
+        scenes = self._all_assets.get("scenes", [])
+        props = self._all_assets.get("props", [])
+        if chars:
+            parts.append(f"人物: {', '.join(chars)}")
+        if scenes:
+            parts.append(f"场景: {', '.join(scenes)}")
+        if props:
+            parts.append(f"道具: {', '.join(props)}")
+        return "\n".join(parts) if parts else "(无)"
 
     def run(self) -> None:
         try:
@@ -786,13 +921,9 @@ class StoryboardDescriptionWorker(QThread):
 
             def process_batch(batch: list[dict]) -> None:
                 try:
+                    asset_pool_text = self._format_asset_pool()
                     batch_parts: list[str] = []
                     for sb in batch:
-                        scenes_list = sb.get("scenes_list", []) or []
-                        assets = sb.get('assets', [])
-                        scene_name = ', '.join(scenes_list) if scenes_list else (assets[0] if assets else "")
-                        chars_and_props = ', '.join(assets[1:]) if len(assets) > 1 else '(无)'
-
                         lines = [
                             f"--- 分镜 #{sb['index']} ---",
                             f"原文: {sb.get('text', '')}",
@@ -814,8 +945,6 @@ class StoryboardDescriptionWorker(QThread):
                         if chars:
                             lines.append(f"出场人物: {', '.join(chars)}")
                         lines.append(f"建议格数: {sb.get('panel_count_suggestion', 1)}")
-                        lines.append(f"绑定场景资产: {scene_name}")
-                        lines.append(f"已匹配人物/道具资产: {chars_and_props}")
                         seg_text = sb.get("segment_text", "")
                         if seg_text:
                             lines.append(f"所属段落原文: {seg_text[:500]}")
@@ -824,12 +953,16 @@ class StoryboardDescriptionWorker(QThread):
 
                     prompt = (
                         "请为以下 %d 个分镜分别生成详细的一页漫画分镜描述，"
+                        "并同时从全局资产池中为每个分镜选择最合适的资产填入 matched_assets。"
                         "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。"
-                        "必须为每个分镜生成独立的 description。\n\n%s"
-                    ) % (len(batch), full_input)
+                        "必须为每个分镜生成独立的 description 和 matched_assets。\n\n"
+                        "=== 全局资产池（请从此池中为每个分镜选择匹配的资产）===\n"
+                        "%s\n\n"
+                        "=== 分镜数据 ===\n%s"
+                    ) % (len(batch), asset_pool_text, full_input)
 
                     content = chat_caller(
-                        STORYBOARD_DESC_SYSTEM_PROMPT, prompt,
+                        self._system_prompt, prompt,
                         temperature=0.7, response_format={"type": "json_object"},
                     )
                     indices = [sb["index"] for sb in batch]
@@ -839,9 +972,23 @@ class StoryboardDescriptionWorker(QThread):
                     with lock:
                         for sb in batch:
                             idx = sb["index"]
-                            desc = desc_map.get(idx, "")
+                            entry = desc_map.get(idx, {})
+                            desc = entry.get("description", "") if isinstance(entry, dict) else entry
                             results[idx] = {"index": idx, "description": desc}
                             sb["description"] = desc
+                            if isinstance(entry, dict) and "matched_assets" in entry:
+                                ma = entry["matched_assets"]
+                                parts = []
+                                scenes = ma.get("scenes", [])
+                                if isinstance(scenes, list):
+                                    sb["scenes_list"] = scenes
+                                    for s in scenes:
+                                        parts.append(s)
+                                for c in ma.get("characters", []):
+                                    parts.append(c)
+                                for p in ma.get("props", []):
+                                    parts.append(p)
+                                sb["assets"] = parts
                             done_ctr[0] += 1
                             self.progress.emit(idx, done_ctr[0], total, desc)
                 except Exception as e:
@@ -872,7 +1019,7 @@ class StoryboardDescriptionWorker(QThread):
             logger.error("分镜描述生成失败: %s", str(e), exc_info=True)
             self.error.emit(str(e))
 
-    def _parse_batch(self, content: str, batch: list[dict]) -> dict[int, str]:
+    def _parse_batch(self, content: str, batch: list[dict]) -> dict[int, dict]:
         data = _parse_json(content)
         
         if data is None:
@@ -896,7 +1043,7 @@ class StoryboardDescriptionWorker(QThread):
             logger.warning("批次分镜描述解析失败：AI返回的分镜列表为空")
             return {}
         
-        result: dict[int, str] = {}
+        result: dict[int, dict] = {}
         used: set[int] = set()
         for item in items:
             if not isinstance(item, dict):
@@ -905,7 +1052,10 @@ class StoryboardDescriptionWorker(QThread):
             idx = item.get("index", 0)
             desc = item.get("description", "")
             if idx and desc and any(sb["index"] == idx for sb in batch):
-                result[idx] = desc
+                entry = {"description": desc}
+                if "matched_assets" in item:
+                    entry["matched_assets"] = item["matched_assets"]
+                result[idx] = entry
                 used.add(idx)
         for i, item in enumerate(items):
             if not isinstance(item, dict):
@@ -914,7 +1064,10 @@ class StoryboardDescriptionWorker(QThread):
                 idx = batch[i]["index"]
                 desc = item.get("description", "")
                 if desc and idx not in used:
-                    result[idx] = desc
+                    entry = {"description": desc}
+                    if "matched_assets" in item:
+                        entry["matched_assets"] = item["matched_assets"]
+                    result[idx] = entry
         return result
 
 
@@ -931,6 +1084,8 @@ class SingleDescWorker(QThread):
         settings_service: SettingsService,
         state_service: NovelComicStateService,
         chat_manager: MultiRoundChatManager | None = None,
+        all_assets: dict | None = None,
+        desc_mode: str = "ai",
     ):
         super().__init__()
         self._storyboard = storyboard
@@ -940,6 +1095,25 @@ class SingleDescWorker(QThread):
         self._settings_service = settings_service
         self._state_service = state_service
         self._chat_manager = chat_manager
+        self._all_assets = all_assets or {"characters": [], "scenes": [], "props": []}
+        self._desc_mode = desc_mode
+        if desc_mode == "manual":
+            self._system_prompt = STORYBOARD_DESC_MANUAL_PROMPT
+        else:
+            self._system_prompt = STORYBOARD_DESC_AI_PROMPT
+
+    def _format_asset_pool(self) -> str:
+        parts = []
+        chars = self._all_assets.get("characters", [])
+        scenes = self._all_assets.get("scenes", [])
+        props = self._all_assets.get("props", [])
+        if chars:
+            parts.append(f"人物: {', '.join(chars)}")
+        if scenes:
+            parts.append(f"场景: {', '.join(scenes)}")
+        if props:
+            parts.append(f"道具: {', '.join(props)}")
+        return "\n".join(parts) if parts else "(无)"
 
     def run(self) -> None:
         try:
@@ -981,24 +1155,22 @@ class SingleDescWorker(QThread):
                 context_parts.append("\n".join(s_lines))
             full_context = "\n\n".join(context_parts)
 
-            sb = self._storyboard
-            assets = sb.get('assets', [])
-            scene_name = assets[0] if assets else ""
-            chars_and_props = ', '.join(assets[1:]) if len(assets) > 1 else '(无)'
+            asset_pool_text = self._format_asset_pool()
             prompt = (
                 "以下是一页漫画的全部分镜摘要，请为标记为「当前要生成的分镜」的那个分镜生成详细的一页漫画分镜描述，"
+                "并同时从全局资产池中选择最合适的资产填入 matched_assets。"
                 "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。"
                 "你可以参考前后分镜的上下文来理解叙事节奏和人物状态。\n\n"
                 f"{full_context}\n\n"
-                f"--- 当前分镜额外信息 ---\n"
-                f"绑定场景: {scene_name}\n"
-                f"已匹配人物/道具: {chars_and_props}"
+                "=== 全局资产池（请从此池中为当前分镜选择匹配的资产）===\n"
+                f"{asset_pool_text}"
             )
 
             content = chat_caller(
-                STORYBOARD_DESC_SYSTEM_PROMPT, prompt,
+                self._system_prompt, prompt,
                 temperature=0.7, response_format={"type": "json_object"},
             )
+            sb = self._storyboard
             logger.info("分镜 #%d 单条描述AI返回: %s", sb['index'], content[:200])
 
             data = _parse_json(content)
@@ -1006,21 +1178,39 @@ class SingleDescWorker(QThread):
             if data is None:
                 logger.warning(f"分镜 #%d 描述解析失败：AI返回的JSON数据为空或无效", sb['index'])
                 desc = ""
+                matched = None
             elif isinstance(data, dict) and "description" in data:
                 desc = data["description"]
+                matched = data.get("matched_assets")
                 if not isinstance(desc, str):
                     logger.warning(f"分镜 #%d 描述解析失败：description不是字符串类型", sb['index'])
                     desc = ""
             else:
                 items = data.get("storyboards", data) if isinstance(data, dict) else data
                 if isinstance(items, list) and len(items) > 0 and isinstance(items[0], dict):
-                    desc = items[0].get("description", "")
+                    item = items[0]
+                    desc = item.get("description", "")
+                    matched = item.get("matched_assets")
                     if not isinstance(desc, str):
                         logger.warning(f"分镜 #%d 描述解析失败：description不是字符串类型", sb['index'])
                         desc = ""
                 else:
                     logger.warning(f"分镜 #%d 描述解析失败：数据格式不正确", sb['index'])
                     desc = ""
+                    matched = None
+
+            if matched:
+                parts = []
+                scenes = matched.get("scenes", [])
+                if isinstance(scenes, list):
+                    sb["scenes_list"] = scenes
+                    for s in scenes:
+                        parts.append(s)
+                for c in matched.get("characters", []):
+                    parts.append(c)
+                for p in matched.get("props", []):
+                    parts.append(p)
+                sb["assets"] = parts
 
             if desc.strip():
                 sb["description"] = desc
@@ -1031,6 +1221,9 @@ class SingleDescWorker(QThread):
                         for s in stored:
                             if s.get("index") == sb["index"]:
                                 s["description"] = desc
+                                if matched:
+                                    s["scenes_list"] = sb.get("scenes_list", [])
+                                    s["assets"] = sb.get("assets", [])
                                 break
                         project.extra_data[f"storyboards_ep{self._episode_num}"] = stored
                         self._state_service.save_project(project)
@@ -1213,93 +1406,155 @@ def _make_asset_on_error(
 
 COMIC_STYLE_PRESETS = [
     {
-        "name": "韩式条漫风格-清新少女风",
+        "name": "商业韩漫",
         "prompt": (
-            "韩式条漫风格, 清新少女风，色彩明亮柔和，线条流畅。多用于校园、纯爱等题材。"
+            """
+            【画风定位】
+            韩国主流商业网漫画风（Naver Webtoon / Kakao Page），竖版长条构图，适合手机滑屏阅读。人物精致漂亮，具有偶像气质，画面饱和明亮，视觉冲击力强。
+            【色调与光影】
+            高饱和度、高明度的鲜艳配色（糖果色、荧光粉、宝石蓝、薄荷绿），整体通透亮眼。光影对比明显，多层光源，高光突出（瞳孔、发丝、金属），阴影偏冷灰或淡紫，柔和但有层次。可带轻微泛光或光晕。
+            【线条与上色】
+            线条纤细、干净、流畅，无毛躁。上色为平涂+多层渐变（皮肤、头发、衣褶均有细腻过渡），无可见笔触，保留高光层和阴影层。背景可做模糊或光效处理。
+            【负面约束】
+            不要横屏或方形的页漫构图。不要厚涂油画风格。不要低饱和粉彩或大面积留白（商业韩漫背景较饱满）。
+            """
         ),
     },
     {
-        "name": "韩式条漫风格-写实厚涂风",
+        "name": "女频-虐文",
         "prompt": (
-            "韩式条漫风格, 写实厚涂风，接近真实人体比例，强调肌肉、骨骼、光影和衣物质感，色彩厚重，视觉冲击力强。"
+            """
+            【画风定位】
+            竖屏长条构图，适合手机滑屏阅读。韩系薄涂手绘风，略带水彩晕染，整体色调偏冷，大面积留白营造孤寂感。
+            【色调与光影】
+            低饱和度、偏冷的灰蓝、浅紫、米白色系，整体压抑忧伤。光线为阴天的散射光或黄昏最后一抹微光，无强烈高光，阴影朦胧柔和。
+            【线条与上色】
+            线条纤细、略带顿挫感，保留轻微手工痕迹。上色采用半透明薄涂，允许极轻微的晕染或水彩扩散效果，但不过度。避免厚涂。
+            【负面约束】
+            不要横屏或方形的页漫构图。不要明亮鲜艳色彩，不要阳光明媚的场景，不要微笑表情。不要厚涂油画风格，不要日式漫画的夸张表情（如大哭、Q版）。不要速度线或网点纸。
+            """
         ),
     },
     {
-        "name": "韩式条漫风格-西幻华丽风",
+        "name": "女频-甜文",
         "prompt": (
-            "韩式条漫风格, 西幻华丽风，极尽奢华，细节丰富。"
+            """
+            【画风定位】
+            竖屏长条构图，适合手机滑屏阅读。清新的粉彩插画风格，线条干净，色彩甜蜜。
+            【色调与光影】
+            高明度、低饱和度的粉彩系配色（淡粉、奶油黄、薄荷绿、浅薰衣草紫），整体明亮通透，适当留白。光线为春日午后的柔光，带淡淡光晕，影子浅而柔和。
+            【线条与上色】
+            简洁流畅的圆润线条，无锋利棱角。上色为纯粹的平涂，无笔触感，无混色。脸颊、指尖可加淡粉色晕染。
+            【负面约束】
+            不要横屏或方形的页漫构图。不要任何悲伤压抑的元素。不要厚涂，不要强烈对比的光影。
+            """
         ),
     },
     {
-        "name": "国漫仙侠风格1",
+        "name": "女频-爽文",
         "prompt": (
-            "国漫仙侠风格，用3D模型还原工笔画般的精绘线条感。布料纹理贴图直接画出衣褶与云纹，边缘光清晰；头发是一条条飘带模型，动画感强。场景山石带描边，云雾是分层半透明片，整体像活过来的国风插画。"
+            """
+            【画风定位】
+            竖屏长条构图，适合手机滑屏阅读。都市扁平风，线条干脆，配色高级，突出女主强大气场。
+            【色调与光影】
+            高饱和度的清冷色系（宝石蓝、酒红、墨绿、金属银），搭配大面积中性灰或白色背景。光影对比鲜明，使用硬朗的光束或聚光灯效果，阴影边缘清晰，无柔光。
+            【线条与上色】
+            线条锋利、流畅，粗细变化明显（关键轮廓稍粗）。上色为平涂+局部渐变（如玻璃、金属反射），保留干净利落的色块感，无笔触纹理。可带轻微磨砂质感。
+            【负面约束】
+            不要横屏或方形的页漫构图。不要柔美可爱少女心元素。不要日式漫画夸张表情或身材比例。不要厚涂。
+            """
         ),
     },
     {
-        "name": "国漫仙侠风格2",
+        "name": "女频-古风",
         "prompt": (
-            "国漫仙侠风格，PBR厚涂写实仙侠风，追求真实物理光影，皮肤有半透明散射，纱衣有丝绸高光与菲涅尔反射。场景使用大气体积雾，通过光线穿透云层、剑刃高光反射来营造层次。毛孔与刺绣纹理清晰，像电影预演或S级游戏CG。"
+            """
+            【画风定位】
+            竖屏长条构图，适合手机滑屏阅读。中国传统工笔淡彩风格，仿古绢本或宣纸背景，线条精细，设色雅致。
+            【色调与光影】
+            低饱和度的传统国画色（黛蓝、胭脂、鹅黄、石绿、赭石），整体偏暖灰调，无强烈光源，阴影极淡或不表现。
+            【线条与上色】
+            线条极细且均匀，类似“高古游丝描”的流畅细线。上色为多层薄染的淡彩，保留纸纹或绢纹质感，无笔触堆积。局部可用金粉勾边。
+            【负面约束】
+            不要横屏或方形的页漫构图。不要日式和风元素（如浮世绘、樱花纹样、和服）。不要厚涂或油画笔触。不要过于鲜艳的荧光色。
+            """
         ),
     },
     {
-        "name": "日式少年漫画风",
+        "name": " 男频-古风",
         "prompt": (
-            "日式漫画风格, 少年漫画风，线条肯定有力，动态感强，注重“跃动感”和速度线。角色眼睛大而有神，身体结构概括，背景常使用集中线来烘托气势"
+            """
+            【画风定位】
+            竖屏长条构图，适合手机滑屏阅读。水墨写意风格，强调笔触的飞白和墨色变化，构图留白大胆，突出意境与力量感。
+            【色调与光影】
+            以黑白灰为主，辅以极少量低饱和的赭石、花青做点缀。光影表现为墨色的浓淡干湿，不使用外光源。
+            【线条与上色】
+            线条粗犷、有顿挫、带飞白，类似书法用笔。上色为水墨晕染，允许自然的扩散和笔触堆积，保持整体简洁。保留宣纸纹理。
+            【负面约束】
+            不要横屏或方形的页漫构图。不要日式漫画夸张表情或动作。不要精细机械或铠甲细节（保持写意）。不要甜美或阴柔元素。
+            """
         ),
     },
     {
-        "name": "日式少女漫画风",
+        "name": " 男频-热血战斗",
         "prompt": (
-            "日式漫画风格, 少女漫画风，画面唯美、装饰性强，强调氛围。标志性的“星光眼”（瞳孔里有大量高光和星星），纤细的睫毛，身材修长。擅长使用花卉、网点纸和流线型的头发来渲染情绪。"
+            """
+            【画风定位】
+            竖屏长条构图，适合手机滑屏阅读。韩式热血条漫风格，强调动态拉伸和镜头冲击力，使用简洁的动态线表示速度（避免传统日式速度线）。
+            【色调与光影】
+            高饱和度的对比色系（烈焰红、电光黄、深蓝紫、金属灰），光影对比极度强烈，使用逆光、爆闪效果，阴影为纯黑或深色块状。
+            【线条与上色】
+            线条粗犷有力，动作轨迹用干净的流线型动线（非网点速度线）。上色采用硬边色块+少量渐变，保留部分笔触感增强动感。
+            【负面约束】
+            不要横屏或方形的页漫构图。不要传统日式速度线、网点纸、Q版表情。不要柔和平涂或粉彩色系。
+            """
         ),
     },
     {
-        "name": "超级英雄漫画",
+        "name": "男频-西幻",
         "prompt": (
-            "美式漫画风格，超级英雄漫画风，角色眼睛大而有神，身体结构概括，背景常使用集中线来烘托气势。"
+            """
+            【画风定位】
+            竖屏长条构图，适合手机滑屏阅读。欧美写实奇幻插画风格，使用厚涂技法，强调体积、光影和材质纹理（金属、布料、皮肤、魔法光效）。
+            【色调与光影】
+            深邃的暗色调（深蓝、暗紫、墨绿）搭配高亮度的魔法光（橙黄、冰蓝、金色）。光影为戏剧性的点光源（如发光的法杖、篝火、月光），阴影浓郁且有色彩倾向。
+            【线条与上色】
+            几乎没有外轮廓线，依靠色块和光影塑造形体。上色为厚涂笔刷，有明显笔触堆叠，颜料感强，混合过渡自然。画布可带粗糙纹理。
+            【负面约束】
+            不要横屏或方形的页漫构图。不要任何漫画线条或速度线。不要平涂风格。不要日式Q版或夸张表情。避免过于甜美的色彩。
+            """
         ),
     },
     {
-        "name": "写实厚涂",
+        "name": "男频-都市异能",
         "prompt": (
-            "semi-realistic digital painting, detailed textures, cinematic lighting, "
-            "soft brush blending, atmospheric depth of field, rich shadows and highlights, "
-            "concept art quality, highly detailed"
+           """
+           【画风定位】
+            赛博朋克扁平插画风格，结合霓虹光效，线条硬朗，色彩冷峻但带有高光带。
+            【色调与光影】
+            以深灰、藏青为底色，搭配高亮度的霓虹色（洋红、电青、荧光黄）。光影为冷色环境光+暖色点光源，阴影多为纯黑，边缘锐利。
+            【线条与上色】
+            线条极细且锋利，无粗细变化。上色为硬边平涂+光效叠加，保留大量纯黑区域。金属表面、玻璃反射使用高光带（不渐变）。无笔触感。
+            【负面约束】
+            不要水墨或油画风格。不要日式热血的表情或动作。不要过于繁杂的机械细节（保持扁平简洁）。避免任何复古元素。
+           """
         ),
     },
     {
-        "name": "水墨国风",
+        "name": "女频-悬疑",
         "prompt": (
-            "Chinese ink wash painting style, sumi-e brush strokes, "
-            "elegant flowing lines, misty atmosphere, traditional Chinese aesthetic, "
-            "soft watercolor washes, poetic composition, rice paper texture"
+           """
+           【画风定位】
+            黑白或极低饱和的素描风格，线条带有不安的扭曲或多重影子，氛围压抑紧张。
+            【色调与光影】
+            近乎黑白的灰阶，只有关键物体（如血红色信封、绿色眼睛）保留极低饱和度彩点。光影使用强烈的侧光或底光，拉长影子，产生不安感。
+            【线条与上色】
+            线条粗细不均，有时断续或颤抖，有重复描边（表现焦虑）。上色为铅笔排线或炭笔涂抹，保留粗糙颗粒感，无平滑渐变。
+            【负面约束】
+            不要明亮色彩，不要平涂或光滑表面。不要浪漫或温馨元素。避免日式可爱或夸张表情。
+           """
         ),
-    },
-    {
-        "name": "赛博朋克",
-        "prompt": (
-            "cyberpunk style, neon lights, dark rainy streets, holographic displays, "
-            "chrome and metal surfaces, high-tech low-life atmosphere, "
-            "purple and cyan color palette, futuristic dystopian cityscape"
-        ),
-    },
-    {
-        "name": "Q版可爱",
-        "prompt": (
-            "chibi style, super deformed, cute and playful, "
-            "large head small body, bright pastel colors, simple clean lines, "
-            "kawaii aesthetic, cheerful expressions, rounded shapes"
-        ),
-    },
-    {
-        "name": "暗黑恐怖",
-        "prompt": (
-            "dark horror comic style, heavy shadows, disturbing atmosphere, "
-            "muted desaturated colors, gritty textures, psychological thriller aesthetic, "
-            "low key lighting, stark contrast black and white with splashes of red"
-        ),
-    },
+    }
 ]
 
 
@@ -1480,7 +1735,7 @@ class _GenerateSettingsDialog(QDialog):
         self._prefix_edit.setObjectName("genSettingsPrefixEdit")
         self._prefix_edit.setFixedHeight(140)
         self._prefix_edit.setPlaceholderText("输入全局前缀提示词，会附加到每张生图请求的前面...")
-        self._prefix_edit.setPlainText(self._settings.get("prefix", self._current_style_prompt()))
+        self._prefix_edit.setPlainText(self._settings.get("prefix", ""))
         layout.addWidget(self._prefix_edit)
 
         btn_row = QHBoxLayout()
@@ -1508,10 +1763,6 @@ class _GenerateSettingsDialog(QDialog):
     def _on_style_changed(self, _index: int) -> None:
         if self._style_combo.currentText() == "自定义画风":
             self._prefix_edit.clear()
-            return
-        prompt = self._current_style_prompt()
-        if prompt:
-            self._prefix_edit.setPlainText(prompt)
 
     def _on_confirm(self) -> None:
         self._settings["concurrency"] = self._concurrency_spin.value()
@@ -2004,6 +2255,7 @@ class NovelComicGeneratePage(QFrame):
         self._match_btn.setObjectName("comicGenActionBtn")
         self._match_btn.setCursor(Qt.PointingHandCursor)
         self._match_btn.clicked.connect(self._on_match_assets)
+        self._match_btn.setVisible(False)
         bar_layout.addWidget(self._match_btn)
 
         self._match_status = QLabel("")
@@ -2322,6 +2574,8 @@ class NovelComicGeneratePage(QFrame):
         self._desc_status.setText("生成中...")
         self._desc_status.setStyleSheet("color: #4fc3f7;")
 
+        asset_names = self._get_flattened_asset_names()
+
         key = _worker_key(self._project_id, self._episode_num, "desc")
         worker = StoryboardDescriptionWorker(
             target,
@@ -2329,6 +2583,8 @@ class NovelComicGeneratePage(QFrame):
             self._settings_service, self._state_service,
             chat_manager=self._get_chat_manager(),
             single_batch=False,
+            all_assets=asset_names,
+            desc_mode=self._split_mode,
         )
         _running_workers[key] = worker
         self._desc_worker = worker
@@ -2534,10 +2790,13 @@ class NovelComicGeneratePage(QFrame):
             card.set_desc_gen_status("generating")
 
         key = _worker_key(self._project_id, self._episode_num, f"desc_{storyboard_index}")
+        asset_names = self._get_flattened_asset_names()
         worker = SingleDescWorker(
             sb, self._storyboards, self._project_id, self._episode_num,
             self._settings_service, self._state_service,
             chat_manager=self._get_chat_manager(),
+            all_assets=asset_names,
+            desc_mode=self._split_mode,
         )
         _running_workers[key] = worker
         worker.finished.connect(
@@ -2747,7 +3006,7 @@ class NovelComicGeneratePage(QFrame):
         prompt += f"，{resolution}分辨率，图片比例{ratio}，尺寸{size}"
         if page_num:
             prompt += f"。请在画面底部居中位置用白色小字生成页码 {page_num}"
-            prompt += f"。强制要求：文字清晰锐利，无模糊乱码；画面干净无噪点，主体完整无缺陷，画面中的字体加粗"
+            prompt += f"。画面中的字体加粗"
 
         return prompt, size, reference_paths
 
@@ -3524,11 +3783,28 @@ class _StoryboardPreviewDialog(QDialog):
         if px.isNull():
             return
         screen = self.screen().size() if self.screen() else QSize(1920, 1080)
-        max_w = int(screen.width() * 0.85)
-        max_h = int(screen.height() * 0.85)
-        scaled = px.scaled(max_w, max_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        max_w = int(screen.width() * 0.9)
+        max_h = int(screen.height() * 0.9)
+        if px.width() > max_w or px.height() > max_h:
+            scaled = self._high_quality_downscale(px, max_w, max_h)
+        else:
+            scaled = px
         self._image_label.setPixmap(scaled)
         self.update()
+
+    @staticmethod
+    def _high_quality_downscale(pixmap: QPixmap, max_w: int, max_h: int) -> QPixmap:
+        w, h = pixmap.width(), pixmap.height()
+        ratio = min(max_w / w, max_h / h)
+        target_w = int(w * ratio)
+        target_h = int(h * ratio)
+        img = pixmap.toImage()
+        while img.width() > target_w * 1.3 or img.height() > target_h * 1.3:
+            next_w = max(img.width() // 2, target_w)
+            next_h = max(img.height() // 2, target_h)
+            img = img.scaled(next_w, next_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        img = img.scaled(target_w, target_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return QPixmap.fromImage(img)
 
     def _current_pos(self) -> int:
         for i, s in enumerate(self._sorted):
