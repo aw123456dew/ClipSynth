@@ -260,7 +260,7 @@ class NovelMixJianyingExportService:
             if audio_duration > 0:
                 audio_segment = AudioSegment(
                     audio_path,
-                    trange("0s", "{}s".format(max(0.001, min(actual_total_duration, audio_duration) - 0.005))),
+                    trange("0s", "{}s".format(max(0.001, audio_duration - 0.005))),
                 )
                 script.add_segment(audio_segment, "音频轨道")
 

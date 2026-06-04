@@ -985,7 +985,7 @@ class JianYingExportService:
                     audio_duration = duration
                 audio_segment = AudioSegment(
                     audio_path,
-                    trange(f"{current_time}s", f"{max(0.001, min(duration, audio_duration) - 0.005)}s")
+                    trange(f"{current_time}s", f"{max(0.001, audio_duration - 0.005)}s")
                 )
                 script.add_segment(audio_segment, "音频轨道")
 

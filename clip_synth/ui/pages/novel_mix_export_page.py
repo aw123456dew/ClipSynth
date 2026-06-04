@@ -618,13 +618,11 @@ class NovelMixExportPage(QFrame):
 
     def _cleanup_workers(self) -> None:
         if self._worker is not None:
-            self._worker.cancel()
             self._worker.quit()
             self._worker.wait(2000)
             self._worker.deleteLater()
             self._worker = None
         if self._jianying_worker is not None:
-            self._jianying_worker.cancel()
             self._jianying_worker.quit()
             self._jianying_worker.wait(2000)
             self._jianying_worker.deleteLater()
