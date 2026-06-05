@@ -718,7 +718,7 @@ STORYBOARD_DESC_AI_PROMPT = """\
 === 输出格式规范 ===
 
 整体排版：
-用一段话概述本页的版面布局方案。阅读动线统一为**从右到左、从上到下**。
+用一段话概述本页的版面布局方案。**阅读动线固定为从左到右、从上到下**（即每行从左往右读，换行后继续从左往右读），排版布局必须严格符合此阅读方向。
 
 格N (形状描述)
 - 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
@@ -800,7 +800,7 @@ STORYBOARD_DESC_MANUAL_PROMPT = """\
 === 输出格式规范 ===
 
 整体排版：
-用一段话概述本页的版面布局方案。阅读动线统一为**从右到左、从上到下**。
+用一段话概述本页的版面布局方案。**阅读动线固定为从左到右、从上到下**（即每行从左往右读，换行后继续从左往右读），排版布局必须严格符合此阅读方向。
 
 格N (形状描述)
 - 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
@@ -1256,11 +1256,18 @@ def _render_page_number(
 
     padding_x = 4
     padding_y = 4
-    margin_bottom = int(h * 0.03)
+    margin_bottom = 2
+    margin_side = 8
 
     bg_w = tw + padding_x * 2
     bg_h = th + padding_y * 2
-    bg_x = (w - bg_w) // 2
+    align = pn_settings.get("alignment", "center")
+    if align == "left":
+        bg_x = margin_side
+    elif align == "right":
+        bg_x = w - bg_w - margin_side
+    else:
+        bg_x = (w - bg_w) // 2
     bg_y = h - bg_h - margin_bottom
 
     # 解析颜色
@@ -1862,6 +1869,21 @@ class _GenerateSettingsDialog(QDialog):
         )
         pn_layout.addWidget(self._pn_opacity_slider)
 
+        align_label = QLabel("位置")
+        align_label.setObjectName("dialogFieldLabel")
+        pn_layout.addWidget(align_label)
+
+        self._pn_align_combo = QComboBox()
+        self._pn_align_combo.setObjectName("genSettingsCombo")
+        self._pn_align_combo.addItem("靠左", "left")
+        self._pn_align_combo.addItem("居中", "center")
+        self._pn_align_combo.addItem("靠右", "right")
+        saved_align = pn_settings.get("alignment", "center")
+        align_idx = self._pn_align_combo.findData(saved_align)
+        self._pn_align_combo.setCurrentIndex(align_idx if align_idx >= 0 else 1)
+        self._pn_align_combo.setFixedHeight(36)
+        pn_layout.addWidget(self._pn_align_combo)
+
         self._pn_container.setVisible(False)
         layout.addWidget(self._pn_container)
 
@@ -1891,6 +1913,7 @@ class _GenerateSettingsDialog(QDialog):
         self._font_color_edit.setEnabled(enabled)
         self._bg_color_edit.setEnabled(enabled)
         self._pn_opacity_slider.setEnabled(enabled)
+        self._pn_align_combo.setEnabled(enabled)
 
     def _toggle_pn_section(self) -> None:
         self._pn_expanded = not self._pn_expanded
@@ -1920,6 +1943,7 @@ class _GenerateSettingsDialog(QDialog):
             "font_color": self._font_color_edit.text().strip() or "#000000",
             "bg_color": self._bg_color_edit.text().strip() or "#FFFFFF",
             "bg_opacity": self._pn_opacity_slider.value(),
+            "alignment": self._pn_align_combo.currentData(),
         }
         self.accept()
 
@@ -2148,6 +2172,130 @@ class _ExportDialog(QDialog):
         return self._end_spin.value()
 
 
+class _ExportWorker(QThread):
+    """后台导出ZIP的Worker，带页码渲染"""
+    progress = Signal(int, int)  # current, total
+    message = Signal(str)
+    finished = Signal(str)  # save_path
+    error = Signal(str)
+
+    def __init__(self, image_files: list, save_path: str, project_name: str, gen_settings: dict, parent=None):
+        super().__init__(parent)
+        self._image_files = image_files
+        self._save_path = save_path
+        self._project_name = project_name
+        self._gen_settings = gen_settings
+
+    def run(self) -> None:
+        try:
+            import os as _os
+            import tempfile as _tempfile
+            import zipfile as _zipfile
+            import time as _time
+
+            pn_settings = self._gen_settings.get("page_number", {})
+            pn_prefix = pn_settings.get("prefix", "").strip() or self._project_name
+            pn_enabled = pn_settings.get("enabled", True)
+            total = len(self._image_files)
+            base_ts = _time.time() - total
+
+            # 缓存字体对象，避免重复加载
+            _font_cache: dict = {}
+
+            def _render_with_cache(fp, idx, page_num):
+                nonlocal _font_cache
+                from PIL import Image, ImageDraw, ImageFont
+                pn = self._gen_settings.get("page_number", {})
+                if not pn.get("enabled", True):
+                    return fp
+                prefix = pn.get("prefix", "").strip() or self._project_name
+                font_color = pn.get("font_color", "#000000")
+                bg_color = pn.get("bg_color", "#FFFFFF")
+                bg_opacity = pn.get("bg_opacity", 200)
+                text = f"《{prefix}{page_num:02d}》"
+
+                img = Image.open(fp).convert("RGBA")
+                w, h = img.size
+                font_size = max(w // 40, 16)
+
+                # 缓存字体
+                cache_key = font_size
+                font = _font_cache.get(cache_key)
+                if font is None:
+                    try:
+                        font = ImageFont.truetype("msyh.ttc", font_size)
+                    except Exception:
+                        try:
+                            font = ImageFont.truetype("simhei.ttf", font_size)
+                        except Exception:
+                            font = ImageFont.load_default()
+                    _font_cache[cache_key] = font
+
+                txt_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                draw = ImageDraw.Draw(txt_layer)
+
+                bbox = draw.textbbox((0, 0), text, font=font)
+                tw = bbox[2] - bbox[0]
+                th = bbox[3] - bbox[1]
+
+                padding_x, padding_y = 4, 4
+                margin_bottom, margin_side = 2, 8
+                bg_w = tw + padding_x * 2
+                bg_h = th + padding_y * 2
+                align = pn.get("alignment", "center")
+                if align == "left":
+                    bg_x = margin_side
+                elif align == "right":
+                    bg_x = w - bg_w - margin_side
+                else:
+                    bg_x = (w - bg_w) // 2
+                bg_y = h - bg_h - margin_bottom
+
+                def _parse_color(hex_color):
+                    hex_color = hex_color.lstrip("#")
+                    if len(hex_color) == 6:
+                        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                    return (0, 0, 0)
+
+                bg_rgba = _parse_color(bg_color) + (min(bg_opacity, 255),)
+                draw.rectangle([bg_x, bg_y, bg_x + bg_w, bg_y + bg_h], fill=bg_rgba)
+                tx = bg_x + (bg_w - tw) // 2 - bbox[0]
+                ty = bg_y + (bg_h - th) // 2 - bbox[1]
+                draw.text((tx, ty), text, fill=_parse_color(font_color) + (255,), font=font)
+
+                img = Image.alpha_composite(img, txt_layer).convert("RGB")
+                with _tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                    temp_path = tmp.name
+                img.save(temp_path, quality=95, optimize=True)
+                return temp_path
+
+            with _zipfile.ZipFile(self._save_path, 'w', _zipfile.ZIP_DEFLATED) as zf:
+                for i, (idx, fp) in enumerate(self._image_files, start=1):
+                    zi = _zipfile.ZipInfo.from_file(fp, f"{i}.png")
+                    ts = base_ts + idx
+                    zi.date_time = _time.localtime(ts)[:6]
+                    zi.extra = _make_zip_ntfs_extra(ts)
+                    if pn_enabled:
+                        temp_path = _render_with_cache(str(fp), idx, idx)
+                        with open(temp_path, "rb") as f:
+                            zf.writestr(zi, f.read())
+                        try:
+                            _os.unlink(temp_path)
+                        except Exception:
+                            pass
+                    else:
+                        with open(fp, "rb") as f:
+                            zf.writestr(zi, f.read())
+                    self.progress.emit(i, total)
+                    self.message.emit(f"正在导出 {i}/{total}...")
+
+            self.message.emit("导出完成")
+            self.finished.emit(self._save_path)
+        except Exception as e:
+            logger.error("导出失败: %s", str(e), exc_info=True)
+            self.error.emit(str(e))
+
+
 class NovelComicGeneratePage(QFrame):
     back_to_chapters = Signal()
     comic_image_generated = Signal(int, str)
@@ -2171,6 +2319,7 @@ class NovelComicGeneratePage(QFrame):
         self._match_worker: MatchAssetsWorker | None = None
         self._desc_worker: StoryboardDescriptionWorker | None = None
         self._gen_settings: dict = {}
+        self._export_worker: _ExportWorker | None = None
         self._batch_comic_total = 0
         self._batch_comic_ctr: list[int] = [0]
         self._comic_poll_timer: object | None = None
@@ -2337,37 +2486,38 @@ class NovelComicGeneratePage(QFrame):
                     image_files.append((idx, matches[0]))
 
         image_files.sort(key=lambda x: x[0])
-        try:
-            import tempfile as _tempfile
-            pn_settings = self._gen_settings.get("page_number", {})
-            pn_prefix = pn_settings.get("prefix", "").strip() or project.name
-            pn_enabled = pn_settings.get("enabled", True)
 
-            base_ts = time.time() - len(image_files)
-            with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for i, (idx, fp) in enumerate(image_files, start=1):
-                    zi = zipfile.ZipInfo.from_file(fp, f"{i}.png")
-                    ts = base_ts + idx
-                    zi.date_time = time.localtime(ts)[:6]
-                    zi.extra = _make_zip_ntfs_extra(ts)
-                    if pn_enabled:
-                        with _tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                            temp_path = tmp.name
-                        _render_page_number(str(fp), temp_path, pn_prefix, idx, self._gen_settings)
-                        with open(temp_path, "rb") as f:
-                            zf.writestr(zi, f.read())
-                        try:
-                            os.unlink(temp_path)
-                        except Exception:
-                            pass
-                    else:
-                        with open(fp, "rb") as f:
-                            zf.writestr(zi, f.read())
-            self._desc_status.setText(f"导出完成：{len(image_files)} 张图片 → {save_path}")
-            self._desc_status.setStyleSheet("color: #4ade80;")
-        except Exception as e:
-            self._desc_status.setText(f"导出失败: {e}")
-            self._desc_status.setStyleSheet("color: #f87171;")
+        self._export_btn.setEnabled(False)
+        self._export_btn.setText("导出中...")
+        self._desc_status.setText(f"准备导出 {len(image_files)} 张图片...")
+        self._desc_status.setStyleSheet("color: #4fc3f7;")
+
+        self._export_worker = _ExportWorker(
+            image_files, save_path, project.name, self._gen_settings, self,
+        )
+        self._export_worker.progress.connect(self._on_export_progress)
+        self._export_worker.message.connect(self._on_export_message)
+        self._export_worker.finished.connect(self._on_export_finished)
+        self._export_worker.error.connect(self._on_export_error)
+        self._export_worker.start()
+
+    def _on_export_progress(self, current: int, total: int) -> None:
+        self._desc_status.setText(f"正在导出 {current}/{total}...")
+
+    def _on_export_message(self, msg: str) -> None:
+        self._desc_status.setText(msg)
+
+    def _on_export_finished(self, save_path: str) -> None:
+        self._export_btn.setEnabled(True)
+        self._export_btn.setText("📦  导出")
+        self._desc_status.setText(f"导出完成 → {save_path}")
+        self._desc_status.setStyleSheet("color: #4ade80;")
+
+    def _on_export_error(self, error_msg: str) -> None:
+        self._export_btn.setEnabled(True)
+        self._export_btn.setText("📦  导出")
+        self._desc_status.setText(f"导出失败: {error_msg}")
+        self._desc_status.setStyleSheet("color: #f87171;")
 
     def _images_dir(self) -> Path:
         images_dir = (
@@ -3180,7 +3330,12 @@ class NovelComicGeneratePage(QFrame):
         prompt += f"，{resolution}分辨率，图片比例{ratio}，尺寸{size}"
         if page_num:
             # prompt += f"。请在画面底部居中位置用白色小字生成页码 {page_num}"
-            prompt += f"。画面中的字体加粗，去除图像中的噪点和高频细节。保持所有的线条、颜色和亮度不变"
+            prompt += f"去除图像中的噪点和高频细节。保持所有的线条、颜色和亮度不变"
+        prompt += f"""
+        统一使用 思源黑体 Medium** 字体，字体大小 22px。
+        避免使用任何字体的 Light/Thin 字重；正文字号不低于22px；抗锯齿选择"平滑"模式。
+        文字统一中文简体，避免字体模糊。
+        """
 
         return prompt, size, reference_paths
 
@@ -3961,7 +4116,14 @@ class _StoryboardPreviewDialog(QDialog):
         if px.isNull():
             return
 
-        # 渲染页码
+        # 先缩放到屏幕尺寸，再渲染页码（大幅减少PIL处理像素量）
+        screen = self.screen().size() if self.screen() else QSize(1920, 1080)
+        max_w = int(screen.width() * 0.9)
+        max_h = int(screen.height() * 0.9)
+        if px.width() > max_w or px.height() > max_h:
+            px = self._high_quality_downscale(px, max_w, max_h)
+
+        # 渲染页码（在缩小的图上进行，速度快很多）
         pn_settings = self._gen_settings.get("page_number", {})
         if pn_settings.get("enabled", True):
             pn_prefix = pn_settings.get("prefix", "").strip() or self._project_name
@@ -3971,20 +4133,15 @@ class _StoryboardPreviewDialog(QDialog):
             _render_page_number(str(path), temp_path, pn_prefix, page_num, self._gen_settings)
             px_pn = QPixmap(temp_path)
             if not px_pn.isNull():
-                px = px_pn
+                # 缩放到同尺寸
+                scaled_pn = px_pn.scaled(px.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                px = scaled_pn
             try:
                 os.unlink(temp_path)
             except Exception:
                 pass
 
-        screen = self.screen().size() if self.screen() else QSize(1920, 1080)
-        max_w = int(screen.width() * 0.9)
-        max_h = int(screen.height() * 0.9)
-        if px.width() > max_w or px.height() > max_h:
-            scaled = self._high_quality_downscale(px, max_w, max_h)
-        else:
-            scaled = px
-        self._image_label.setPixmap(scaled)
+        self._image_label.setPixmap(px)
         self.update()
 
     @staticmethod

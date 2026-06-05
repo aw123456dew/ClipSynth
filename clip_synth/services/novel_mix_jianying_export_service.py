@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import subprocess
 import sys
 import tempfile
@@ -58,6 +59,41 @@ def _get_video_resolution(path: str) -> Tuple[int, int]:
     except Exception:
         pass
     return 1920, 1080
+
+
+def _get_video_frame_rate(path: str) -> float:
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=r_frame_rate",
+        "-of", "csv=p=0",
+        path,
+    ]
+    try:
+        kwargs = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(cmd, capture_output=True, text=False, timeout=15, **kwargs)
+        if result.returncode == 0:
+            output = result.stdout.decode("utf-8", errors="replace").strip()
+            if output and "/" in output:
+                num, den = output.split("/")
+                return float(num) / float(den) if float(den) > 0 else 30.0
+    except Exception:
+        pass
+    return 30.0
+
+
+def _make_frame_drop_filter(drop_frames: int, duration: float, video_path: str) -> str | None:
+    """生成随机抽帧的ffmpeg filter，如果drop_frames为0或参数无效则返回None"""
+    if drop_frames <= 0 or duration <= 0:
+        return None
+    fps = _get_video_frame_rate(video_path)
+    total_frames = int(duration * fps)
+    if total_frames <= drop_frames:
+        return None
+    prob = drop_frames / total_frames
+    return f"select='not(lt(random(1),{prob:.6f}))',setpts=N/FRAME_RATE/TB"
 
 
 def _get_aspect_ratio(w: int, h: int) -> float:
@@ -152,6 +188,10 @@ class NovelMixJianyingExportService:
         processed_clips = []
         total = len(clips)
         target_ratio = target_w / target_h
+
+        opening_params = project.extra_data.get("opening_params", {})
+        mix_params = project.extra_data.get("mix_params", {})
+
         for i, clip_info in enumerate(clips):
             if is_canceled and is_canceled():
                 raise RuntimeError("导出已取消")
@@ -196,6 +236,17 @@ class NovelMixJianyingExportService:
 
             if abs(speed - 1.0) > 0.01:
                 vf_parts.append("setpts={}*PTS".format(1.0 / speed))
+
+            # 随机抽帧
+            params = opening_params if i == 0 else mix_params
+            drop_min = params.get("drop_frames_min", 0)
+            drop_max = params.get("drop_frames_max", 0)
+            drop_frames = 0
+            if drop_min > 0 and drop_max > 0:
+                drop_frames = random.randint(int(drop_min), int(drop_max))
+            drop_filter = _make_frame_drop_filter(drop_frames, original_duration, video_path)
+            if drop_filter:
+                vf_parts.append(drop_filter)
 
             vf_parts.append("format=yuv420p")
             vf_filter = ",".join(vf_parts)

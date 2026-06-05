@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -126,16 +127,6 @@ class _MixParamsPage(QFrame):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(24)
 
-        self._segment_group = _ParamGroup(
-            title="视频连贯切分（秒）",
-            label_min="最小切分",
-            label_max="最大切分",
-            min_val=0.1, max_val=30.0,
-            default_min=1.0, default_max=5.0,
-            decimals=1, single_step=0.5,
-        )
-        layout.addWidget(self._segment_group)
-
         self._speed_group = _ParamGroup(
             title="片段随机加速",
             label_min="最慢",
@@ -156,23 +147,32 @@ class _MixParamsPage(QFrame):
         )
         layout.addWidget(self._zoom_group)
 
+        # 随机抽帧（范围）
+        self._drop_frame_group = _ParamGroup(
+            title="素材随机抽帧",
+            label_min="最少",
+            label_max="最多",
+            min_val=0, max_val=1000,
+            default_min=0, default_max=0,
+            decimals=0, single_step=1,
+        )
+        self._drop_frame_group.setToolTip("最少/最多抽帧数，均为0则不抽帧")
+
+        layout.addWidget(self._drop_frame_group)
+
         layout.addStretch()
 
     def get_params(self) -> dict:
         return {
-            "segment_min": self._segment_group.min_value,
-            "segment_max": self._segment_group.max_value,
             "speed_min": self._speed_group.min_value,
             "speed_max": self._speed_group.max_value,
             "zoom_min": self._zoom_group.min_value,
             "zoom_max": self._zoom_group.max_value,
+            "drop_frames_min": self._drop_frame_group.min_value,
+            "drop_frames_max": self._drop_frame_group.max_value,
         }
 
     def set_params(self, params: dict) -> None:
-        self._segment_group.set_values(
-            params.get("segment_min", 1.0),
-            params.get("segment_max", 5.0),
-        )
         self._speed_group.set_values(
             params.get("speed_min", 1.0),
             params.get("speed_max", 2.0),
@@ -180,6 +180,10 @@ class _MixParamsPage(QFrame):
         self._zoom_group.set_values(
             params.get("zoom_min", 1.0),
             params.get("zoom_max", 1.5),
+        )
+        self._drop_frame_group.set_values(
+            params.get("drop_frames_min", 0),
+            params.get("drop_frames_max", 0),
         )
 
 

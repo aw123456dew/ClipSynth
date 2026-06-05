@@ -31,6 +31,9 @@ class _Rng:
     def randint(self, a: int, b: int) -> int:
         return self._rng.randint(a, b)
 
+    def choice(self, seq: list) -> object:
+        return self._rng.choice(seq)
+
 
 class _ProgressThrottle:
     def __init__(self, callback: Callable[[str], None] | None):
@@ -113,15 +116,6 @@ def _batch_get_durations(
     return durations
 
 
-def _filter_by_min_duration(
-    video_durations: Dict[str, float],
-    seg_min: float,
-    speed_max: float,
-) -> List[str]:
-    min_needed = seg_min * speed_max
-    return [vp for vp, dur in video_durations.items() if dur >= min_needed]
-
-
 def _pick_clip_from_video(
     video_path: str,
     video_duration: float,
@@ -129,27 +123,29 @@ def _pick_clip_from_video(
     remaining: float,
     rng: _Rng,
 ) -> dict | None:
+    """从单个视频中随机截取一段，适配剩余音频时长"""
     speed_min = params.get("speed_min", 1.0)
     speed_max = params.get("speed_max", 2.0)
-    seg_min = params.get("segment_min", 1.0)
-    seg_max = params.get("segment_max", 5.0)
     zoom_min = params.get("zoom_min", 1.0)
     zoom_max = params.get("zoom_max", 1.5)
 
     speed = round(rng.uniform(speed_min, speed_max), 2)
 
-    max_adjusted = min(seg_max, remaining)
-    if max_adjusted < seg_min:
+    # 该视频在时间轴上最多能贡献多少秒
+    max_timeline = video_duration / speed
+    if max_timeline < 0.5:
         return None
 
-    adjusted_duration = round(rng.uniform(seg_min, max_adjusted), 1)
+    # 时间轴时长 = 取剩余和视频最大能提供的较小值
+    adjusted_duration = round(min(remaining, max_timeline), 1)
+    if adjusted_duration < 0.5:
+        return None
+
     original_duration = adjusted_duration * speed
 
-    if original_duration > video_duration:
-        return None
-
+    # 随机起始点，确保不超出视频范围
     max_start = video_duration - original_duration
-    start = round(rng.uniform(0.0, max_start), 1)
+    start = round(rng.uniform(0.0, max(0.0, max_start)), 1)
     zoom = round(rng.uniform(zoom_min, zoom_max), 2)
 
     return {
@@ -195,43 +191,21 @@ def select_clips(
     if not mix_durations:
         raise RuntimeError("混剪素材文件夹中无有效视频文件")
 
-    progress.emit("正在过滤可用素材...")
-
-    seg_min = mix_params.get("segment_min", 1.0)
-    speed_max = mix_params.get("speed_max", 2.0)
-
-    opening_seg_min = opening_params.get("segment_min", 1.0)
-    opening_speed_max = opening_params.get("speed_max", 2.0)
-
-    opening_min_dur = _filter_by_min_duration(
-        opening_durations, opening_seg_min, opening_speed_max,
-    )
-    mix_min_dur = _filter_by_min_duration(
-        mix_durations, seg_min, speed_max,
-    )
-
-    if not opening_min_dur:
-        raise RuntimeError("开头素材视频时长均不满足最小切分要求")
-    if not mix_min_dur:
-        raise RuntimeError("混剪素材视频时长均不满足最小切分要求")
-
-    rng.shuffle(opening_min_dur)
-    rng.shuffle(mix_min_dur)
-
     clips = []
     remaining = total_duration
-    consecutive_failures = 0
 
+    # ---- 开头素材（只取一个片段） ----
     if remaining > 0.1:
         progress.force("正在匹配开头素材...")
 
-        for video_path in opening_min_dur:
+        for video_path in opening_videos:
             if is_canceled and is_canceled():
                 raise RuntimeError("导出已取消")
-
+            dur = opening_durations.get(video_path, 0.0)
+            if dur <= 0:
+                continue
             clip = _pick_clip_from_video(
-                video_path, opening_durations[video_path],
-                opening_params, remaining, rng,
+                video_path, dur, opening_params, remaining, rng,
             )
             if clip:
                 clips.append(clip)
@@ -241,51 +215,42 @@ def select_clips(
         if not clips:
             logger.warning("未找到符合条件的开头素材，跳过")
 
-    if remaining < seg_min:
-        remaining = 0.0
+    # ---- 混剪素材（用完一轮才重复，最后一段裁剪） ----
+    if not mix_videos:
+        return clips
 
-    mix_idx = 0
+    used_indices: set[int] = set()
 
     while remaining > 0.1:
         if is_canceled and is_canceled():
             raise RuntimeError("导出已取消")
 
-        if consecutive_failures >= len(mix_min_dur):
-            logger.warning("无法匹配更多素材，剩余 %.1f 秒未填充", remaining)
-            break
+        # 找未用过的视频
+        available = [i for i in range(len(mix_videos)) if i not in used_indices]
+        if not available:
+            # 全部用完了但音频还长 → 重置，重新打乱，允许重复使用
+            used_indices.clear()
+            rng.shuffle(mix_videos)
+            available = list(range(len(mix_videos)))
+            progress.force("所有素材已用完，重新轮转...")
 
-        if remaining < seg_min:
-            break
-
-        video_path = mix_min_dur[mix_idx % len(mix_min_dur)]
+        idx = rng.choice(available)
+        video_path = mix_videos[idx]
         video_duration = mix_durations.get(video_path, 0.0)
-
-        min_needed = seg_min * mix_params.get("speed_max", 2.0)
-        if video_duration < min_needed:
-            mix_idx += 1
-            if mix_idx >= len(mix_min_dur):
-                rng.shuffle(mix_min_dur)
-                mix_idx = 0
-            consecutive_failures += 1
-            continue
+        used_indices.add(idx)
 
         progress.emit(f"正在匹配混剪素材 ({len(clips)+1})...")
 
         clip = _pick_clip_from_video(
-            video_path, video_duration,
-            mix_params, remaining, rng,
+            video_path, video_duration, mix_params, remaining, rng,
         )
         if clip:
             clips.append(clip)
             remaining -= clip["duration"]
-            consecutive_failures = 0
-        else:
-            consecutive_failures += 1
-
-        mix_idx += 1
-        if mix_idx >= len(mix_min_dur):
-            rng.shuffle(mix_min_dur)
-            mix_idx = 0
+            logger.debug(
+                "选取素材: %s, 时长 %.1fs, 变速 %.2fx, 剩余 %.1fs",
+                os.path.basename(video_path), clip["duration"], clip["speed"], remaining,
+            )
 
     if not clips:
         raise RuntimeError("未能选取到任何有效的视频片段，请检查素材参数设置")
