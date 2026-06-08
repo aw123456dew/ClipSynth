@@ -215,29 +215,19 @@ def select_clips(
         if not clips:
             logger.warning("未找到符合条件的开头素材，跳过")
 
-    # ---- 混剪素材（用完一轮才重复，最后一段裁剪） ----
+    # ---- 混剪素材（每个视频只取一个片段，一轮用完才轮转） ----
     if not mix_videos:
         return clips
 
-    used_indices: set[int] = set()
+    idx = 0
 
     while remaining > 0.1:
         if is_canceled and is_canceled():
             raise RuntimeError("导出已取消")
 
-        # 找未用过的视频
-        available = [i for i in range(len(mix_videos)) if i not in used_indices]
-        if not available:
-            # 全部用完了但音频还长 → 重置，重新打乱，允许重复使用
-            used_indices.clear()
-            rng.shuffle(mix_videos)
-            available = list(range(len(mix_videos)))
-            progress.force("所有素材已用完，重新轮转...")
-
-        idx = rng.choice(available)
+        # 获取当前视频
         video_path = mix_videos[idx]
         video_duration = mix_durations.get(video_path, 0.0)
-        used_indices.add(idx)
 
         progress.emit(f"正在匹配混剪素材 ({len(clips)+1})...")
 
@@ -251,6 +241,18 @@ def select_clips(
                 "选取素材: %s, 时长 %.1fs, 变速 %.2fx, 剩余 %.1fs",
                 os.path.basename(video_path), clip["duration"], clip["speed"], remaining,
             )
+
+        # 每个视频只取一个片段，换下一个
+        idx += 1
+
+        if idx >= len(mix_videos):
+            if remaining <= 0.1:
+                break
+            # 所有视频都用尽了但音频还有剩余 → 重置打乱再来
+            rng.shuffle(mix_videos)
+            idx = 0
+            progress.force("所有素材已用完，重新轮转...")
+            logger.info("所有混剪素材已用尽，重新打乱后继续匹配 (剩余 %.1fs)", remaining)
 
     if not clips:
         raise RuntimeError("未能选取到任何有效的视频片段，请检查素材参数设置")

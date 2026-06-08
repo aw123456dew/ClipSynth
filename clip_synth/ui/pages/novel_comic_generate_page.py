@@ -291,7 +291,7 @@ STORYBOARD_SPLIT_SYSTEM_PROMPT = """\
 }
 
 核心要求：
-1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加。一个分镜中得对话加旁白，不能超过6句话。
+1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加。一个分镜中不超出6个句号或者6个逗号，就是逗号+句号加起来不能超过6个 。 
 2. 每个分镜对应一页漫画，一页漫画 1-3 格。一个格能表达清楚就只用 1 格（大画面），内容较多时用 2 格，复杂时才用 3-4 格。
 3. panel_count_suggestion 是推荐格数，根据本页内容的节奏和复杂度给出合理建议（整数 1-4）
 4. present_characters 列出本页出场的人物名称，不要遗漏
@@ -1203,6 +1203,16 @@ def _image_size_from_settings(ratio: str, resolution: str) -> str:
     return f"{w}x{h}"
 
 
+def _merge_ref_paths(gen_settings: dict, asset_refs: list[str]) -> list[str]:
+    """合并画风垫图和资产参考图，垫图放在最前面"""
+    sr_settings = gen_settings.get("style_ref", {})
+    if sr_settings.get("enabled", False):
+        sr_paths = sr_settings.get("paths", [])
+        valid_sr = [p for p in sr_paths if p and Path(p).exists()]
+        return valid_sr + asset_refs
+    return asset_refs
+
+
 def _square_size_from_resolution(resolution: str) -> str:
     factors = {"1K": 1024, "2K": 2048, "4K": 4096}
     return f"{factors.get(resolution, 1024)}x{factors.get(resolution, 1024)}"
@@ -1788,6 +1798,62 @@ class _GenerateSettingsDialog(QDialog):
         self._prefix_edit.setPlainText(self._settings.get("prefix", ""))
         layout.addWidget(self._prefix_edit)
 
+        # === 画风垫图（可收缩） ===
+        self._sr_expanded = False
+
+        self._sr_toggle_btn = QPushButton("▶  画风垫图")
+        self._sr_toggle_btn.setObjectName("genSettingsCollapseBtn")
+        self._sr_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self._sr_toggle_btn.setFlat(True)
+        self._sr_toggle_btn.clicked.connect(self._toggle_sr_section)
+        layout.addWidget(self._sr_toggle_btn)
+
+        self._sr_container = QFrame()
+        self._sr_container.setObjectName("pnContainer")
+        sr_layout = QVBoxLayout(self._sr_container)
+        sr_layout.setContentsMargins(0, 0, 0, 0)
+        sr_layout.setSpacing(8)
+
+        sr_settings = self._settings.get("style_ref", {})
+
+        self._sr_enabled_cb = QCheckBox("启用画风垫图（开启后画风预设prompt不传入生图）")
+        self._sr_enabled_cb.setObjectName("genSettingsCheckbox")
+        self._sr_enabled_cb.setChecked(sr_settings.get("enabled", False))
+        self._sr_enabled_cb.toggled.connect(self._on_sr_enabled_toggled)
+        sr_layout.addWidget(self._sr_enabled_cb)
+
+        self._sr_paths: list[str] = sr_settings.get("paths", [])
+        self._sr_path_labels: list[QLabel] = []
+        self._sr_remove_btns: list[QPushButton] = []
+        for i in range(3):
+            row = QHBoxLayout()
+            row.setSpacing(8)
+
+            path_label = QLabel("未选择" if i >= len(self._sr_paths) else self._sr_paths[i])
+            path_label.setObjectName("dialogFieldLabel")
+            path_label.setWordWrap(True)
+            row.addWidget(path_label, stretch=1)
+            self._sr_path_labels.append(path_label)
+
+            sel_btn = QPushButton(f"选择图片{i+1}")
+            sel_btn.setObjectName("dialogConfirmBtn")
+            sel_btn.setFixedHeight(28)
+            sel_btn.clicked.connect(lambda checked, idx=i: self._on_select_sr_image(idx))
+            row.addWidget(sel_btn)
+
+            remove_btn = QPushButton("✕")
+            remove_btn.setObjectName("dialogCancelBtn")
+            remove_btn.setFixedSize(28, 28)
+            remove_btn.clicked.connect(lambda checked, idx=i: self._on_remove_sr_image(idx))
+            row.addWidget(remove_btn)
+            self._sr_remove_btns.append(remove_btn)
+
+            sr_layout.addLayout(row)
+
+        self._sync_sr_ui()
+        self._sr_container.setVisible(False)
+        layout.addWidget(self._sr_container)
+
         # === 页码设置（可收缩） ===
         self._pn_expanded = False
 
@@ -1920,6 +1986,40 @@ class _GenerateSettingsDialog(QDialog):
         self._pn_container.setVisible(self._pn_expanded)
         self._pn_toggle_btn.setText("▼  页码设置" if self._pn_expanded else "▶  页码设置")
 
+    def _toggle_sr_section(self) -> None:
+        self._sr_expanded = not self._sr_expanded
+        self._sr_container.setVisible(self._sr_expanded)
+        self._sr_toggle_btn.setText("▼  画风垫图" if self._sr_expanded else "▶  画风垫图")
+
+    def _on_select_sr_image(self, idx: int) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"选择垫图图片{idx+1}", "",
+            "图片文件 (*.png *.jpg *.jpeg *.webp)",
+        )
+        if not path:
+            return
+        while len(self._sr_paths) <= idx:
+            self._sr_paths.append("")
+        self._sr_paths[idx] = path
+        self._sync_sr_ui()
+
+    def _on_remove_sr_image(self, idx: int) -> None:
+        if idx < len(self._sr_paths):
+            self._sr_paths[idx] = ""
+            self._sync_sr_ui()
+
+    def _on_sr_enabled_toggled(self, enabled: bool) -> None:
+        for i in range(3):
+            self._sr_path_labels[i].setEnabled(enabled)
+
+    def _sync_sr_ui(self) -> None:
+        for i in range(3):
+            has_path = i < len(self._sr_paths) and bool(self._sr_paths[i])
+            self._sr_path_labels[i].setText(
+                self._sr_paths[i] if has_path else "未选择"
+            )
+            self._sr_remove_btns[i].setEnabled(has_path)
+
     def _current_style_prompt(self) -> str:
         idx = self._style_combo.currentIndex()
         if 0 <= idx < len(COMIC_STYLE_PRESETS):
@@ -1927,8 +2027,7 @@ class _GenerateSettingsDialog(QDialog):
         return ""
 
     def _on_style_changed(self, _index: int) -> None:
-        if self._style_combo.currentText() == "自定义画风":
-            self._prefix_edit.clear()
+        pass
 
     def _on_confirm(self) -> None:
         self._settings["concurrency"] = self._concurrency_spin.value()
@@ -1944,6 +2043,10 @@ class _GenerateSettingsDialog(QDialog):
             "bg_color": self._bg_color_edit.text().strip() or "#FFFFFF",
             "bg_opacity": self._pn_opacity_slider.value(),
             "alignment": self._pn_align_combo.currentData(),
+        }
+        self._settings["style_ref"] = {
+            "enabled": self._sr_enabled_cb.isChecked(),
+            "paths": [p for p in self._sr_paths if p.strip()],
         }
         self.accept()
 
@@ -3029,6 +3132,7 @@ class NovelComicGeneratePage(QFrame):
         gen_settings = self._gen_settings
 
         prompt, size, reference_paths = self._build_comic_prompt(sb, project, gen_settings, page_num=sb.get("index", 1))
+        reference_paths = _merge_ref_paths(gen_settings, reference_paths)
 
         card = self._storyboard_cards.get(storyboard_index)
         if card:
@@ -3273,6 +3377,7 @@ class NovelComicGeneratePage(QFrame):
                 card.set_generating()
 
             prompt, size, reference_paths = self._build_comic_prompt(sb, project, gen_settings, page_num=idx)
+            reference_paths = _merge_ref_paths(gen_settings, reference_paths)
 
             review_mode = card.is_review_mode() if card else False
             if review_mode:
@@ -3315,10 +3420,23 @@ class NovelComicGeneratePage(QFrame):
                         reference_paths.append(a.image_path)
 
         global_prefix = gen_settings.get("prefix", "").strip()
-        style_prefix = _get_effective_prefix(gen_settings)
+        sr_settings = gen_settings.get("style_ref", {})
+        sr_enabled = sr_settings.get("enabled", False)
+        sr_paths: list[str] = sr_settings.get("paths", [])
+        logger.debug("_build_comic_prompt: sr_enabled=%s, sr_paths=%s", sr_enabled, sr_paths)
+
         prompt = desc
-        if style_prefix:
-            prompt = style_prefix + "，分镜内容：" + prompt
+        if sr_enabled:
+            sr_refs = [p for p in sr_paths if p and Path(p).exists()]
+            if sr_refs:
+                prompt = "参考图片{}的画风，生成对应画风的漫画内容。".format(
+                    "，图片".join(str(i+1) for i in range(len(sr_refs)))
+                ) + prompt
+        else:
+            style_prefix = _get_effective_prefix(gen_settings)
+            if style_prefix:
+                prompt = style_prefix + "，分镜内容：" + prompt
+
         if global_prefix:
             prompt = global_prefix + "，" + prompt
         if asset_descs:
@@ -3329,7 +3447,6 @@ class NovelComicGeneratePage(QFrame):
         size = _image_size_from_settings(ratio, resolution)
         prompt += f"，{resolution}分辨率，图片比例{ratio}，尺寸{size}"
         if page_num:
-            # prompt += f"。请在画面底部居中位置用白色小字生成页码 {page_num}"
             prompt += f"去除图像中的噪点和高频细节。保持所有的线条、颜色和亮度不变"
         prompt += f"""
         统一使用 思源黑体 Medium** 字体，字体大小 22px。
@@ -4840,10 +4957,23 @@ class _AssetManagementDialog(QDialog):
         asset_desc = self._get_asset_desc(asset_name)
         type_label = {"character": "人物图", "scene": "场景图", "prop": "道具图"}.get(asset_type, asset_type)
 
-        global_prefix = _get_effective_prefix(gen_settings)
+        style_prefix = _get_effective_prefix(gen_settings)
         prompt = f"资产名称：{asset_name}，资产类型：{type_label}，{asset_desc}"
-        if global_prefix:
-            prompt = f"{global_prefix}，{asset_name}，{prompt}"
+
+        sr_settings = gen_settings.get("style_ref", {})
+        sr_enabled = sr_settings.get("enabled", False)
+        sr_paths: list[str] = sr_settings.get("paths", [])
+        if sr_enabled:
+            valid_sr = [p for p in sr_paths if p and Path(p).exists()]
+            if valid_sr:
+                ref_desc = "，图片".join(f"图片{i+1}" for i in range(len(valid_sr)))
+                prompt = f"参考{ref_desc}的画风，生成对应画风的素材。" + prompt
+        elif style_prefix:
+            prompt = f"{style_prefix}，{asset_name}，{prompt}"
+
+        user_prefix = gen_settings.get("prefix", "").strip()
+        if user_prefix:
+            prompt = f"{user_prefix}，{asset_name}，{prompt}"
 
         if asset_type == "character":
             prompt += "，生成人物4视角（正面全身视图，左侧身视图，右侧视图，背面视图），白底图，需要把人物名字显示在图片上"
@@ -4863,6 +4993,7 @@ class _AssetManagementDialog(QDialog):
         reference_images = None
         if ref_image_path and Path(ref_image_path).exists():
             reference_images = [ref_image_path]
+        reference_images = _merge_ref_paths(gen_settings, reference_images or [])
 
         resolution = gen_settings.get("resolution", "1K")
         size = _square_size_from_resolution(resolution)
@@ -5096,10 +5227,23 @@ class _AssetManagementDialog(QDialog):
             asset_desc = self._get_asset_desc(asset_name)
             type_label = {"character": "人物图", "scene": "场景图", "prop": "道具图"}.get(asset_type, asset_type)
 
-            global_prefix = _get_effective_prefix(gen_settings)
+            style_prefix = _get_effective_prefix(gen_settings)
             prompt = f"资产名称：{asset_name}，资产类型：{type_label}，{asset_desc}"
-            if global_prefix:
-                prompt = global_prefix + ", " + asset_name + "，" + prompt
+
+            sr_settings = gen_settings.get("style_ref", {})
+            sr_enabled = sr_settings.get("enabled", False)
+            sr_paths: list[str] = sr_settings.get("paths", [])
+            if sr_enabled:
+                valid_sr = [p for p in sr_paths if p and Path(p).exists()]
+                if valid_sr:
+                    ref_desc = "，图片".join(f"图片{i+1}" for i in range(len(valid_sr)))
+                    prompt = f"参考{ref_desc}的画风，生成对应画风的素材。" + prompt
+            elif style_prefix:
+                prompt = f"{style_prefix}，{asset_name}，{prompt}"
+
+            user_prefix = gen_settings.get("prefix", "").strip()
+            if user_prefix:
+                prompt = f"{user_prefix}，{asset_name}，{prompt}"
 
             if asset_type == "character":
                 prompt += "，生成人物4视角（正面全身视图，左侧身视图，右侧视图，背面视图），白底图，需要把人物名字显示在图片上"
@@ -5119,6 +5263,7 @@ class _AssetManagementDialog(QDialog):
             reference_images = None
             if ref_image_path and Path(ref_image_path).exists():
                 reference_images = [ref_image_path]
+            reference_images = _merge_ref_paths(gen_settings, reference_images or [])
             ImageGenService.instance().submit(
                 image_config, prompt,
                 _make_asset_on_done(

@@ -493,7 +493,7 @@ class AIService:
             "prompt": prompt,
             "n": 1,
             "size": ratio,
-            "metadata": {"resolution": resolution, "moderation": "low", "quality": "high"},
+            "metadata": {"resolution": resolution, "moderation": "low", "quality": "low"},
         }
         if ref_urls:
             gen_body["image_urls"] = [{"url": u} for u in ref_urls]
@@ -750,7 +750,7 @@ class AIService:
         }
         call_url = f"{base_url}/v1/draw/nano-banana"
         if self._config.api_type == 'openai':
-            body['quality'] = "high"
+            body['quality'] = "low"
             body["moderation"] = "low"
             call_url = f"{base_url}/v1/draw/completions"
 
