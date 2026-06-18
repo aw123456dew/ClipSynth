@@ -161,9 +161,9 @@ class ModelConfigGroup(QGroupBox):
         if self._show_api_provider:
             self._api_provider_combo = _NoWheelComboBox()
             self._api_provider_combo.setObjectName("settingsApiProviderCombo")
-            self._api_provider_combo.addItems(["NewAPI", "ToAPI", "Grasai"])
+            self._api_provider_combo.addItems(["NewAPI", "ToAPI", "Grasai", "ManXiaoBai"])
             idx = self._api_provider_combo.findText(
-                {"newapi": "NewAPI", "toapi": "ToAPI", "grasai": "Grasai"}.get(self._settings.api_provider, "NewAPI")
+                {"newapi": "NewAPI", "toapi": "ToAPI", "grasai": "Grasai", "manxiaobai":"ManXiaoBai"}.get(self._settings.api_provider, "NewAPI")
             )
             self._api_provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
             layout.addRow("API 供应商:", self._api_provider_combo)
@@ -291,7 +291,7 @@ class ModelConfigGroup(QGroupBox):
         api_provider = "newapi"
         if self._api_provider_combo:
             raw = self._api_provider_combo.currentText()
-            api_provider = {"NewAPI": "newapi", "ToAPI": "toapi", "Grasai": "grasai"}.get(raw, "newapi")
+            api_provider = {"NewAPI": "newapi", "ToAPI": "toapi", "Grasai": "grasai", "ManXiaoBai": "manxiaobai"}.get(raw, "newapi")
         return AIModelSettings(
             model_name=self._model_name_input.text().strip(),
             api_key=self._api_key_input.text().strip(),
@@ -310,7 +310,7 @@ class ModelConfigGroup(QGroupBox):
             self._api_type_combo.setCurrentIndex(idx if idx >= 0 else 0)
             self._on_api_type_changed()
         if self._api_provider_combo:
-            display = {"newapi": "NewAPI", "toapi": "ToAPI", "grasai": "Grasai"}.get(settings.api_provider, "NewAPI")
+            display = {"newapi": "NewAPI", "toapi": "ToAPI", "grasai": "Grasai", "manxiaobai": "ManXiaoBai"}.get(settings.api_provider, "NewAPI")
             idx = self._api_provider_combo.findText(display)
             self._api_provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
 

@@ -4208,6 +4208,45 @@ QSlider::sub-page:horizontal {
     background-color: #0c1322;
 }
 
+/* ===== Image Edit Dialog ===== */
+#imageEditDialog {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+}
+
+#imageEditDialog #dialogTitle {
+    color: #f1f5f9;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+#imageEditDialog #dialogFieldLabel {
+    color: #94a3b8;
+    font-size: 14px;
+}
+
+#imageEditDialog #imageEditPreview {
+    background-color: #0a0f1a;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+}
+
+#imageEditDialog QPlainTextEdit {
+    background-color: #0a0f1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 14px;
+    selection-background-color: #6366f1;
+}
+
+#imageEditDialog QPlainTextEdit:focus {
+    border-color: #6366f1;
+    background-color: #0c1322;
+}
+
 /* ===== Novel Comic Generate Page ===== */
 #novelComicGeneratePage {
     background-color: #060a14;

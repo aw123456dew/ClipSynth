@@ -13,8 +13,11 @@ requests>=2.31.0
 # Media processing
 opencv-python>=4.8.0
 Pillow>=10.0
-pyJianYingDraft>=1.0
+pyJianYingDraft
 scenedetect>=0.7,<0.8
+
+# TTS
+edge-tts>=6.1.0
 
 # Dev
 pytest>=8.0

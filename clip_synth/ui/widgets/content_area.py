@@ -187,6 +187,14 @@ class ContentArea(QFrame):
         self._stack.addWidget(self._novel_comic_page)
         self._pages["novel_comic"] = self._stack.count() - 1
 
+        from clip_synth.services.novel_rewrite_state_service import NovelRewriteStateService
+        from clip_synth.ui.pages.novel_rewrite_project_list_page import NovelRewriteProjectListPage
+        self._novel_rewrite_state_service = NovelRewriteStateService()
+        self._novel_rewrite_page = NovelRewriteProjectListPage(self._novel_rewrite_state_service)
+        self._novel_rewrite_page.open_project.connect(self._switch_to_novel_rewrite_detail)
+        self._stack.addWidget(self._novel_rewrite_page)
+        self._pages["novel_rewrite"] = self._stack.count() - 1
+
     def switch_to(self, page_key: str) -> None:
         if page_key in self._pages:
             if page_key == "short_drama_mix":
@@ -201,6 +209,8 @@ class ContentArea(QFrame):
                 self._novel_mix_page._load_projects()
             elif page_key == "novel_comic":
                 self._novel_comic_page._load_projects()
+            elif page_key == "novel_rewrite":
+                self._novel_rewrite_page._refresh()
             self._stack.setCurrentIndex(self._pages[page_key])
 
     def switch_to_project_wizard(self, data) -> None:
@@ -477,6 +487,7 @@ class ContentArea(QFrame):
             self._settings_service,
         )
         generate_page.back_to_chapters.connect(self._on_novel_comic_generate_back)
+        generate_page.switch_to_rewrite.connect(lambda: self.switch_to("novel_rewrite"))
         self._stack.addWidget(generate_page)
         self._stack.setCurrentIndex(self._stack.count() - 1)
 
@@ -486,3 +497,15 @@ class ContentArea(QFrame):
 
     def _on_novel_comic_generate_back(self) -> None:
         self._remove_wizard_from_stack()
+
+    def _switch_to_novel_rewrite_detail(self, project_id: str) -> None:
+        from clip_synth.ui.pages.novel_rewrite_detail_page import NovelRewriteDetailPage
+
+        detail_page = NovelRewriteDetailPage(project_id, self._novel_rewrite_state_service, settings_service=self._settings_service)
+        detail_page.back_to_list.connect(self._on_novel_rewrite_detail_back)
+        self._stack.addWidget(detail_page)
+        self._stack.setCurrentIndex(self._stack.count() - 1)
+
+    def _on_novel_rewrite_detail_back(self) -> None:
+        self._remove_wizard_from_stack()
+        self.switch_to("novel_rewrite")

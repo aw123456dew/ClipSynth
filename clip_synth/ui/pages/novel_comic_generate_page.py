@@ -8,8 +8,8 @@ import time
 import zipfile
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, QSize, QThread, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtCore import QEvent, QObject, Qt, QSize, QThread, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QImageReader, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -116,7 +117,6 @@ def _make_chat_caller(
             temperature=temperature,
             timeout=900,
             response_format=response_format or {"type": "json_object"},
-            extra_body={"thinking": {"type": "disabled"}},
         )
         if is_gemini:
             kwargs["extra_body"] = AIService._get_gemini_extra_body()
@@ -168,8 +168,9 @@ ASSET_EXTRACT_SYSTEM_PROMPT = """\
 3. 如果某类资产不存在，返回空数组
 4. 描述必须具体到可以用于 AI 生图的程度，不同类型有不同的描述重点：
 
-   - 人物（characters）：仅客观描述外貌特征——性别、年龄、发型、脸型、五官特点、身材、着装（衣服款式、颜色、材质）。**严禁描述角色的表情、神态、情绪、内心想法或性格特点**，只写客观可见的外观。正文未明确写到的部分，可根据上下文合理预测，不要编造离谱特征。
-   
+   - 人物（characters）：仅客观描述外貌特征——性别、年龄、发型、脸型、五官特点、身材、着装（衣服款式、颜色、材质）。**严禁描述角色的表情、神态、情绪、内心想法或性格特点（如"面带微笑""愤怒地""开心地""沮丧地"等），只写客观可见的静态外观**。
+     **外观补全规则**：如果原文没有描述某个角色的外观，你必须根据该角色的身份、年龄、社会地位和故事基调，**发挥想象补全一套完整的外观描述**。补全的外观必须具有**唯一性**——每个角色的长相、发型、着装风格必须明显不同，让读者一眼就能区分。例如：一个高冷学霸 vs 一个阳光运动少年，即便原文没写外貌，你也应该给前者配眼镜/整齐发型/深色着装，给后者配运动服/凌乱发型/亮色着装。同一个角色的不同版本（如常服版 vs 校服版）除外，它们共享同一基础外观，仅在着装上有差异。
+
    - 场景（scenes）：只客观描述环境本身——空间大小、建筑风格、光线氛围、色调、时间、天气、装饰、设施。**必须详细描述场景的空间布局**，例如左侧/右侧/前方/后方各有什么、家具和物品的摆放位置、空间的开阔程度等。**严禁描述场景中的人物数量、人物活动或"很多人""空无一人"等涉及人物的描述**。对于走廊、门口等过渡性场景，同样要描述其空间特征（宽度、长度、左右两侧墙壁材质、地面材质、照明方式等）。
    
    - 道具（props）：描述物品的外观、材质、颜色、尺寸、状态（新旧/破损/脏污等）。和场景一样，只描述物品本身，不能说角色在使用它。**重要限制：只描述物品的物理外观，严禁描述物品内部的文字内容或显示内容。** 例如手机只写"黑色智能手机，玻璃背板，银色金属边框"，不写屏幕上显示了什么；笔记本只写"棕色皮革笔记本，A5尺寸"，不写里面写了什么字；书只写"红色封面旧书，书脊有磨损"，不写书的内容。
@@ -291,12 +292,12 @@ STORYBOARD_SPLIT_SYSTEM_PROMPT = """\
 }
 
 核心要求：
-1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加。一个分镜中不超出6个句号或者6个逗号，就是逗号+句号加起来不能超过6个 。 
+1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加。每个分镜对应的text不得低于30个字，不得超过60个字。并且一个分镜中不超出3个句号
 2. 每个分镜对应一页漫画，一页漫画 1-3 格。一个格能表达清楚就只用 1 格（大画面），内容较多时用 2 格，复杂时才用 3-4 格。
 3. panel_count_suggestion 是推荐格数，根据本页内容的节奏和复杂度给出合理建议（整数 1-4）
 4. present_characters 列出本页出场的人物名称，不要遗漏
 5. bubbles 列出本页中所有角色的对话，speaker 是说话人，text 是对话内容。text 字段中凡是对话部分都要提取到 bubbles 中
-6. narrative 仅保留角色的内心独白、内心想法或主观看法（心理活动、内心感受、主观评价等），按顺序放入数组。其他所有的叙事描述（场景描写、环境交代、角色动作、面部表情等）**一律省略不放入 narrative**，以精简内容
+6. narrative 仅保留角色的内心独白、内心想法或主观看法（心理活动、内心感受、主观评价等），按顺序放入数组。其他所有的叙事描述（场景描写、环境交代、角色动作、面部表情等）**一律省略不放入 narrative**，以精简内容，并且移除所有无意义的标点符号（如破折号、省略号、书名号、单双引号等）。
 7. 所有分镜按原文顺序排列，覆盖全文，不要遗漏原文内容
 8. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符
 9. 所有字段必须使用与原文一致的语言（原文是中文则用中文，英文则用英文），**严禁出现英文的人称代词(he/she/him/her等)或英文单词，中文原文必须全部用中文表达**
@@ -496,7 +497,7 @@ class StoryboardSplitWorker(QThread):
             self.error.emit(str(e))
 
 
-MATCH_ASSETS_SYSTEM_PROMPT = """\
+MATCH_ASSETS_SYSTEM_PROMPT = """
 你是一个专业的漫画分镜策划师，负责为每个分镜匹配所需的资产（人物、场景、道具）。
 
 输出格式要求（最重要）：
@@ -514,7 +515,7 @@ MATCH_ASSETS_SYSTEM_PROMPT = """\
 }
 
 你将收到：
-1. 分镜列表，每个分镜包含编号、原文文本、出场人物列表、对话气泡、旁白叙述等详细信息
+1. 分镜列表，每个分镜包含编号、原文文本、出场人物列表、对话台词、旁白叙述等详细信息
 2. 资产池，分为人物(characters)、场景(scenes)、道具(props)三类，每项有名称
 
 核心规则：
@@ -522,12 +523,10 @@ MATCH_ASSETS_SYSTEM_PROMPT = """\
 2. 每个分镜可以选择零个或多个人物（characters），优先参考分镜已有的 present_characters 字段
 3. 每个分镜可以选择零个或多个道具（props），根据分镜的原文文本、旁白叙述判断使用了哪些道具
 4. 只从提供的资产池中选择，不要编造不存在的资产名称。如果资产池中没有匹配的人物，则从 present_characters 中选择已有角色名
-5. 根据分镜的原文文本、出场人物、对话气泡和旁白叙述综合判断该分镜发生在哪些场景、出现了哪些人物、使用了哪些道具
+5. 根据分镜的原文文本、出场人物、对话台词和旁白叙述综合判断该分镜发生在哪些场景、出现了哪些人物、使用了哪些道具
 6. **版本资产匹配规则**：资产池中可能存在同一基础人物的不同版本（如 `陆宴知-常服版`、`陆宴知-校服版`），同一基础场景的不同版本（如 `教室-白天版`、`教室-夜晚版`）。请根据分镜的时间、天气、角色着装描述，选择最合适的版本。如果分镜描述中是白天教室场景，应匹配 `教室-白天版`；如果是夜晚校园场景，应匹配 `校园-夜晚版`。角色同理，根据原文中该分镜的着装描述选择对应的服装版本。
 7. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。
-8. **上下文延续规则**：道具分为两类——
-   - **外观类（需延续）**：服装、配饰、帽子、眼镜、首饰、背包等影响角色外观的物品。一旦某个分镜中出现，后续没有切换场景/时间跳跃/或明确说明脱下/放下/换掉之前，必须一直保留在该角色的 props 中。
-   - **使用类（不需延续）**：手机、证件、书本、工具、武器、食物等功能性物品。仅在原文明确提到使用时添加，提到放下/收起后移除，不自动延续到后续分镜。"""
+"""
 
 
 def _get_effective_prefix(gen_settings: dict) -> str:
@@ -678,165 +677,184 @@ class MatchAssetsWorker(QThread):
 
 
 STORYBOARD_DESC_AI_PROMPT = """\
-你是一个顶级的漫画分镜师和漫画编辑，擅长将小说片段转化为极致专业的漫画分镜脚本。
+你是一个顶级的图文小说编辑，擅长将小说片段转化为结构化的场景叙事脚本，供下游 AI 自行分格并生成图文。
 
 输出格式要求（最重要）：
-你必须且只能输出一个纯 JSON 对象，不要输出任何 Markdown、表格、标题、解释、代码块标记。整个回复从 { 开始，到 } 结束。
+只能输出一个纯 JSON 对象，不要输出任何 Markdown、代码块标记、解释。整个回复从 { 开始，到 } 结束。
 
 {
   "storyboards": [
     {
       "index": 1,
-      "description": "整体排版：...\\n\\n格1 (...)\\n- 景别/角度：...\\n- 场景：资产名称-版本\\n- 人物：角色名1, 角色名2\\n- 动作/表情：...\\n- 角色名1的气泡：...\\n- 角色名2的气泡：...\\n- 说明框：...\\n\\n格2 (...)\\n- 景别/角度：...\\n\\n格N (...)"
+      "summary": "本段核心剧情与情绪走向的一句话概述。",
+      "scene": "场景资产名称-版本",
+      "characters": ["角色A-版本", "角色B-版本"],
+      "props": ["道具名称"],
+      "description": "按时间顺序叙述：动作用自然句，对话用台词标签，所有非对话句子原句保留为旁白标签。"
     }
   ]
 }
 
-=== 任务概述 ===
-传入的数据包含每个分镜的信息以及每个分镜的「已绑定资产」列表。**场景、人物、道具只能从已绑定资产中选择，禁止编造不在列表中的资产名**。
-你的任务：为每个分镜生成一页漫画的分镜描述(description)。
+=== 任务 ===
+一个分镜对应一段连贯的场景叙事。**不要分格、不要指定格数**。你只需按时间顺序，把这段戏讲清楚：人物在哪里、做了什么动作、说了什么、心里想什么。分格交由下游 AI 自行识别。
+场景、人物、道具**只能从该分镜的「已绑定资产」列表中选择，禁止编造**；列表中无合适项时取最接近的。
 
-=== 输入数据说明 ===
-每个分镜的输入数据包含以下字段：
-- `原文:` 该分镜对应的原文片段（最终以此为准）
-- `对话:` 已提取的对话列表（说话人: 内容）。优先使用它来填充气泡，但仍需对照 `原文:` 检查是否有遗漏的对话。
-- `旁白:` 已提取的内心独白/主观看法列表。优先使用它来填充说明框，但仍需对照 `原文:` 检查是否有其他非对话句子需要放入说明框。
-- `出场人物:` 该分镜出场的人物列表。作为人物匹配的参考。
-- `建议格数:` 推荐的格数。
-- `所属段落原文:` 所属的完整段落原文（用于指代分析）。
+=== 标签规则（重要） ===
+- **动作描述用自然句**：人物的动作、姿态、表情直接写成完整句子，**严禁用"角色名："这种冒号标签**。
+  ❌错误：苏渺：眼睛瞪大，整个人僵在椅子上。
+  ✅正确：苏渺眼睛瞪大，整个人僵在椅子上。
+- **对话用台词标签**：用"角色名-版本："单独成行标出，每条只写一句对话，内容用中文双引号包裹。
+  ✅正确：陆衍-西装版："是你吧，小渺？"
+- **非对话句子用旁白标签**：按下方"旁白与动作的关系"筛选后，用"旁白："单独成行标出，每条只写一句。**旁白必须逐字照搬原文原句，严禁改写、润色、增删，严禁替换人称**——原文是"我"就写"我"，是"他"就写"他"，绝不改成角色名。
 
-=== 三要素的分工定义（最重要） ===
-每个格包含三个文字承载字段：
-1. **动作/表情**（面向画师/AI生图）：仅描述画面中**可见的视觉内容**，用画面语言描述，**不承载原文句子**。
-2. **说明框**（面向读者）：承载**原文中所有非对话的句子**，用原文原句，不标注角色名。
-3. **气泡**（面向读者）：承载原文中所有**对话**。格式：角色名的气泡："对话内容"。
+=== 旁白与动作的关系（重要） ===
+原文中的非对话句子**不是全部都要进旁白**。按以下逻辑处理：
+- **进旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。
+- **不进旁白（仅在动作自然句中体现即可）**：环境氛围描写、纯外观罗列。
+原文示例："随即骤然转向。径直朝我们这边走来。我心脏砰砰跳。"
+✅正确：
+  陆衍在过道上骤然转身，身体朝向苏渺工位方向，迈步走来。苏渺坐在座位上，双手紧紧攥在一起，神色紧张。
+  旁白："随即骤然转向。"
+  旁白："径直朝我们这边走来。"
+  旁白："我心脏砰砰跳。"
+❌错误（把叙事句吃进动作、漏了旁白）：
+  陆衍骤然转身朝苏渺走来。
+  旁白："我心脏砰砰跳。"
 
-=== 三要素关系的核心规则 ===
-- 说明框和动作/表情可以描述同一件事（说明框用原文句子让读者看懂故事，动作/表情用画面语言让AI画出画面）。
-- 气泡和说明框互斥：同一句话不能同时出现在气泡和说明框中。
+**环境描写不进旁白的示例：**
+❌ 错误：原文"包厢门虚掩着"→ 旁白："包厢门虚掩着"（环境描写，已在动作句中体现）
+✅ 正确：原文"包厢门虚掩着"→ 不进旁白，仅在动作句中写"包厢门留有一道缝隙"即可
 
-=== 输出格式规范 ===
+=== 输入字段 ===
+- `原文:` 该分镜原文（最终以此为准）。
+- `对话:` 已提取对话（说话人: 内容），用于补全台词，仍需对照原文查漏。
+- `旁白:` 已提取独白/看法，用于补全旁白，仍需对照原文查漏。
+- `出场人物:` 人物匹配参考。
+- `所属段落原文:` 用于指代分析。
 
-整体排版：
-用一段话概述本页的版面布局方案。**阅读动线固定为从左到右、从上到下**（即每行从左往右读，换行后继续从左往右读），排版布局必须严格符合此阅读方向。
+=== scene / characters / props 字段 ===
+- scene：从已绑定场景资产中选一个最贴合本段的。
+- characters：列出本段出场人物，使用完整的"角色名-版本"格式。
+- props：列出本段涉及的已绑定道具，无则空数组。
+- 以上均**只能取自已绑定资产，禁止编造**。
 
-格N (形状描述)
-- 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
-- 场景：从该分镜的已绑定场景资产中选一个（**只能从已绑定资产中选择，不能编造**）
-- 人物：直接列出角色名（只能从该分镜的已绑定资产中出现的人物中选择）
-- 动作/表情：**有且仅有一条**，用画面语言描述
-- 气泡：角色名的气泡："文字内容"。每个气泡文字不超过 2 行（约25个汉字），长文本拆成多个气泡依次排列
-- 说明框：**原文中所有非对话的句子**，用原文原句。**每段说明框不超过 2 行（约25个汉字），长文本按原文句号拆分为多个独立的说明框行**
-  例如（说明框拆分示范，每个说明框对应原文的一个句子）：
-  说明框："而我，只是个注定要被偷走人生、给他们当垫脚石的漂亮炮灰。"
-  说明框："更离谱的是，弹幕说那个被骗的大佬，竟是我异地恋男友的死对头室友。"
-  说明框："我看着周蜜那张一百八十斤还理直气壮的脸，气极反笑。"
-  说明框："既然我是炮灰，那这剧情，我今天非掀了不可！"
+=== description 的写法（核心） ===
+按时间顺序还原本段：
+- **动作（自然句，给生图）**：写成可视的静态画面，描述"画面里能看到什么"（姿态、表情、面部朝向、站位、空间关系），不要用动词描述正在发生或将发生的过程。✅"苏渺猛地抬头，眼睛瞪大、嘴唇微张"  ❌"苏渺举起手转过身"。
+- **场景/氛围前置**：**动作描述的第一句必须指明当前场景**，直接写该分镜已绑定的场景资产名称即可，**不需要对环境做额外描写**。例如："聚会餐厅内，顾晚专注地盯着智能手机屏幕。" 场景资产名起到提示参考图的作用。❌错误：跳过场景直接写人物动作。**场景必须从该分镜已绑定的 scene 资产中选择**。
+- **对话（台词标签）**：用"角色名-版本："标出，一条一句，内容用原文。
+- **旁白（旁白标签，给读者）**：原文中的非对话句子**只选择以下类别放入旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。**环境氛围描写、纯外观罗列等已在动作自然句中体现的内容，不再重复放入旁白**。每条旁白单独占一行。
 
-说明框与气泡的分工铁律：
-- 气泡负责一切对话。
-- 说明框负责原文中所有非对话的句子（叙事、动作、心理、场景等全部放入）。
-- 动作/表情用画面语言描述视觉效果，不用原文句子。
+**格式要求（重要）**：description 中每一句旁白和每一句台词都**必须单独占一行**，不要将多句旁白合并到同一行。正确示例：
+  包厢内灯光昏暗。顾念站在包厢门口，身体僵住，脸色苍白。
+  旁白："程屿川篮球赛获胜庆功宴，我姗姗来迟。"
+  旁白："却见到他和别的女孩忘情拥吻。"
+❌ 错误（多句旁白挤在同一行）：
+  包厢内灯光昏暗。...旁白："..."旁白："..."
 
-=== 核心规则 ===
-1. 一个分镜对应一页漫画。
-2. 格的数量：内容少用1格，稍多用2格，复杂用3-4格。
-3. **场景、人物、道具只能从该分镜的「已绑定资产」列表中选择，绝对禁止编造不在列表中的资产名**。如果列表中没有合适的，就使用最接近的。
-4. 每个格必须有明确的景别和角度。
-5. **原文完整性铁律（最高优先级）**：原文text中的每一句话都必须在说明框或气泡中找到归属。**严禁省略任何一句话**。因果关系句子必须保留。
-6. **长短文本拆分规则**：说明框和气泡的每段文字**不超过 2 行（约25个汉字）**。如果一个说明框或气泡包含多个句子的长文本，必须按原文句号拆分为多个独立的行。例如说明框："第一句。" + 说明框："第二句。" + 说明框："第三句。"。气泡同理，长对话拆为多个气泡行。
-8. 描述语言要有画面感。
- 9. **手机/屏幕处理**：人物画面和屏幕特写二选一，严禁混用。有观看者反应时拆为2个格（先屏幕特写，再真实场景反应）。
-10. 气泡和说明框的文字使用中文双引号（""）包裹。
-11. 移除原文中的无意义标点。
-12. 输出合法 JSON：英文双引号用 \\" 转义，中文双引号不用转义。
-13. **违禁内容处理**：自动替换敏感内容。
-14. **角色视线**：看手机时目光落在屏幕上。
-15. **人称代词解析**：根据 `所属段落原文:` 或邻近分镜 `原文:` 分析指代。
-16. **格间因果连贯性**：每格行为必须有前因后果。
-17. **叙事清晰度自检**：生成后逐格自检，确保一眼看懂。"""
+=== 内容规则 ===
+1. **旁白筛选规则**：原文中的非对话句子**只选以下类别放入旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。**环境氛围描写、纯外观罗列等已在动作自然句中体现的，不再放入旁白**。
+2. **旁白忠于原文**：旁白内容必须是原文原句，逐字保留，不得改写、润色、增删或替换人称代词（我/你/他原样保留），更不得自行编造原文没有的句子。
+3. **人物身份与关系必须保留**：如"网恋三年的男人""她的顶头上司"等画面画不出的关系，用旁白交代。
+4. **动作只写静态可视内容**：严禁用动词描述动态过程；连续动作只取某一瞬间的静态画面。
+5. **顺序清晰**：严格按原文时间顺序叙述，便于下游 AI 自然分格。
+6. 人称代词依据 `所属段落原文:` 或邻近分镜原文解析指代（仅用于动作叙述确认指代对象，旁白本身人称不变）。
+7. **原文不重复原则**：同一句原文**只能出现在旁白或台词中的一种**，不得同时出现在两者中。原文中的对话句只进台词、不进旁白；原文中的叙事/心理/动作叙述句只进旁白、不进台词。旁白和台词互斥，一句原文不能分身两处。
+8. 看手机/屏幕时角色目光落在屏幕上。
+9. 台词和旁白用中文双引号（""）包裹，句末句号、问号、感叹号保留，移除破折号、省略号、书名号等无实义标点，保留逗号。
+10. 自动替换敏感内容。
+11. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
+
+"""
 
 
 STORYBOARD_DESC_MANUAL_PROMPT = """\
-你是一个顶级的漫画分镜师和漫画编辑，擅长将小说片段转化为极致专业的漫画分镜脚本。
+你是一个顶级的图文小说编辑，擅长将小说片段转化为结构化的场景叙事脚本，供下游 AI 自行分格并生成图文。
 
 输出格式要求（最重要）：
-你必须且只能输出一个纯 JSON 对象，不要输出任何 Markdown、表格、标题、解释、代码块标记。整个回复从 { 开始，到 } 结束。
+只能输出一个纯 JSON 对象，不要输出任何 Markdown、代码块标记、解释。整个回复从 { 开始，到 } 结束。
 
 {
   "storyboards": [
     {
       "index": 1,
-      "description": "整体排版：...\\n\\n格1 (...)\\n- 景别/角度：...\\n- 场景：资产名称-版本\\n- 人物：角色名1, 角色名2\\n- 动作/表情：...\\n- 角色名1的气泡：...\\n- 角色名2的气泡：...\\n- 说明框：...\\n\\n格2 (...)\\n- 景别/角度：...\\n\\n格N (...)"
+      "summary": "本段核心剧情与情绪走向的一句话概述。",
+      "scene": "场景资产名称-版本",
+      "characters": ["角色A-版本", "角色B-版本"],
+      "props": ["道具名称"],
+      "description": "按时间顺序叙述：动作用自然句，对话用台词标签，所有非对话句子原句保留为旁白标签。"
     }
   ]
 }
 
-=== 任务概述 ===
-传入的数据包含每个分镜的信息以及每个分镜的「已绑定资产」列表。**场景、人物、道具只能从已绑定资产中选择，禁止编造不在列表中的资产名**。
-你的任务：为每个分镜生成一页漫画的分镜描述(description)。
+=== 任务 ===
+一个分镜对应一段连贯的场景叙事。**不要分格、不要指定格数**。你只需按时间顺序，把这段戏讲清楚：人物在哪里、做了什么动作、说了什么、心里想什么。分格交由下游 AI 自行识别。
+场景、人物、道具**只能从该分镜的「已绑定资产」列表中选择，禁止编造**；列表中无合适项时取最接近的。
 
-=== 输入数据说明 ===
-每个分镜的输入数据**只有以下字段**（手动分镜模式，无辅助分析数据）：
-- `原文:` 该分镜的文本内容（可能混合了对话和叙事，需要你自行分析）
-- `建议格数:` 推荐的格数
-- **没有** `对话:`、`旁白:`、`出场人物:`、`所属段落原文:` 等辅助字段
+=== 标签规则（重要） ===
+- **动作描述用自然句**：人物的动作、姿态、表情直接写成完整句子，**严禁用"角色名："这种冒号标签**。
+  ❌错误：苏渺：眼睛瞪大，整个人僵在椅子上。
+  ✅正确：苏渺眼睛瞪大，整个人僵在椅子上。
+- **对话用台词标签**：用"角色名-版本："单独成行标出，每条只写一句对话，内容用中文双引号包裹。
+  ✅正确：陆衍-西装版："是你吧，小渺？"
+- **非对话句子用旁白标签**：按下方"旁白与动作的关系"筛选后，用"旁白："单独成行标出，每条只写一句。**旁白必须逐字照搬原文原句，严禁改写、润色、增删，严禁替换人称**——原文是"我"就写"我"，是"他"就写"他"，绝不改成角色名。
 
-**处理规则**：你必须自己从 `原文:` 中分析一切——
-- 识别哪些是对话 → 放入气泡
-- 识别哪些是非对话（叙事、动作、心理、场景等）→ 放入说明框
-- 识别出场了哪些人物 → 用于人物匹配和人物栏
+=== 旁白与动作的关系（重要） ===
+原文中的非对话句子**不是全部都要进旁白**。按以下逻辑处理：
+- **进旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。
+- **不进旁白（仅在动作自然句中体现即可）**：环境氛围描写、纯外观罗列。
+原文示例："随即骤然转向。径直朝我们这边走来。我心脏砰砰跳。"
+✅正确：
+  陆衍在过道上骤然转身，身体朝向苏渺工位方向，迈步走来。苏渺坐在座位上，双手紧紧攥在一起，神色紧张。
+  旁白："随即骤然转向。"
+  旁白："径直朝我们这边走来。"
+  旁白："我心脏砰砰跳。"
+❌错误（把叙事句吃进动作、漏了旁白）：
+  陆衍骤然转身朝苏渺走来。
+  旁白："我心脏砰砰跳。"
 
-=== 三要素的分工定义（最重要） ===
-每个格包含三个文字承载字段：
-1. **动作/表情**（面向画师/AI生图）：仅描述画面中**可见的视觉内容**，用画面语言描述，**不承载原文句子**。
-2. **说明框**（面向读者）：承载**原文中所有非对话的句子**，用原文原句，不标注角色名。
-3. **气泡**（面向读者）：承载原文中所有**对话**。格式：角色名的气泡："对话内容"。
+**环境描写不进旁白的示例：**
+❌ 错误：原文"包厢门虚掩着"→ 旁白："包厢门虚掩着"（环境描写，已在动作句中体现）
+✅ 正确：原文"包厢门虚掩着"→ 不进旁白，仅在动作句中写"包厢门留有一道缝隙"即可
 
-=== 三要素关系的核心规则 ===
-- 说明框和动作/表情可以描述同一件事（说明框用原文句子让读者看懂故事，动作/表情用画面语言让AI画出画面）。
-- 气泡和说明框互斥：同一句话不能同时出现在气泡和说明框中。
+=== 输入字段 ===
+- `原文:` 该分镜原文（最终以此为准）。
+- `所属段落原文:` 用于指代分析。
 
-=== 输出格式规范 ===
+=== scene / characters / props 字段 ===
+- scene：从已绑定场景资产中选一个最贴合本段的。
+- characters：列出本段出场人物，使用完整的"角色名-版本"格式。
+- props：列出本段涉及的已绑定道具，无则空数组。
+- 以上均**只能取自已绑定资产，禁止编造**。
 
-整体排版：
-用一段话概述本页的版面布局方案。**阅读动线固定为从左到右、从上到下**（即每行从左往右读，换行后继续从左往右读），排版布局必须严格符合此阅读方向。
+=== description 的写法（核心） ===
+按时间顺序还原本段：
+- **动作（自然句，给生图）**：写成可视的静态画面，描述"画面里能看到什么"（姿态、表情、面部朝向、站位、空间关系），不要用动词描述正在发生或将发生的过程。✅"苏渺猛地抬头，眼睛瞪大、嘴唇微张"  ❌"苏渺举起手转过身"。
+- **场景/氛围前置**：**动作描述的第一句必须指明当前场景**，直接写该分镜已绑定的场景资产名称即可，**不需要对环境做额外描写**。例如："聚会餐厅内，顾晚专注地盯着智能手机屏幕。" 场景资产名起到提示参考图的作用。❌错误：跳过场景直接写人物动作。**场景必须从该分镜已绑定的 scene 资产中选择**。
+- **对话（台词标签）**：用"角色名-版本："标出，一条一句，内容用原文。
+- **旁白（旁白标签，给读者）**：原文中的非对话句子**只选择以下类别放入旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。**环境氛围描写、纯外观罗列等已在动作自然句中体现的内容，不再重复放入旁白**。每条旁白单独占一行。
 
-格N (形状描述)
-- 景别/角度：全景/中景/近景/特写/大特写 等，仰视/俯视/平视/倾斜 等
-- 场景：从该分镜的已绑定场景资产中选一个（**只能从已绑定资产中选择，不能编造**）
-- 人物：直接列出角色名（只能从该分镜的已绑定资产中出现的人物中选择）
-- 动作/表情：**有且仅有一条**，用画面语言描述
-- 气泡：角色名的气泡："文字内容"。每个气泡文字不超过 2 行（约25个汉字），长文本拆成多个气泡依次排列
-- 说明框：**原文中所有非对话的句子**，用原文原句。**每段说明框不超过 2 行（约25个汉字），长文本按原文句号拆分为多个独立的说明框行**
-  例如（说明框拆分示范）：
-  说明框："而我，只是个注定要被偷走人生、给他们当垫脚石的漂亮炮灰。"
-  说明框："更离谱的是，弹幕说那个被骗的大佬，竟是我异地恋男友的死对头室友。"
-  说明框："我看着周蜜那张一百八十斤还理直气壮的脸，气极反笑。"
-  说明框："既然我是炮灰，那这剧情，我今天非掀了不可！"
+**格式要求（重要）**：description 中每一句旁白和每一句台词都**必须单独占一行**，不要将多句旁白合并到同一行。正确示例：
+  包厢内灯光昏暗。顾念站在包厢门口，身体僵住，脸色苍白。
+  旁白："程屿川篮球赛获胜庆功宴，我姗姗来迟。"
+  旁白："却见到他和别的女孩忘情拥吻。"
+❌ 错误（多句旁白挤在同一行）：
+  包厢内灯光昏暗。...旁白："..."旁白："..."
 
-说明框与气泡的分工铁律：
-- 气泡负责一切对话。
-- 说明框负责原文中所有非对话的句子（叙事、动作、心理、场景等全部放入）。
-- 动作/表情用画面语言描述视觉效果，不用原文句子。
+=== 内容规则 ===
+1. **旁白筛选规则**：原文中的非对话句子**只选以下类别放入旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。**环境氛围描写、纯外观罗列等已在动作自然句中体现的，不再放入旁白**。
+2. **旁白忠于原文**：旁白内容必须是原文原句，逐字保留，不得改写、润色、增删或替换人称代词（我/你/他原样保留），更不得自行编造原文没有的句子。
+3. **人物身份与关系必须保留**：如"网恋三年的男人""她的顶头上司"等画面画不出的关系，用旁白交代。
+4. **动作只写静态可视内容**：严禁用动词描述动态过程；连续动作只取某一瞬间的静态画面。
+5. **顺序清晰**：严格按原文时间顺序叙述，便于下游 AI 自然分格。
+6. 人称代词依据 `所属段落原文:` 或邻近分镜原文解析指代（仅用于动作叙述确认指代对象，旁白本身人称不变）。
+7. **原文不重复原则**：同一句原文**只能出现在旁白或台词中的一种**，不得同时出现在两者中。原文中的对话句只进台词、不进旁白；原文中的叙事/心理/动作叙述句只进旁白、不进台词。旁白和台词互斥，一句原文不能分身两处。
+8. 看手机/屏幕时角色目光落在屏幕上。
+9. 台词和旁白用中文双引号（""）包裹，句末句号、问号、感叹号保留，移除破折号、省略号、书名号等无实义标点，保留逗号。
+10. 自动替换敏感内容。
+11. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
 
-=== 核心规则 ===
-1. 一个分镜对应一页漫画。
-2. 格的数量：内容少用1格，稍多用2格，复杂用3-4格。
-3. **场景、人物、道具只能从该分镜的「已绑定资产」列表中选择，绝对禁止编造不在列表中的资产名**。如果列表中没有合适的，就使用最接近的。
-4. 每个格必须有明确的景别和角度。
-5. **原文完整性铁律（最高优先级）**：原文text中的每一句话都必须在说明框或气泡中找到归属。**严禁省略任何一句话**。特别是表达因果关系的句子（如"对面不知道说了什么""弹幕又开始跟着燃了"中的"又"）必须保留在说明框中。
-6. **长短文本拆分规则**：说明框和气泡的每段文字**不超过 2 行（约25个汉字）**。如果一个说明框或气泡包含多个句子的长文本，必须按原文句号拆分为多个独立的行。例如说明框："第一句。" + 说明框："第二句。" + 说明框："第三句。"。气泡同理，长对话拆为多个气泡行。
-7. 描述语言要有画面感。
-8. **手机/屏幕处理**：人物画面和屏幕特写二选一，严禁混用。有观看者反应时拆为2个格（先屏幕特写，再真实场景反应）。
-9. 气泡和说明框的文字使用中文双引号（""）包裹。
-10. 移除原文中的无意义标点。
-11. 输出合法 JSON：英文双引号用 \\" 转义，中文双引号不用转义。
-12. **违禁内容处理**：自动替换敏感内容。
-13. **角色视线**：看手机时目光落在屏幕上。
-14. **人称代词解析**：原文中的"他/她"等代词，利用原文上下文或邻近分镜的 `原文:` 分析指代。
-15. **格间因果连贯性**：每格行为必须有前因后果。
-16. **叙事清晰度自检**：生成后逐格自检，确保一眼看懂。"""
+"""
 
 
 class StoryboardDescriptionWorker(QThread):
@@ -1192,15 +1210,22 @@ class SingleDescWorker(QThread):
 
 
 def _image_size_from_settings(ratio: str, resolution: str) -> str:
-    factors = {"1K": 1, "2K": 2, "4K": 4}
-    factor = factors.get(resolution, 1)
-    if ratio == "9:16":
-        w = 576 * factor
-        h = 1024 * factor
-    else:
-        w = 768 * factor
-        h = 1024 * factor
-    return f"{w}x{h}"
+    _SIZE_TABLE = {
+        "1:1":  {"1K": "1024x1024", "2K": "2048x2048", "4K": "2880x2880"},
+        "3:2":  {"1K": "1536x1024", "2K": "2048x1360", "4K": "3520x2336"},
+        "2:3":  {"1K": "1024x1536", "2K": "1360x2048", "4K": "2336x3520"},
+        "16:9": {"1K": "1824x1024", "2K": "2048x1152", "4K": "3840x2160"},
+        "9:16": {"1K": "1024x1824", "2K": "1152x2048", "4K": "2160x3840"},
+        "4:3":  {"1K": "1360x1024", "2K": "2048x1536", "4K": "3312x2480"},
+        "3:4":  {"1K": "1024x1360", "2K": "1536x2048", "4K": "2480x3312"},
+        "21:9": {"1K": "2384x1024", "2K": "2048x880",  "4K": "3840x1648"},
+    }
+    resolved = resolution or "1K"
+    sizes = _SIZE_TABLE.get(ratio)
+    if sizes:
+        return sizes.get(resolved, sizes["1K"])
+    # fallback: 默认按 3:4 处理
+    return _SIZE_TABLE["3:4"].get(resolved, "1024x1360")
 
 
 def _merge_ref_paths(gen_settings: dict, asset_refs: list[str]) -> list[str]:
@@ -1216,92 +1241,6 @@ def _merge_ref_paths(gen_settings: dict, asset_refs: list[str]) -> list[str]:
 def _square_size_from_resolution(resolution: str) -> str:
     factors = {"1K": 1024, "2K": 2048, "4K": 4096}
     return f"{factors.get(resolution, 1024)}x{factors.get(resolution, 1024)}"
-
-
-def _render_page_number(
-    image_path: str,
-    output_path: str | None,
-    project_name: str,
-    page_num: int,
-    gen_settings: dict,
-) -> str:
-    """将页码渲染到图片底部中间位置，返回输出路径"""
-    from PIL import Image, ImageDraw, ImageFont
-
-    pn_settings = gen_settings.get("page_number", {})
-    if not pn_settings.get("enabled", True):
-        if output_path and output_path != image_path:
-            import shutil
-            shutil.copy2(image_path, output_path)
-            return output_path
-        return image_path
-
-    prefix = pn_settings.get("prefix", project_name) or project_name
-    font_color = pn_settings.get("font_color", "#000000")
-    bg_color = pn_settings.get("bg_color", "#FFFFFF")
-    bg_opacity = pn_settings.get("bg_opacity", 200)
-
-    text = f"《{prefix}{page_num:02d}》"
-
-    img = Image.open(image_path).convert("RGBA")
-    w, h = img.size
-
-    # 创建文本图层
-    txt_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(txt_layer)
-
-    # 尝试加载字体，回退默认
-    font_size = max(w // 40, 16)
-    try:
-        font = ImageFont.truetype("msyh.ttc", font_size)
-    except Exception:
-        try:
-            font = ImageFont.truetype("simhei.ttf", font_size)
-        except Exception:
-            font = ImageFont.load_default()
-
-    bbox = draw.textbbox((0, 0), text, font=font)
-    tw = bbox[2] - bbox[0]
-    th = bbox[3] - bbox[1]
-
-    padding_x = 4
-    padding_y = 4
-    margin_bottom = 2
-    margin_side = 8
-
-    bg_w = tw + padding_x * 2
-    bg_h = th + padding_y * 2
-    align = pn_settings.get("alignment", "center")
-    if align == "left":
-        bg_x = margin_side
-    elif align == "right":
-        bg_x = w - bg_w - margin_side
-    else:
-        bg_x = (w - bg_w) // 2
-    bg_y = h - bg_h - margin_bottom
-
-    # 解析颜色
-    def _parse_color(hex_color: str) -> tuple:
-        hex_color = hex_color.lstrip("#")
-        if len(hex_color) == 6:
-            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-        return (0, 0, 0)
-
-    # 绘制背景
-    bg_rgba = _parse_color(bg_color) + (min(bg_opacity, 255),)
-    draw.rectangle([bg_x, bg_y, bg_x + bg_w, bg_y + bg_h], fill=bg_rgba)
-
-    # 绘制文字（在背景内居中）
-    tx = bg_x + (bg_w - tw) // 2 - bbox[0]
-    ty = bg_y + (bg_h - th) // 2 - bbox[1]
-    draw.text((tx, ty), text, fill=_parse_color(font_color) + (255,), font=font)
-
-    img = Image.alpha_composite(img, txt_layer)
-    img = img.convert("RGB")
-
-    out = output_path or image_path
-    img.save(out, quality=95, optimize=True)
-    return out
 
 
 def _make_comic_on_done(
@@ -1935,6 +1874,23 @@ class _GenerateSettingsDialog(QDialog):
         )
         pn_layout.addWidget(self._pn_opacity_slider)
 
+        size_layout = QVBoxLayout()
+        size_layout.setSpacing(4)
+        self._pn_size_label = QLabel(f"页码大小: {pn_settings.get('size', 0.7):.1f}x")
+        self._pn_size_label.setObjectName("dialogFieldLabel")
+        size_layout.addWidget(self._pn_size_label)
+        self._pn_size_slider = QSlider(Qt.Horizontal)
+        self._pn_size_slider.setObjectName("genSettingsSlider")
+        self._pn_size_slider.setMinimum(3)
+        self._pn_size_slider.setMaximum(20)
+        self._pn_size_slider.setValue(int(pn_settings.get("size", 0.7) * 10))
+        self._pn_size_slider.setFixedHeight(20)
+        self._pn_size_slider.valueChanged.connect(
+            lambda v: self._pn_size_label.setText(f"页码大小: {v / 10:.1f}x")
+        )
+        size_layout.addWidget(self._pn_size_slider)
+        pn_layout.addLayout(size_layout)
+
         align_label = QLabel("位置")
         align_label.setObjectName("dialogFieldLabel")
         pn_layout.addWidget(align_label)
@@ -1979,6 +1935,7 @@ class _GenerateSettingsDialog(QDialog):
         self._font_color_edit.setEnabled(enabled)
         self._bg_color_edit.setEnabled(enabled)
         self._pn_opacity_slider.setEnabled(enabled)
+        self._pn_size_slider.setEnabled(enabled)
         self._pn_align_combo.setEnabled(enabled)
 
     def _toggle_pn_section(self) -> None:
@@ -2042,6 +1999,7 @@ class _GenerateSettingsDialog(QDialog):
             "font_color": self._font_color_edit.text().strip() or "#000000",
             "bg_color": self._bg_color_edit.text().strip() or "#FFFFFF",
             "bg_opacity": self._pn_opacity_slider.value(),
+            "size": self._pn_size_slider.value() / 10,
             "alignment": self._pn_align_combo.currentData(),
         }
         self._settings["style_ref"] = {
@@ -2311,6 +2269,7 @@ class _ExportWorker(QThread):
                 pn = self._gen_settings.get("page_number", {})
                 if not pn.get("enabled", True):
                     return fp
+                scale = pn.get("size", 0.7)
                 prefix = pn.get("prefix", "").strip() or self._project_name
                 font_color = pn.get("font_color", "#000000")
                 bg_color = pn.get("bg_color", "#FFFFFF")
@@ -2319,7 +2278,7 @@ class _ExportWorker(QThread):
 
                 img = Image.open(fp).convert("RGBA")
                 w, h = img.size
-                font_size = max(w // 40, 16)
+                font_size = max(int(w // 40 * scale), int(16 * scale))
 
                 # 缓存字体
                 cache_key = font_size
@@ -2341,8 +2300,10 @@ class _ExportWorker(QThread):
                 tw = bbox[2] - bbox[0]
                 th = bbox[3] - bbox[1]
 
-                padding_x, padding_y = 4, 4
-                margin_bottom, margin_side = 2, 8
+                padding_x = max(int(4 * scale), 2)
+                padding_y = max(int(4 * scale), 2)
+                margin_bottom = max(int(2 * scale), 1)
+                margin_side = max(int(8 * scale), 4)
                 bg_w = tw + padding_x * 2
                 bg_h = th + padding_y * 2
                 align = pn.get("alignment", "center")
@@ -2401,6 +2362,7 @@ class _ExportWorker(QThread):
 
 class NovelComicGeneratePage(QFrame):
     back_to_chapters = Signal()
+    switch_to_rewrite = Signal()
     comic_image_generated = Signal(int, str)
 
     def __init__(
@@ -2647,6 +2609,13 @@ class NovelComicGeneratePage(QFrame):
         toolbar_layout.addWidget(title_label)
 
         toolbar_layout.addStretch()
+
+        rewrite_btn = QPushButton("\U0001f4d6  小说改写")
+        rewrite_btn.setObjectName("comicGenActionBtn")
+        rewrite_btn.setCursor(Qt.PointingHandCursor)
+        rewrite_btn.clicked.connect(self.switch_to_rewrite.emit)
+        toolbar_layout.addWidget(rewrite_btn)
+
         return toolbar
 
     def _build_action_bar(self) -> QFrame:
@@ -2752,6 +2721,7 @@ class NovelComicGeneratePage(QFrame):
             card.desc_edit_requested.connect(self._on_edit_desc)
             card.text_edit_requested.connect(self._on_edit_text)
             card.preview_clicked.connect(lambda idx=sb["index"]: self._on_preview_comic(idx))
+            card.edit_clicked.connect(lambda idx=sb["index"]: self._on_edit_image(idx))
             card.delete_clicked.connect(self._on_delete_storyboard)
             self._storyboard_cards[sb["index"]] = card
             self._storyboard_layout.addWidget(card)
@@ -3107,6 +3077,13 @@ class NovelComicGeneratePage(QFrame):
         if sb is None:
             return
 
+        # 重新生成时重置 viewed 状态
+        sb["viewed"] = False
+        self._save_storyboards()
+        card = self._storyboard_cards.get(storyboard_index)
+        if card:
+            card.set_viewed(False)
+
         if not sb.get("description"):
             self._show_alert("无法生成", "请先生成分镜描述")
             return
@@ -3147,6 +3124,10 @@ class NovelComicGeneratePage(QFrame):
             logger.info("分镜 #%d 找到 %d 张参考图: %s", storyboard_index, len(reference_paths), reference_paths)
         else:
             logger.info("分镜 #%d 没有参考图", storyboard_index)
+
+        # 使用生图设置的并发数
+        concurrency = gen_settings.get("concurrency", 3)
+        ImageGenService.instance().set_concurrency(concurrency)
 
         signal = self.comic_image_generated
         batch_counter = [0, 0]
@@ -3190,6 +3171,19 @@ class NovelComicGeneratePage(QFrame):
         )
         dialog.show_preview()
 
+        # 弹窗关闭后，将所有查看过的分镜标记为已查看
+        viewed = getattr(dialog, "_viewed_indices", {storyboard_index})
+        changed = False
+        for sb in self._storyboards:
+            if sb["index"] in viewed and not sb.get("viewed"):
+                sb["viewed"] = True
+                changed = True
+            card = self._storyboard_cards.get(sb["index"])
+            if card:
+                card.set_viewed(sb.get("viewed", False))
+        if changed:
+            self._save_storyboards()
+
     def _on_comic_image_generated(self, storyboard_index: int, image_path: str) -> None:
         card = self._storyboard_cards.get(storyboard_index)
         if card is None:
@@ -3198,10 +3192,87 @@ class NovelComicGeneratePage(QFrame):
             for sb in self._storyboards:
                 if sb["index"] == storyboard_index:
                     sb["generated_image"] = image_path
+                    sb["viewed"] = False  # 新图片返回，重置为未查看
                     break
             self._refresh_single_card(storyboard_index)
+            self._save_storyboards()
         else:
             card.set_gen_error()
+
+    def _on_edit_image(self, storyboard_index: int) -> None:
+        """图片编辑：弹窗 → 提交修改到生图队列"""
+        sb = None
+        for s in self._storyboards:
+            if s["index"] == storyboard_index:
+                sb = s
+                break
+        if sb is None:
+            return
+
+        image_path = sb.get("generated_image", "")
+        if not image_path or not Path(image_path).exists():
+            self._show_alert("无法编辑", "该分镜还没有图片，请先生成分镜图")
+            return
+
+        dialog = _ImageEditDialog(image_path, storyboard_index, self.window())
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        edit_text = dialog.edit_text
+        if not edit_text:
+            self._show_alert("提示", "请输入修改要求")
+            return
+
+        # 提交到生图队列
+        settings = self._settings_service.load()
+        image_config = AIModelConfig(
+            model_name=settings.image_model.model_name,
+            api_key=settings.image_model.api_key,
+            base_url=settings.image_model.base_url,
+            api_type=settings.image_model.api_type,
+            api_provider=settings.image_model.api_provider,
+        )
+        image_text_config = AIModelConfig(
+            model_name=settings.text_model.model_name,
+            api_key=settings.text_model.api_key,
+            base_url=settings.text_model.base_url,
+        )
+        if not image_config.is_configured:
+            self._show_alert("无法编辑", "请先在系统配置中设置图片生成模型")
+            return
+
+        gen_settings = self._gen_settings
+        concurrency = gen_settings.get("concurrency", 3)
+        ImageGenService.instance().set_concurrency(concurrency)
+
+        # 构造编辑提示词：原始描述 + 修改要求
+        original_desc = sb.get("description", "")
+        edit_prompt = f"{original_desc}\n\n请根据以下要求修改图片：{edit_text}"
+        size = _image_size_from_settings(
+            gen_settings.get("aspect_ratio", "3:4"),
+            gen_settings.get("resolution", "1K"),
+        )
+
+        card = self._storyboard_cards.get(storyboard_index)
+        if card:
+            card.set_generating()
+
+        signal = self.comic_image_generated
+        batch_counter = [0, 0]
+
+        ImageGenService.instance().submit(
+            image_config, edit_prompt,
+            _make_comic_on_done(
+                self._state_service, self._project_id, self._episode_num,
+                storyboard_index, signal, batch_counter, lambda: None,
+            ),
+            _make_comic_on_error(storyboard_index, signal, batch_counter, lambda: None),
+            size=size,
+            reference_images=[image_path],
+            resolution=gen_settings.get("resolution"),
+            aspect_ratio=gen_settings.get("aspect_ratio", "3:4"),
+            text_model_config=image_text_config,
+        )
 
     def _on_gen_single_desc(self, storyboard_index: int) -> None:
         sb = None
@@ -3429,7 +3500,7 @@ class NovelComicGeneratePage(QFrame):
         if sr_enabled:
             sr_refs = [p for p in sr_paths if p and Path(p).exists()]
             if sr_refs:
-                prompt = "参考图片{}的画风，生成对应画风的漫画内容。".format(
+                prompt = "参考图片{}的画风，生成对应画风的漫画内容".format(
                     "，图片".join(str(i+1) for i in range(len(sr_refs)))
                 ) + prompt
         else:
@@ -3445,14 +3516,9 @@ class NovelComicGeneratePage(QFrame):
         ratio = gen_settings.get("aspect_ratio", "3:4")
         resolution = gen_settings.get("resolution", "1K")
         size = _image_size_from_settings(ratio, resolution)
-        prompt += f"，{resolution}分辨率，图片比例{ratio}，尺寸{size}"
-        if page_num:
-            prompt += f"去除图像中的噪点和高频细节。保持所有的线条、颜色和亮度不变"
-        prompt += f"""
-        统一使用 思源黑体 Medium** 字体，字体大小 22px。
-        避免使用任何字体的 Light/Thin 字重；正文字号不低于22px；抗锯齿选择"平滑"模式。
-        文字统一中文简体，避免字体模糊。
-        """
+        prompt += f"。去除图像中的噪点和高频细节。保持所有的线条、颜色和亮度不变"
+        # prompt += f"，{resolution}分辨率，图片比例{ratio}，尺寸{size}"
+        prompt = "将以下内容画成网格漫画。蒙太奇排版。" + prompt
 
         return prompt, size, reference_paths
 
@@ -3530,6 +3596,7 @@ class _StoryboardCard(QFrame):
     desc_edit_requested = Signal(int, str)
     text_edit_requested = Signal(int, str)
     preview_clicked = Signal(int)
+    edit_clicked = Signal(int)
     delete_clicked = Signal(int)
 
     def __init__(self, data: dict, parent: QWidget | None = None):
@@ -3651,6 +3718,15 @@ class _StoryboardCard(QFrame):
         )
         btn_row.addWidget(hist_btn)
 
+        edit_btn = QPushButton("\u270f\ufe0f  图片编辑")
+        edit_btn.setObjectName("storyboardActionBtn")
+        edit_btn.setCursor(Qt.PointingHandCursor)
+        edit_btn.clicked.connect(
+            lambda: self.edit_clicked.emit(self._data["index"])
+        )
+        self._edit_btn = edit_btn
+        btn_row.addWidget(edit_btn)
+
         self._gen_desc_btn = QPushButton("\U0001f4c4  生成描述")
         self._gen_desc_btn.setObjectName("storyboardActionBtn")
         self._gen_desc_btn.setCursor(Qt.PointingHandCursor)
@@ -3714,6 +3790,11 @@ class _StoryboardCard(QFrame):
             self._gen_img_btn.setText("\U0001f5bc  生成失败")
             self._gen_img_btn.setEnabled(True)
 
+    def set_viewed(self, viewed: bool) -> None:
+        """从外部设置 viewed 状态并刷新边框"""
+        self._data["viewed"] = viewed
+        self._update_viewed_border()
+
     def _show_generated_pixmap(self, image_path: str) -> None:
         if self._image_label and Path(image_path).exists():
             px = QPixmap(image_path)
@@ -3723,6 +3804,25 @@ class _StoryboardCard(QFrame):
                 if self._gen_img_btn:
                     self._gen_img_btn.setText("\U0001f5bc  重新生成")
                     self._gen_img_btn.setEnabled(True)
+                if self._edit_btn:
+                    self._edit_btn.setEnabled(True)
+        else:
+            if self._edit_btn:
+                self._edit_btn.setEnabled(False)
+        self._update_viewed_border()
+
+    def _update_viewed_border(self) -> None:
+        """根据 viewed 状态设置图片占位边框颜色：红色=未查看，绿色=已查看"""
+        viewed = self._data.get("viewed", False)
+        generated = self._data.get("generated_image", "")
+        has_image = bool(generated and Path(generated).exists())
+        if not has_image:
+            self._image_placeholder.setStyleSheet("")
+            return
+        color = "#22c55e" if viewed else "#ef4444"
+        self._image_placeholder.setStyleSheet(
+            f"#storyboardImagePlaceholder {{ border: 3px solid {color}; border-radius: 6px; }}"
+        )
 
     def set_desc_gen_status(self, status: str) -> None:
         if not self._gen_desc_btn:
@@ -4184,6 +4284,10 @@ class _ChooseRefDialog(QDialog):
 
 
 class _StoryboardPreviewDialog(QDialog):
+    """全屏分镜预览，支持缓存+异步预加载，秒开4K图片"""
+
+    _MAX_CACHE = 10
+
     def __init__(
         self,
         storyboards: list[dict],
@@ -4197,10 +4301,17 @@ class _StoryboardPreviewDialog(QDialog):
         self._current_idx = current_index
         self._gen_settings = gen_settings or {}
         self._project_name = project_name
+        self._viewed_indices: set[int] = {current_index}  # 已查看的分镜索引
         self._sorted = sorted(
             [s for s in storyboards if s.get("generated_image") and Path(s["generated_image"]).exists()],
             key=lambda s: s["index"],
         )
+        self._preview_cache: dict[int, QPixmap] = {}
+        self._pending_preloads: set[int] = set()
+        self._preload_timer = QTimer(self)
+        self._preload_timer.setSingleShot(True)
+        self._preload_timer.timeout.connect(self._do_preload)
+
         self.setWindowTitle(f"分镜 #{current_index} 预览")
         self.setObjectName("storyboardPreviewDialog")
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -4219,61 +4330,12 @@ class _StoryboardPreviewDialog(QDialog):
     def show_preview(self) -> None:
         if not self._sorted:
             return
-        self._show_current()
+        self._image_label.setText("加载中...")
+        self._image_label.setAlignment(Qt.AlignCenter)
         self.showFullScreen()
+        # 窗口显示后再加载图片，避免白屏卡顿
+        QTimer.singleShot(0, self._show_current)
         self.exec()
-
-    def _show_current(self) -> None:
-        if not self._sorted:
-            self.reject()
-            return
-        sb = self._sorted[self._current_pos()]
-        path = sb["generated_image"]
-        px = QPixmap(path)
-        if px.isNull():
-            return
-
-        # 先缩放到屏幕尺寸，再渲染页码（大幅减少PIL处理像素量）
-        screen = self.screen().size() if self.screen() else QSize(1920, 1080)
-        max_w = int(screen.width() * 0.9)
-        max_h = int(screen.height() * 0.9)
-        if px.width() > max_w or px.height() > max_h:
-            px = self._high_quality_downscale(px, max_w, max_h)
-
-        # 渲染页码（在缩小的图上进行，速度快很多）
-        pn_settings = self._gen_settings.get("page_number", {})
-        if pn_settings.get("enabled", True):
-            pn_prefix = pn_settings.get("prefix", "").strip() or self._project_name
-            sb = self._sorted[self._current_pos()]
-            page_num = sb["index"]
-            temp_path = str(path) + ".pn_temp.png"
-            _render_page_number(str(path), temp_path, pn_prefix, page_num, self._gen_settings)
-            px_pn = QPixmap(temp_path)
-            if not px_pn.isNull():
-                # 缩放到同尺寸
-                scaled_pn = px_pn.scaled(px.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                px = scaled_pn
-            try:
-                os.unlink(temp_path)
-            except Exception:
-                pass
-
-        self._image_label.setPixmap(px)
-        self.update()
-
-    @staticmethod
-    def _high_quality_downscale(pixmap: QPixmap, max_w: int, max_h: int) -> QPixmap:
-        w, h = pixmap.width(), pixmap.height()
-        ratio = min(max_w / w, max_h / h)
-        target_w = int(w * ratio)
-        target_h = int(h * ratio)
-        img = pixmap.toImage()
-        while img.width() > target_w * 1.3 or img.height() > target_h * 1.3:
-            next_w = max(img.width() // 2, target_w)
-            next_h = max(img.height() // 2, target_h)
-            img = img.scaled(next_w, next_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        img = img.scaled(target_w, target_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        return QPixmap.fromImage(img)
 
     def _current_pos(self) -> int:
         for i, s in enumerate(self._sorted):
@@ -4281,11 +4343,146 @@ class _StoryboardPreviewDialog(QDialog):
                 return i
         return 0
 
+    def _show_current(self) -> None:
+        if not self._sorted:
+            self.reject()
+            return
+        pos = self._current_pos()
+        sb = self._sorted[pos]
+        idx = sb["index"]
+
+        # 缓存命中
+        if idx in self._preview_cache:
+            self._image_label.setPixmap(self._preview_cache[idx])
+        else:
+            px = self._load_scaled_pixmap(sb["generated_image"])
+            if px.isNull():
+                return
+            px = self._render_page_number(px, sb["index"])
+            self._cache_and_set(idx, px)
+
+        # 触发预加载
+        self._preload_timer.start(50)
+
+    def _load_scaled_pixmap(self, path: str) -> QPixmap:
+        """加载图片并缩放到屏幕尺寸，保持宽高比"""
+        screen = self.screen().size() if self.screen() else QSize(1920, 1080)
+        max_w = int(screen.width() * 0.9)
+        max_h = int(screen.height() * 0.9)
+
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)
+        # 设一个上限缩小加载量，防止4K图解码过慢
+        orig_size = reader.size()
+        if orig_size.isValid():
+            ratio = min(max_w / orig_size.width(), max_h / orig_size.height())
+            if ratio < 1.0:
+                reader.setScaledSize(QSize(int(orig_size.width() * ratio), int(orig_size.height() * ratio)))
+        img = reader.read()
+        if img.isNull():
+            return QPixmap()
+        px = QPixmap.fromImage(img)
+        # 保险：确保最终像素尺寸不超过屏幕
+        if px.width() > max_w or px.height() > max_h:
+            px = px.scaled(max_w, max_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return px
+
+    def _render_page_number(self, px: QPixmap, page_num: int) -> QPixmap:
+        """直接用 QPainter 在图片上绘制页码，零 IO"""
+        pn_settings = self._gen_settings.get("page_number", {})
+        if not pn_settings.get("enabled", True):
+            return px
+
+        scale = pn_settings.get("size", 0.7)
+        prefix = pn_settings.get("prefix", "").strip() or self._project_name
+        text = f"《{prefix}{page_num:02d}》"
+
+        result = QPixmap(px)  # 浅拷贝
+        painter = QPainter(result)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        font_size = max(int(result.width() // 40 * scale), int(16 * scale))
+        font = QFont()
+        font.setPointSize(font_size)
+        painter.setFont(font)
+
+        fm = QFontMetrics(font)
+        tw = fm.horizontalAdvance(text)
+        th = fm.height()
+        padding = max(int(4 * scale), 2)
+        margin_bottom = max(int(4 * scale), 2)
+        margin_side = max(int(8 * scale), 4)
+        bg_w = tw + padding * 2
+        bg_h = th + padding * 2
+
+        align = pn_settings.get("alignment", "center")
+        if align == "left":
+            bg_x = margin_side
+        elif align == "right":
+            bg_x = result.width() - bg_w - margin_side
+        else:
+            bg_x = (result.width() - bg_w) // 2
+        bg_y = result.height() - bg_h - margin_bottom
+
+        # 背景
+        bg_color_hex = pn_settings.get("bg_color", "#FFFFFF")
+        bg_opacity = pn_settings.get("bg_opacity", 200)
+        r = int(bg_color_hex[1:3], 16)
+        g = int(bg_color_hex[3:5], 16)
+        b_ = int(bg_color_hex[5:7], 16)
+        painter.fillRect(bg_x, bg_y, bg_w, bg_h, QColor(r, g, b_, min(bg_opacity, 255)))
+
+        # 文字
+        font_color_hex = pn_settings.get("font_color", "#000000")
+        fr = int(font_color_hex[1:3], 16)
+        fg = int(font_color_hex[3:5], 16)
+        fb = int(font_color_hex[5:7], 16)
+        painter.setPen(QColor(fr, fg, fb))
+        painter.drawText(bg_x + padding, bg_y + padding, tw, th, Qt.AlignLeft, text)
+        painter.end()
+
+        return result
+
+    def _cache_and_set(self, idx: int, px: QPixmap) -> None:
+        """放入缓存并设置显示"""
+        self._preview_cache[idx] = px
+        # LRU 修剪
+        if len(self._preview_cache) > self._MAX_CACHE:
+            oldest = min(self._preview_cache.keys())
+            del self._preview_cache[oldest]
+        self._image_label.setPixmap(px)
+
+    def _do_preload(self) -> None:
+        """预加载前后页到缓存"""
+        pos = self._current_pos()
+        for offset in (1, -1, 2, -2):
+            np = pos + offset
+            if 0 <= np < len(self._sorted):
+                idx = self._sorted[np]["index"]
+                if idx not in self._preview_cache and idx not in self._pending_preloads:
+                    self._pending_preloads.add(idx)
+                    QTimer.singleShot(0, lambda i=idx: self._preload_one(i))
+
+    def _preload_one(self, idx: int) -> None:
+        """加载单页并缓存"""
+        self._pending_preloads.discard(idx)
+        for sb in self._sorted:
+            if sb["index"] == idx:
+                px = self._load_scaled_pixmap(sb["generated_image"])
+                if not px.isNull():
+                    px = self._render_page_number(px, idx)
+                    self._preview_cache[idx] = px
+                    if len(self._preview_cache) > self._MAX_CACHE:
+                        oldest = min(self._preview_cache.keys())
+                        del self._preview_cache[oldest]
+                return
+
     def _navigate(self, direction: int) -> None:
         pos = self._current_pos()
         new_pos = pos + direction
         if 0 <= new_pos < len(self._sorted):
             self._current_idx = self._sorted[new_pos]["index"]
+            self._viewed_indices.add(self._current_idx)
             self._show_current()
 
     def paintEvent(self, event) -> None:
@@ -4342,6 +4539,74 @@ class _StoryboardPreviewDialog(QDialog):
 
     def mouseMoveEvent(self, event) -> None:
         self.update()
+
+
+class _ImageEditDialog(QDialog):
+    """图片编辑弹窗：显示当前图片 + 文本输入框，返回 (confirmed, edit_instruction)"""
+
+    def __init__(self, image_path: str, storyboard_index: int, parent=None):
+        super().__init__(parent)
+        self._image_path = image_path
+        self._storyboard_index = storyboard_index
+        self.setWindowTitle(f"分镜 #{storyboard_index} 图片编辑")
+        self.setObjectName("imageEditDialog")
+        self.setMinimumSize(600, 500)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel(f"分镜 #{self._storyboard_index} 图片编辑")
+        title.setObjectName("dialogTitle")
+        layout.addWidget(title)
+
+        # 上层：图片预览
+        img_label = QLabel()
+        img_label.setObjectName("imageEditPreview")
+        img_label.setAlignment(Qt.AlignCenter)
+        img_label.setMinimumHeight(250)
+        img_label.setStyleSheet("background: #1e293b; border-radius: 8px;")
+        px = QPixmap(self._image_path)
+        if not px.isNull():
+            max_w = min(px.width(), 500)
+            max_h = min(px.height(), 400)
+            img_label.setPixmap(px.scaled(max_w, max_h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        layout.addWidget(img_label, stretch=1)
+
+        # 下层：修改描述输入
+        desc_label = QLabel("修改要求（描述图片需要怎么修改）")
+        desc_label.setObjectName("dialogFieldLabel")
+        layout.addWidget(desc_label)
+
+        self._edit_input = QPlainTextEdit()
+        self._edit_input.setObjectName("imageEditInput")
+        self._edit_input.setPlaceholderText("例如：把人物表情改成微笑、背景颜色换成蓝色、去掉画面中的文字...")
+        self._edit_input.setMinimumHeight(100)
+        self._edit_input.setMaximumHeight(150)
+        layout.addWidget(self._edit_input)
+
+        # 按钮
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setObjectName("dialogCancelBtn")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton("确认修改")
+        confirm_btn.setObjectName("dialogConfirmBtn")
+        confirm_btn.clicked.connect(self.accept)
+        btn_row.addWidget(confirm_btn)
+
+        layout.addLayout(btn_row)
+
+    @property
+    def edit_text(self) -> str:
+        return self._edit_input.toPlainText().strip()
 
 
 class _HistoryImagesDialog(QDialog):
@@ -4967,7 +5232,7 @@ class _AssetManagementDialog(QDialog):
             valid_sr = [p for p in sr_paths if p and Path(p).exists()]
             if valid_sr:
                 ref_desc = "，图片".join(f"图片{i+1}" for i in range(len(valid_sr)))
-                prompt = f"参考{ref_desc}的画风，生成对应画风的素材。" + prompt
+                prompt = f"参考{ref_desc}的画风，生成对应画风的图片" + prompt
         elif style_prefix:
             prompt = f"{style_prefix}，{asset_name}，{prompt}"
 
@@ -4978,9 +5243,9 @@ class _AssetManagementDialog(QDialog):
         if asset_type == "character":
             prompt += "，生成人物4视角（正面全身视图，左侧身视图，右侧视图，背面视图），白底图，需要把人物名字显示在图片上"
         elif asset_type == "scene":
-            prompt += "，生成9机位的不同方向的视角图"
+            prompt += ""
         elif asset_type == "prop":
-            prompt += "，生成9机位的不同方向的视角图"
+            prompt += ""
 
         row.set_generating()
 

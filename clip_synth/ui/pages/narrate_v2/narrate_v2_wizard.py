@@ -44,6 +44,8 @@ class TTSTaskWorker(QThread):
         language: str,
         doubao_settings,
         output_dir: str,
+        tts_engine: str = "doubao",
+        semitone: int = 0,
         parent=None,
     ):
         super().__init__(parent)
@@ -55,51 +57,96 @@ class TTSTaskWorker(QThread):
         self._silence_duration = silence_duration
         self._emotion = emotion
         self._language = language
+        self._semitone = semitone
         self._doubao_settings = doubao_settings
+        self._tts_engine = tts_engine
         self._output_dir = output_dir
         self._audio_paths = []
         self._timestamps = {}
 
     def run(self):
         try:
-            worker = DoubaoTTSWorker(self._doubao_settings)
             os.makedirs(self._output_dir, exist_ok=True)
-
-            for i, script in enumerate(self._scripts):
-                text = script.get("text", "")
-                if not text:
-                    continue
-
-                self.progress.emit(f"正在生成第 {i+1}/{len(self._scripts)} 段配音...")
-                audio_path = os.path.join(self._output_dir, f"narration_{i}.mp3")
-
-                success, timestamps = worker.tts_with_timestamps(
-                    text=text,
-                    voice_type=self._voice_type,
-                    output_path=audio_path,
-                    speed=self._speed,
-                    pitch=self._pitch,
-                    volume=self._volume,
-                    silence_duration=self._silence_duration,
-                    emotion=self._emotion,
-                    language=self._language,
-                )
-
-                if not success:
-                    self.error.emit(f"第 {i+1} 段配音生成失败")
-                    return
-
-                audio_info = {"index": i, "path": audio_path, "text": text, **script}
-                if timestamps:
-                    audio_info["timestamps"] = timestamps
-                    self._timestamps[i] = timestamps
-                self._audio_paths.append(audio_info)
-
-            self.progress.emit("配音生成完成")
-            self.tts_finished.emit()
+            if self._tts_engine == "edge_tts":
+                self._run_edge_tts()
+            else:
+                self._run_doubao_tts()
         except Exception as e:
             logger.error("TTS生成异常", exc_info=True)
             self.error.emit(str(e))
+
+    def _run_doubao_tts(self):
+        worker = DoubaoTTSWorker(self._doubao_settings)
+
+        for i, script in enumerate(self._scripts):
+            text = script.get("text", "")
+            if not text:
+                continue
+
+            self.progress.emit(f"正在生成第 {i+1}/{len(self._scripts)} 段配音...")
+            audio_path = os.path.join(self._output_dir, f"narration_{i}.mp3")
+
+            success, timestamps = worker.tts_with_timestamps(
+                text=text,
+                voice_type=self._voice_type,
+                output_path=audio_path,
+                speed=self._speed,
+                pitch=self._pitch,
+                volume=self._volume,
+                silence_duration=self._silence_duration,
+                emotion=self._emotion,
+                language=self._language,
+            )
+
+            if not success:
+                self.error.emit(f"第 {i+1} 段配音生成失败")
+                return
+
+            audio_info = {"index": i, "path": audio_path, "text": text, **script}
+            if timestamps:
+                audio_info["timestamps"] = timestamps
+                self._timestamps[i] = timestamps
+            self._audio_paths.append(audio_info)
+
+        self.progress.emit("配音生成完成")
+        self.tts_finished.emit()
+
+    def _run_edge_tts(self):
+        from clip_synth.services.edge_tts_service import EdgeTTSService
+
+        service = EdgeTTSService()
+
+        for i, script in enumerate(self._scripts):
+            text = script.get("text", "")
+            if not text:
+                continue
+
+            self.progress.emit(f"正在生成第 {i+1}/{len(self._scripts)} 段配音...")
+            audio_path = os.path.join(self._output_dir, f"narration_{i}.mp3")
+
+            success, timestamps = service.synthesize_long(
+                text=text,
+                voice=self._voice_type,
+                output_path=audio_path,
+                rate=self._speed,
+                pitch=self._pitch,
+                volume=self._volume,
+                silence_duration=self._silence_duration,
+                semitone=self._semitone,
+            )
+
+            if not success:
+                self.error.emit(f"第 {i+1} 段配音生成失败")
+                return
+
+            audio_info = {"index": i, "path": audio_path, "text": text, **script}
+            if timestamps:
+                audio_info["timestamps"] = timestamps
+                self._timestamps[i] = timestamps
+            self._audio_paths.append(audio_info)
+
+        self.progress.emit("配音生成完成")
+        self.tts_finished.emit()
 
     def get_audio_paths(self):
         return self._audio_paths
@@ -477,8 +524,9 @@ class NarrateV2Wizard(QFrame):
 
         settings = self._settings_service.load()
         doubao_settings = settings.doubao_voice
+        tts_engine = voice_settings.get("tts_engine", "doubao")
 
-        if not doubao_settings.is_configured:
+        if tts_engine == "doubao" and not doubao_settings.is_configured:
             QMessageBox.warning(self, "提示", "豆包语音配置不完整，请先在系统设置中完成配置")
             return
 
@@ -499,11 +547,13 @@ class NarrateV2Wizard(QFrame):
             speed=voice_settings["rate"],
             pitch=voice_settings["pitch"],
             volume=voice_settings["volume"],
-            silence_duration=voice_settings["silence"],
-            emotion=voice_settings["emotion"],
-            language=voice_settings["language"],
+            silence_duration=voice_settings.get("silence", 0.2),
+            emotion=voice_settings.get("emotion", ""),
+            language=voice_settings.get("language", "cn"),
             doubao_settings=doubao_settings,
+            tts_engine=voice_settings["tts_engine"],
             output_dir=project_dir,
+            semitone=voice_settings.get("semitone", 0),
         )
         self._tts_worker.progress.connect(self._on_tts_progress)
         self._tts_worker.tts_finished.connect(self._on_tts_finished)

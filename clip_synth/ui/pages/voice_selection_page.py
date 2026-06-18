@@ -202,6 +202,7 @@ class VoiceSelectionPage(QFrame):
 
         self._tts_combo = QComboBox()
         self._tts_combo.addItem("豆包语音", "doubao")
+        self._tts_combo.addItem("Edge-TTS", "edge_tts")
         self._tts_combo.addItem("自定义配音", "custom")
         self._tts_combo.setObjectName("ttsEngineCombo")
         tts_layout.addWidget(self._tts_combo)
@@ -330,6 +331,25 @@ class VoiceSelectionPage(QFrame):
         self._silence_slider.valueChanged.connect(self._on_silence_changed)
         sliders_layout.addRow("句尾静音时长(秒):", silence_layout)
 
+        # 半音移调
+        semi_layout = QHBoxLayout()
+        semi_layout.setContentsMargins(0, 0, 0, 0)
+        semi_layout.setSpacing(12)
+        self._semitone_slider = QSlider(Qt.Horizontal)
+        self._semitone_slider.setRange(-5, 5)
+        self._semitone_slider.setValue(0)
+        self._semitone_slider.setObjectName("semitoneSlider")
+        self._semitone_slider.setTickPosition(QSlider.TicksBelow)
+        self._semitone_slider.setTickInterval(1)
+        semi_layout.addWidget(self._semitone_slider, stretch=1)
+        self._semitone_label = QLabel("0st")
+        self._semitone_label.setObjectName("semitoneLabel")
+        self._semitone_label.setFixedSize(56, 32)
+        self._semitone_label.setAlignment(Qt.AlignCenter)
+        semi_layout.addWidget(self._semitone_label)
+        self._semitone_slider.valueChanged.connect(self._on_semitone_changed)
+        sliders_layout.addRow("半音移调:", semi_layout)
+
         params_layout.addLayout(sliders_layout)
 
         layout.addWidget(self._params_group)
@@ -348,17 +368,51 @@ class VoiceSelectionPage(QFrame):
         self._pitch_slider.valueChanged.connect(self._on_params_changed)
         self._volume_slider.valueChanged.connect(self._on_params_changed)
         self._silence_slider.valueChanged.connect(self._on_params_changed)
+        self._semitone_slider.valueChanged.connect(self._on_params_changed)
         self._tts_combo.currentIndexChanged.connect(self._on_tts_engine_changed)
         self._tts_combo.currentIndexChanged.connect(self._on_params_changed)
 
     def _on_tts_engine_changed(self):
         engine = self._tts_combo.currentData()
+        is_doubao = (engine == "doubao")
+        is_edge = (engine == "edge_tts")
         is_custom = (engine == "custom")
+
         self._params_group.setVisible(not is_custom)
         self._voiceover_list.setVisible(is_custom)
+
+        # Edge-TTS 隐藏情感和语种，显示静音
+        self._style_combo.parent().setVisible(is_doubao)
+        self._lang_combo.parent().setVisible(is_doubao)
+        # 静音滑块始终显示（Edge-TTS 也用）
+        self._silence_slider.setVisible(not is_custom)
+
         if is_custom:
             self._voiceover_list.set_scripts(self._scripts, self._original_sound_ratio)
+        elif is_edge:
+            self._load_edge_voices()
+
         self.ready_for_next.emit(True)
+
+    def _load_edge_voices(self):
+        """加载 Edge-TTS 配音员列表"""
+        from clip_synth.services.edge_tts_service import EdgeTTSService
+
+        try:
+            voices = EdgeTTSService.list_voices()
+            self._voice_combo.blockSignals(True)
+            self._voice_combo.clear()
+            # 按 locale 分组排序，中文优先
+            cn_voices = [v for v in voices if v["locale"].startswith("zh")]
+            other_voices = [v for v in voices if not v["locale"].startswith("zh")]
+            for v in cn_voices + other_voices:
+                # 简化名称：提取短名 (Locale)
+                short = v["name"].replace("Microsoft ", "").replace(" Online (Natural)", "").split(" - ")[0]
+                label = f"{short} ({v['locale']})"
+                self._voice_combo.addItem(label, v["id"])
+            self._voice_combo.blockSignals(False)
+        except Exception as e:
+            logger.warning("加载 Edge-TTS 配音员列表失败: %s", e)
 
     def _on_rate_changed(self, value: int) -> None:
         self._rate_label.setText(f"{value / 10:.1f}")
@@ -372,21 +426,27 @@ class VoiceSelectionPage(QFrame):
     def _on_silence_changed(self, value: int) -> None:
         self._silence_label.setText(f"{value / 10:.1f}")
 
+    def _on_semitone_changed(self, value: int) -> None:
+        self._semitone_label.setText(f"{value:+d}st")
+
     def get_settings(self) -> dict:
+        engine = self._tts_combo.currentData()
         settings = {
-            "tts_engine": self._tts_combo.currentData(),
+            "tts_engine": engine,
             "voice_type": self._voice_combo.currentData(),
             "voice_name": self._voice_combo.currentText(),
-            "emotion": self._style_combo.currentData(),
-            "emotion_name": self._style_combo.currentText(),
-            "language": self._lang_combo.currentData(),
-            "language_name": self._lang_combo.currentText(),
             "rate": self._rate_slider.value() / 10,
             "pitch": self._pitch_slider.value() / 10,
             "volume": self._volume_slider.value() / 10,
             "silence": self._silence_slider.value() / 10,
+            "semitone": self._semitone_slider.value(),
         }
-        if self._tts_combo.currentData() == "custom":
+        if engine == "doubao":
+            settings["emotion"] = self._style_combo.currentData()
+            settings["emotion_name"] = self._style_combo.currentText()
+            settings["language"] = self._lang_combo.currentData()
+            settings["language_name"] = self._lang_combo.currentText()
+        if engine == "custom":
             settings["custom_items"] = self._voiceover_list.get_items()
         return settings
 
@@ -408,15 +468,18 @@ class VoiceSelectionPage(QFrame):
             return
         try:
             settings = self._settings_service.load()
+            engine = self._tts_combo.currentData()
             params = {
                 "voice_type": self._voice_combo.currentData(),
-                "emotion": self._style_combo.currentData(),
-                "language": self._lang_combo.currentData(),
                 "rate": self._rate_slider.value(),
                 "pitch": self._pitch_slider.value(),
                 "volume": self._volume_slider.value(),
                 "silence": self._silence_slider.value(),
+                "semitone": self._semitone_slider.value(),
             }
+            if engine == "doubao":
+                params["emotion"] = self._style_combo.currentData()
+                params["language"] = self._lang_combo.currentData()
             settings.tts_params = json.dumps(params)
             self._settings_service.save(settings)
         except Exception as e:
@@ -444,6 +507,7 @@ class VoiceSelectionPage(QFrame):
             self._pitch_slider.setValue(params.get("pitch", 10))
             self._volume_slider.setValue(params.get("volume", 10))
             self._silence_slider.setValue(params.get("silence", 1))
+            self._semitone_slider.setValue(params.get("semitone", 0))
         except Exception as e:
             logger.warning("加载配音参数失败: %s", e)
 

@@ -110,6 +110,7 @@ class NavSidebar(QFrame):
             ("video_dedup", "视频处理", "\u25b6"),
             ("novel_mix", "视频配音混剪", "\u25b6"),
             ("novel_comic", "漫画生成", "\u25b6"),
+            ("novel_rewrite", "小说改写", "\u25b6"),
             ("settings", "系统配置", "\u25b6"),
         ]
 

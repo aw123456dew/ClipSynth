@@ -177,10 +177,13 @@ class TTSWorker(QThread):
         speed: float,
         pitch: float,
         volume: float,
+        silence: float,
+        semitone: int,
         emotion: str,
         language: str,
         doubao_settings,
         output_dir: str,
+        tts_engine: str = "doubao",
         parent=None,
     ):
         super().__init__(parent)
@@ -189,59 +192,102 @@ class TTSWorker(QThread):
         self._speed = speed
         self._pitch = pitch
         self._volume = volume
+        self._silence = silence
+        self._semitone = semitone
         self._emotion = emotion
         self._language = language
         self._doubao_settings = doubao_settings
+        self._tts_engine = tts_engine
         self._output_dir = output_dir
         self._audio_files = []
 
     def run(self):
         try:
-            from clip_synth.services.doubao_tts_service import split_text_by_length
-
-            worker = DoubaoTTSWorker(self._doubao_settings)
             os.makedirs(self._output_dir, exist_ok=True)
 
-            chunks = split_text_by_length(self._text, 1000)
-            total = len(chunks)
-
-            for i, chunk in enumerate(chunks):
-                if not chunk.strip():
-                    continue
-                self.progress.emit(f"正在生成配音 ({i+1}/{total})...")
-                audio_path = os.path.join(self._output_dir, f"novel_dub_{i:04d}.mp3")
-
-                success, msg, timestamps = worker.tts_single_with_timestamps(
-                    text=chunk,
-                    voice_type=self._voice_type,
-                    output_path=audio_path,
-                    speed=self._speed,
-                    pitch=self._pitch,
-                    volume=self._volume,
-                    emotion=self._emotion,
-                    language=self._language,
-                )
-
-                if not success:
-                    self.error.emit(f"第 {i+1} 段配音生成失败: {msg}")
-                    return
-
-                from clip_synth.services.narrate_export_service import _get_media_duration
-                duration = _get_media_duration(audio_path)
-
-                self._audio_files.append({
-                    "index": i,
-                    "path": audio_path,
-                    "text": chunk,
-                    "duration": duration,
-                    "timestamps": timestamps,
-                })
-
-            self.progress.emit("配音生成完成")
-            self.tts_finished.emit()
+            if self._tts_engine == "edge_tts":
+                self._run_edge_tts()
+            else:
+                self._run_doubao_tts()
         except Exception as e:
             logger.error("TTS生成异常: %s", e, exc_info=True)
             self.error.emit(str(e))
+
+    def _run_doubao_tts(self):
+        from clip_synth.services.doubao_tts_service import DoubaoTTSWorker, split_text_by_length
+
+        worker = DoubaoTTSWorker(self._doubao_settings)
+        chunks = split_text_by_length(self._text, 1000)
+        total = len(chunks)
+
+        for i, chunk in enumerate(chunks):
+            if not chunk.strip():
+                continue
+            self.progress.emit(f"正在生成配音 ({i+1}/{total})...")
+            audio_path = os.path.join(self._output_dir, f"novel_dub_{i:04d}.mp3")
+
+            success, msg, timestamps = worker.tts_single_with_timestamps(
+                text=chunk,
+                voice_type=self._voice_type,
+                output_path=audio_path,
+                speed=self._speed,
+                pitch=self._pitch,
+                volume=self._volume,
+                emotion=self._emotion,
+                language=self._language,
+            )
+
+            if not success:
+                self.error.emit(f"第 {i+1} 段配音生成失败: {msg}")
+                return
+
+            from clip_synth.services.narrate_export_service import _get_media_duration
+            duration = _get_media_duration(audio_path)
+
+            self._audio_files.append({
+                "index": i,
+                "path": audio_path,
+                "text": chunk,
+                "duration": duration,
+                "timestamps": timestamps,
+            })
+
+        self.progress.emit("配音生成完成")
+        self.tts_finished.emit()
+
+    def _run_edge_tts(self):
+        from clip_synth.services.edge_tts_service import EdgeTTSService
+
+        service = EdgeTTSService()
+        success, timestamps = service.synthesize_long(
+            text=self._text,
+            voice=self._voice_type,
+            output_path=os.path.join(self._output_dir, "novel_dub_edge.mp3"),
+            rate=self._speed,
+            pitch=self._pitch,
+            volume=self._volume,
+            silence_duration=self._silence,
+            semitone=self._semitone,
+        )
+
+        if not success:
+            self.error.emit("Edge-TTS 配音生成失败")
+            return
+
+        from clip_synth.services.narrate_export_service import _get_media_duration
+        audio_path = os.path.join(self._output_dir, "novel_dub_edge.mp3")
+        duration = _get_media_duration(audio_path)
+
+        self._audio_files = [{
+            "index": 0,
+            "path": audio_path,
+            "text": self._text,
+            "duration": duration,
+            "timestamps": timestamps,
+        }]
+
+        self.progress.emit("配音生成完成")
+        self.tts_finished.emit()
 
     def get_audio_files(self):
         return self._audio_files
@@ -334,6 +380,20 @@ class NovelMixDubPage(QFrame):
         engine_layout.setContentsMargins(16, 4, 16, 10)
         engine_layout.setSpacing(6)
 
+        # TTS引擎选择
+        engine_sel_row = QHBoxLayout()
+        engine_label = QLabel("TTS引擎")
+        engine_label.setObjectName("paramLabel")
+        engine_sel_row.addWidget(engine_label)
+        self._engine_combo = QComboBox()
+        self._engine_combo.setObjectName("ttsEngineCombo")
+        self._engine_combo.setMinimumHeight(32)
+        self._engine_combo.addItem("豆包语音", "doubao")
+        self._engine_combo.addItem("Edge-TTS", "edge_tts")
+        self._engine_combo.setCurrentIndex(0)
+        engine_sel_row.addWidget(self._engine_combo, stretch=1)
+        engine_layout.addLayout(engine_sel_row)
+
         combo_row = QHBoxLayout()
         combo_row.setSpacing(10)
 
@@ -350,7 +410,9 @@ class NovelMixDubPage(QFrame):
         voice_layout.addWidget(self._voice_combo)
         combo_row.addLayout(voice_layout, stretch=1)
 
-        emotion_layout = QVBoxLayout()
+        self._emotion_widget = emotion_widget = QFrame()
+        emotion_layout = QVBoxLayout(emotion_widget)
+        emotion_layout.setContentsMargins(0, 0, 0, 0)
         emotion_label = QLabel("风格/情感")
         emotion_label.setObjectName("paramLabel")
         emotion_layout.addWidget(emotion_label)
@@ -361,11 +423,13 @@ class NovelMixDubPage(QFrame):
             self._emotion_combo.addItem(emotion_name, emotion_id)
         self._emotion_combo.setCurrentIndex(0)
         emotion_layout.addWidget(self._emotion_combo)
-        combo_row.addLayout(emotion_layout, stretch=1)
+        combo_row.addWidget(emotion_widget, stretch=1)
 
         engine_layout.addLayout(combo_row)
 
-        lang_layout = QVBoxLayout()
+        self._lang_widget = lang_widget = QFrame()
+        lang_layout = QVBoxLayout(lang_widget)
+        lang_layout.setContentsMargins(0, 0, 0, 0)
         lang_label = QLabel("语种")
         lang_label.setObjectName("paramLabel")
         lang_layout.addWidget(lang_label)
@@ -376,7 +440,7 @@ class NovelMixDubPage(QFrame):
             self._lang_combo.addItem(lang_name, lang_id)
         self._lang_combo.setCurrentIndex(0)
         lang_layout.addWidget(self._lang_combo)
-        engine_layout.addLayout(lang_layout)
+        engine_layout.addWidget(self._lang_widget)
 
         slider_row = QVBoxLayout()
         slider_row.setSpacing(6)
@@ -384,6 +448,31 @@ class NovelMixDubPage(QFrame):
         self._speed_slider = self._create_slider_row("语速", 0.2, 3.0, 1.0, "rateSlider", slider_row)
         self._pitch_slider = self._create_slider_row("音调", 0.2, 3.0, 1.0, "pitchSlider", slider_row)
         self._volume_slider = self._create_slider_row("音量", 0.2, 3.0, 1.0, "volumeSlider", slider_row)
+        self._silence_slider = self._create_slider_row("句尾静音(秒)", 0.0, 2.0, 0.2, "silenceSlider", slider_row)
+
+        # 半音移调滑块（整数 -5~5）
+        semi_row = QHBoxLayout()
+        semi_row.setSpacing(8)
+        semi_label = QLabel("半音移调")
+        semi_label.setObjectName("paramLabel")
+        semi_label.setMinimumWidth(40)
+        semi_row.addWidget(semi_label)
+        self._semitone_slider = QSlider(Qt.Horizontal)
+        self._semitone_slider.setObjectName("semitoneSlider")
+        self._semitone_slider.setRange(-5, 5)
+        self._semitone_slider.setValue(0)
+        self._semitone_slider.setTickPosition(QSlider.TicksBelow)
+        self._semitone_slider.setTickInterval(1)
+        semi_row.addWidget(self._semitone_slider, stretch=1)
+        self._semitone_label = QLabel("0st")
+        self._semitone_label.setObjectName("sliderValueLabel")
+        self._semitone_label.setMinimumWidth(40)
+        self._semitone_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        semi_row.addWidget(self._semitone_label)
+        self._semitone_slider.valueChanged.connect(
+            lambda v: self._semitone_label.setText(f"{v:+d}st")
+        )
+        slider_row.addLayout(semi_row)
 
         engine_layout.addLayout(slider_row)
 
@@ -409,6 +498,33 @@ class NovelMixDubPage(QFrame):
         main_row.addWidget(right_panel)
 
         outer.addLayout(main_row, stretch=1)
+
+        self._engine_combo.currentIndexChanged.connect(self._on_engine_changed)
+
+    def _on_engine_changed(self):
+        engine = self._engine_combo.currentData()
+        is_edge = (engine == "edge_tts")
+        self._emotion_widget.setVisible(not is_edge)
+        self._lang_widget.setVisible(not is_edge)
+        if is_edge:
+            self._load_edge_voices()
+
+    def _load_edge_voices(self):
+        from clip_synth.services.edge_tts_service import EdgeTTSService
+        try:
+            voices = EdgeTTSService.list_voices()
+            self._voice_combo.blockSignals(True)
+            self._voice_combo.clear()
+            cn_voices = [v for v in voices if v["locale"].startswith("zh")]
+            other_voices = [v for v in voices if not v["locale"].startswith("zh")]
+            for v in cn_voices + other_voices:
+                # 简化名称：提取短名 (Locale)
+                short = v["name"].replace("Microsoft ", "").replace(" Online (Natural)", "").split(" - ")[0]
+                label = f"{short} ({v['locale']})"
+                self._voice_combo.addItem(label, v["id"])
+            self._voice_combo.blockSignals(False)
+        except Exception as e:
+            logger.warning("加载 Edge-TTS 配音员列表失败: %s", e)
 
     def _create_slider_row(self, label_text: str, min_val: float, max_val: float, default: float,
                            slider_name: str, parent_layout) -> QSlider:
@@ -489,7 +605,8 @@ class NovelMixDubPage(QFrame):
 
         settings = self._settings_service.load()
         doubao_settings = settings.doubao_voice
-        if not doubao_settings.is_configured:
+        tts_engine = self._engine_combo.currentData()
+        if tts_engine == "doubao" and not doubao_settings.is_configured:
             logger.warning("豆包语音配置未完成")
             return
 
@@ -507,6 +624,9 @@ class NovelMixDubPage(QFrame):
         speed = self._speed_slider.value() / 10.0
         pitch = self._pitch_slider.value() / 10.0
         volume = self._volume_slider.value() / 10.0
+        silence = self._silence_slider.value() / 10.0
+        semitone = self._semitone_slider.value()
+        tts_engine = self._engine_combo.currentData()
 
         self._progress_label.setText("准备生成配音...")
         self._progress_label.show()
@@ -518,9 +638,12 @@ class NovelMixDubPage(QFrame):
             speed=speed,
             pitch=pitch,
             volume=volume,
+            silence=silence,
+            semitone=semitone,
             emotion=emotion,
             language=language,
             doubao_settings=doubao_settings,
+            tts_engine=tts_engine,
             output_dir=output_dir,
         )
         self._tts_worker.progress.connect(self._on_tts_progress)
