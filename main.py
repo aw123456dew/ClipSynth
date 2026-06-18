@@ -24,8 +24,8 @@ def main():
         qt_app.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
         _load_stylesheet(qt_app)
 
-        if not LoginDialog.authenticate():
-            sys.exit(1)
+        # if not LoginDialog.authenticate():
+        #     sys.exit(1)
 
         qt_app.closeAllWindows()
 

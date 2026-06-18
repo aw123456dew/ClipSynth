@@ -1,199 +1,183 @@
-# FrameCut - 智能视频剪辑工具
+# AI推 - AI Video Editor
 
-FrameCut 是一款基于 PySide6 开发的智能视频剪辑桌面应用，集成 AI 分析、字幕处理和剪映草稿导出功能，专为短视频创作者设计。
+AI推 是一款基于 AI 能力的视频编辑与漫画生成工具，集成了视频智能剪辑、AI 语音解说、视频配音混剪、漫画自动生成等功能。
 
-## 🎯 项目功能简介
+---
 
-### 核心功能
+## 功能总览
 
-1. **智能视频剪辑**
-   - 基于 AI 的视频内容分析
-   - 自动识别精彩片段
-   - 支持多种分析模式（极速/快速/精准/深度）
+| 功能模块 | 说明 |
+|---------|------|
+| [短剧混剪](docs/short_drama_mix.md) | 基于智能分析对视频进行自动剪辑和混剪 |
+| [视频解说 V2](docs/short_drama_narrate_v2.md) | 新一代 AI 视频解说生成，支持角色识别与配音 |
+| [视频解说](docs/short_drama_narrate.md) | AI 自动生成视频解说脚本并配音 |
+| [视频处理](docs/video_dedup.md) | 去重、预处理等视频处理工具 |
+| [视频配音混剪](docs/novel_mix.md) | 小说文本转视频配音与混剪 |
+| [漫画生成](docs/novel_comic.md) | 小说文本自动生成漫画分镜与图片 |
+| [系统配置](docs/settings.md) | AI 模型、API 密钥等系统设置 |
 
-2. **短剧解说制作**
-   - 自动生成解说文案
-   - 集成 AI 语音合成（支持豆包 TTS）
-   - 智能匹配视频片段与配音时长
+---
 
-3. **字幕处理**
-   - 字幕导入与编辑
-   - 字幕与视频同步
-   - 支持 SRT 格式导出
+## 项目架构
 
-4. **剪映草稿导出**
-   - 直接导出为剪映草稿文件
-   - 保留完整的视频轨道、音频轨道和字幕轨道
-   - 支持批量导出多个片段
+```
+FrameCut/
+├── clip_synth/                  # 核心代码
+│   ├── core/                    # 核心基础设施
+│   │   ├── application.py       # 应用入口与初始化
+│   │   ├── config.py            # 配置管理
+│   │   └── database.py          # 数据库管理
+│   ├── models/                  # 数据模型
+│   │   ├── project.py           # 项目模型
+│   │   ├── project_state.py     # 项目状态
+│   │   ├── settings.py          # 系统设置模型
+│   │   └── ...                  # 各类业务模型
+│   ├── services/                # 业务服务层
+│   │   ├── ai_service.py        # AI 对话与图片生成
+│   │   ├── image_gen_service.py # 图片生成队列服务
+│   │   ├── video_analysis_service.py  # 视频分析
+│   │   ├── subtitle_service.py  # 字幕处理
+│   │   ├── novel_comic_state_service.py  # 漫画状态管理
+│   │   └── ...                  # 其他业务服务
+│   ├── ui/                      # 用户界面
+│   │   ├── pages/               # 功能页面
+│   │   ├── components/          # 通用组件
+│   │   ├── widgets/             # 界面控件
+│   │   ├── main_window.py       # 主窗口
+│   │   └── login_dialog.py      # 登录对话框
+│   ├── resources/               # 资源文件
+│   │   ├── styles/main.qss      # 全局样式表
+│   │   └── icons/               # 图标
+│   └── utils/                   # 工具函数
+│       ├── ffmpeg_helper.py     # FFmpeg 工具
+│       ├── gpu_accel.py         # GPU 加速
+│       └── logger.py            # 日志
+├── scripts/
+│   └── build_exe.py             # 打包脚本 (PyInstaller)
+├── main.py                      # 程序入口
+├── pyproject.toml               # 项目配置
+└── requirements.txt             # Python 依赖
+```
 
-5. **视频去重工具**
-   - 检测相似视频片段
-   - 智能去重处理
+### 架构分层
 
-### 技术栈
+```
+┌─────────────────────────────────────────┐
+│               UI 层 (PySide6)            │
+│  ┌─────────┐ ┌───────────┐ ┌─────────┐  │
+│  │ 功能页面 │ │  通用组件  │ │  控件   │  │
+│  └────┬────┘ └───────────┘ └─────────┘  │
+├───────┼─────────────────────────────────┤
+│       ▼                                  │
+│  ┌──────────────────────┐               │
+│  │    业务服务层         │               │
+│  │  AI服务 / 图片生成    │               │
+│  │  视频分析 / 状态管理  │               │
+│  └──────────┬───────────┘               │
+├─────────────┼───────────────────────────┤
+│             ▼                            │
+│  ┌──────────────────┐ ┌──────────────┐  │
+│  │   数据模型层      │ │  数据库/配置  │  │
+│  └──────────────────┘ └──────────────┘  │
+└─────────────────────────────────────────┘
+```
 
-- **框架**: PySide6 (Qt6)
-- **异步**: qasync + asyncio
-- **数据库**: SQLite + SQLAlchemy
-- **AI 服务**: OpenAI API + 豆包 API
-- **媒体处理**: FFmpeg + OpenCV + PIL
-- **打包工具**: PyInstaller
+---
 
-## 🚀 项目如何运行
+## 环境要求
 
-### 环境要求
+- **Python**: 3.10+
+- **操作系统**: Windows 10/11
+- **FFmpeg**: 需在环境变量中或随打包分发
+- **GPU**: 非必需，视频编码推荐使用 NVIDIA GPU
 
-- Python 3.12+
-- FFmpeg（需提前安装并配置环境变量）
-- Windows 10/11（推荐）
+---
 
-### 安装步骤
+## 如何运行
 
-1. **克隆项目**
+### 1. 克隆项目
+
 ```bash
-git clone <repository-url>
+git clone https://github.com/your-repo/FrameCut.git
 cd FrameCut
 ```
 
-2. **创建虚拟环境**
-```bash
-python -m venv venv
-venv\Scripts\activate  # Windows
-```
+### 2. 安装依赖
 
-3. **安装依赖**
 ```bash
 pip install -r requirements.txt
 ```
 
-4. **配置环境变量（可选）**
-```bash
-# 设置 OpenAI API Key（如需使用 AI 功能）
-set OPENAI_API_KEY=your-api-key
+### 3. 配置 FFmpeg
 
-# 设置豆包 API Key（如需使用 TTS 功能）
-set DOUBAO_API_KEY=your-api-key
-set DOUBAO_SECRET_KEY=your-secret-key
-```
+确保 `ffmpeg.exe` 和 `ffprobe.exe` 在系统 PATH 中，或放在项目根目录下的 `ffmpeg/` 文件夹中。
 
-### 运行项目
+### 4. 启动程序
 
 ```bash
 python main.py
 ```
 
-## 📦 项目如何打包
+### 5. 系统配置
 
-### 打包要求
+启动后进入「系统配置」页面，配置以下信息：
 
-- 需提前安装 PyInstaller
-- FFmpeg 需放置在指定路径：`D:\ffmpeg-8.0.1-essentials_build\ffmpeg-8.0.1-essentials_build`
+- **文案生成模型**: OpenAI 兼容的文本模型（API Key + 接口地址）
+- **视频分析模型**: 用于视频分析的视觉模型
+- **图片生成模型**: 用于漫画/图片生成的模型，可选 NewAPI / ToAPI / Grasai / JiKe / ManXiaoBai 等供应商
 
-### 打包步骤
+---
 
-1. **安装打包依赖**
+## 如何打包
+
+使用 PyInstaller 打包为单个 exe 文件：
+
 ```bash
-pip install pyinstaller
-```
-
-2. **运行打包脚本**
-```bash
+# 基础打包（隐藏控制台窗口）
 python scripts/build_exe.py
-```
 
-3. **打包选项**
-```bash
-# 清理构建缓存并打包
-python scripts/build_exe.py --clean
-
-# 打包带控制台窗口（用于调试）
+# 带控制台（调试用）
 python scripts/build_exe.py --console
 
-# 完整命令示例
-python scripts/build_exe.py --clean --console
+# 自定义名称
+python scripts/build_exe.py --name AI推
+
+# 清理缓存后打包
+python scripts/build_exe.py --clean
 ```
 
-### 打包输出
+打包完成后，exe 文件位于 `dist/` 目录下。
 
-打包完成后，可执行文件位于：
-```
-dist/ClipSynth/ClipSynth.exe
-```
+### 打包包含
 
-### 注意事项
+- 所有 Python 依赖
+- FFmpeg (ffmpeg.exe + ffprobe.exe)
+- QSS 样式文件
+- 图标资源
+- pyJianYingDraft 资产文件
 
-1. **FFmpeg 配置**：打包脚本会自动复制本地 FFmpeg 到输出目录
-2. **资源文件**：所有资源文件（样式、图标等）会自动打包
-3. **运行时环境**：打包后的 exe 可独立运行，无需安装 Python
+---
 
-## 📁 项目结构
+## 技术栈
 
-```
-FrameCut/
-├── clip_synth/              # 主应用代码
-│   ├── core/               # 核心模块（应用、配置、数据库）
-│   ├── models/             # 数据模型
-│   ├── services/           # 业务服务（AI、媒体处理、导出）
-│   ├── ui/                 # 用户界面（页面、组件、窗口）
-│   ├── tools/              # 工具模块（去重工具）
-│   └── utils/              # 通用工具（FFmpeg 辅助、日志等）
-├── scripts/                # 脚本（打包、运行时钩子）
-├── tests/                  # 测试用例
-├── main.py                 # 应用入口
-├── requirements.txt        # 依赖清单
-└── pyproject.toml          # 项目配置
-```
+| 技术 | 用途 |
+|------|------|
+| PySide6 | GUI 框架 |
+| OpenAI API | AI 对话与图片生成 |
+| FFmpeg | 视频/音频处理 |
+| PyInstaller | 应用打包 |
+| SQLite | 本地数据存储 |
+| httpx / aiohttp | HTTP 请求 |
 
-## ⚙️ 配置说明
+---
 
-### FFmpeg 路径配置
+## 常见问题
 
-默认 FFmpeg 路径：
-```
-D:\ffmpeg-8.0.1-essentials_build\ffmpeg-8.0.1-essentials_build
-```
+**Q: 启动后界面空白？**  
+A: 检查 `clip_synth/resources/styles/main.qss` 是否存在。
 
-如需修改路径，请编辑 `scripts/build_exe.py` 中的相关配置。
+**Q: AI 生图失败？**  
+A: 进入「系统配置」确认图片生成模型的 API Key 和接口地址是否正确，并点击"测试生图"验证。
 
-### 运行时环境变量
-
-应用启动时会自动将打包的 FFmpeg 添加到系统 PATH，无需手动配置。
-
-## 📝 使用说明
-
-### 基本工作流程
-
-1. **创建项目** → 选择视频文件
-2. **分析视频** → 使用 AI 分析精彩片段
-3. **编辑剪辑** → 调整片段顺序和时长
-4. **添加字幕** → 导入或生成字幕
-5. **导出作品** → 导出为视频或剪映草稿
-
-### 快捷键
-
-- `Ctrl + S`：保存项目
-- `Ctrl + E`：导出项目
-- `Ctrl + Z`：撤销操作
-
-## 🐛 常见问题
-
-### Q: 运行时提示 FFmpeg 找不到？
-A: 请确保 FFmpeg 已正确安装并配置环境变量，或检查打包脚本中的 FFmpeg 路径配置。
-
-### Q: 导出剪映草稿失败？
-A: 请确保视频文件路径不含中文或特殊字符，且存储空间充足。
-
-### Q: AI 分析速度慢？
-A: 可切换为「极速模式」，仅使用字幕分析，不分析画面内容。
-
-## 📄 许可证
-
-**版权所有 © 2024 FrameCut 开发团队**
-
-本项目为自有项目，仅供内部使用和学习研究。**严禁用于任何商业目的**，未经授权禁止复制、分发或修改本项目的任何部分。
-
-违反上述条款将依法追究法律责任。
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
+**Q: 打包后运行报错？**  
+A: 使用 `--console` 参数重新打包，查看具体错误信息。
