@@ -244,10 +244,13 @@ class AIService:
         resolution: str | None = None,
         aspect_ratio: str | None = None,
     ) -> bytes:
+        logger.info("当前供应商: %s", self._config.api_provider)
         if self._config.api_provider == "toapi":
             return self._generate_image_toapi(prompt, size, reference_images)
         if self._config.api_provider == "grasai":
             return self._generate_image_grasai(prompt, size, reference_images, resolution, aspect_ratio)
+        if self._config.api_provider == "manxiaobai":
+            return self._generate_image_manxiaobai(prompt, size, reference_images, resolution, aspect_ratio)
         if self._config.api_type == "gemini":
             return self._generate_image_gemini(prompt, size, reference_images)
         return self._generate_image_openai(prompt, size, reference_images)
@@ -493,7 +496,7 @@ class AIService:
             "prompt": prompt,
             "n": 1,
             "size": ratio,
-            "metadata": {"resolution": resolution, "moderation": "low", "quality": "low"},
+            "metadata": {"resolution": resolution, "moderation": "low", "quality": "medium"},
         }
         if ref_urls:
             gen_body["image_urls"] = [{"url": u} for u in ref_urls]
@@ -750,9 +753,11 @@ class AIService:
         }
         call_url = f"{base_url}/v1/draw/nano-banana"
         if self._config.api_type == 'openai':
-            body['quality'] = "low"
+            body['quality'] = "medium"
             body["moderation"] = "low"
             call_url = f"{base_url}/v1/draw/completions"
+        else:
+            body['prompt'] += '。不要解释，直接根据我的描述生成图片。'
 
         logger.info("Grasai 提交生图任务: %s", call_url)
         with httpx.Client(timeout=httpx.Timeout(120)) as http:
@@ -800,6 +805,107 @@ class AIService:
                 raise RuntimeError(f"Grasai 生图失败: {error_msg}")
 
         raise TimeoutError("Grasai 生图任务超时 (900s)")
+
+    def _generate_image_manxiaobai(
+        self,
+        prompt: str,
+        size: str,
+        reference_images: list[str] | None,
+        resolution: str | None = None,
+        aspect_ratio: str | None = None,
+        ) -> bytes:
+
+        import base64
+        import time
+        import httpx
+
+        base_url = self._config.base_url.rstrip("/")
+        if base_url.endswith("/v1"):
+            base_url = base_url[:-3]
+
+        urls: list[str] = []
+        if reference_images:
+            for path in reference_images:
+                try:
+                    with open(path, "rb") as f:
+                        img_data = f.read()
+                    ext = Path(path).suffix.lower()
+                    mime = "image/png" if ext == ".png" else "image/jpeg"
+                    b64 = base64.b64encode(img_data).decode("utf-8")
+                    urls.append(f"data:{mime};base64,{b64}")
+                except Exception as e:
+                    logger.warning("Grasai 读取参考图失败 %s: %s", path, e)
+
+        body: dict = {
+            "model": self._config.model_name or "gpt-image-2",
+            "prompt": prompt,
+            "size": size or "1024x1024",
+            "imageSize": resolution or "1K",
+            "response_format": "url",
+            "images": urls,
+            "quality": "auto"
+        }
+
+        call_url = f"{base_url}/v1/image-tasks/edits"
+
+        if not urls:
+            logger.info(f"urls，{urls}")
+            call_url = f"{base_url}/v1/image-tasks/generations"
+
+        if self._config.api_type == 'gemini':
+            logger.info(f"urls，{self._config.api_type}")
+            call_url = f"{base_url}/v1/image-tasks/generations"
+
+        logger.info(f"ManXiaoBai 提交生图任务: {call_url}")
+        headers = {"Authorization": f"Bearer {self._config.api_key}"}
+        with httpx.Client(timeout=httpx.Timeout(120)) as http:
+            resp = http.post(
+                call_url,
+                headers={**headers, "Content-Type": "application/json"},
+                json=body,
+            )
+            resp.raise_for_status()
+            task_data = resp.json()
+
+        task_id = task_data.get('id', None)
+        logger.info(f"获取到 task_id: {task_id}")
+        if not task_id:
+            logger.info(f"ManXiaoBai 提交生图任务失败，{resp.text}")
+            raise RuntimeError(f"ManXiaoBai 创建任务失败，无 task_id: {task_data}")
+
+        logger.info("ManXiaoBai 任务已创建: %s，开始轮询", task_id)
+        deadline = time.time() + 900
+        while time.time() < deadline:
+            time.sleep(3)
+            with httpx.Client(timeout=httpx.Timeout(600)) as http:
+                poll_resp = http.get(
+                    f"{base_url}/v1/image-tasks/{task_id}",
+                    headers={**headers, "Content-Type": "application/json"},
+                )
+                poll_resp.raise_for_status()
+                result_data = poll_resp.json()
+
+            status = result_data.get("status", "")
+
+            if status == "succeeded":
+                results = result_data.get("result", {}).get("data", [])
+                if results:
+                    image_url = results[0].get("url", "")
+                    if image_url:
+                        logger.info("ManXiaoBai 下载图片: %s", image_url[:80])
+                        with httpx.Client(timeout=httpx.Timeout(900)) as http:
+                            dl_resp = http.get(image_url)
+                            dl_resp.raise_for_status()
+                            return dl_resp.content
+                raise RuntimeError(f"ManXiaoBai 任务完成但未返回图片数据: {result_data}")
+
+            if status in ("failed", "error"):
+                logger.info(f"ManXiaoBai 生图失败: {poll_resp.text}")
+                error_msg = result_data.get("error", result_data.get("failure_reason", "未知错误"))
+                raise RuntimeError(f"ManXiaoBai 生图失败: {error_msg}")
+        
+        raise TimeoutError("ManXiaoBai 生图任务超时 (900s)")
+
 
     @staticmethod
     def rewrite_prompt(
@@ -871,7 +977,8 @@ class MultiRoundChatManager:
         self._lock = __import__("threading").Lock()
 
     def is_multi_round_enabled(self, config: AIModelConfig) -> bool:
-        return config.model_name.lower() == "deepseek-v4-pro"
+        return False
+        # return config.model_name.lower() == "deepseek-v4-pro" or config.model_name.lower() == "deepseek-v4-flash"
 
     def get_full_messages(
         self,
