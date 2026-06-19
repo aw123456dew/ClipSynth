@@ -9,7 +9,7 @@ logger = logging.getLogger("clip_synth.image_gen")
 
 
 class ImageGenTask:
-    __slots__ = ("task_id", "config", "prompt", "on_done", "on_error", "size", "reference_images", "resolution", "aspect_ratio", "text_model_config", "prompt_rewrite")
+    __slots__ = ("task_id", "config", "prompt", "on_done", "on_error", "size", "reference_images", "mask_image", "resolution", "aspect_ratio", "text_model_config", "prompt_rewrite")
 
     def __init__(
         self,
@@ -20,6 +20,7 @@ class ImageGenTask:
         on_error,
         size: str = "1024x1024",
         reference_images: list[str] | None = None,
+        mask_image: str | None = None,
         resolution: str | None = None,
         aspect_ratio: str | None = None,
         text_model_config: AIModelConfig | None = None,
@@ -32,6 +33,7 @@ class ImageGenTask:
         self.on_error = on_error
         self.size = size
         self.reference_images = reference_images
+        self.mask_image = mask_image
         self.resolution = resolution
         self.aspect_ratio = aspect_ratio
         self.text_model_config = text_model_config
@@ -83,6 +85,7 @@ class ImageGenService:
         on_error,
         size: str = "1024x1024",
         reference_images: list[str] | None = None,
+        mask_image: str | None = None,
         resolution: str | None = None,
         aspect_ratio: str | None = None,
         text_model_config: AIModelConfig | None = None,
@@ -92,7 +95,7 @@ class ImageGenService:
             task_id = self._task_counter
             self._task_counter += 1
 
-        task = ImageGenTask(task_id, config, prompt, on_done, on_error, size, reference_images, resolution, aspect_ratio, text_model_config, prompt_rewrite)
+        task = ImageGenTask(task_id, config, prompt, on_done, on_error, size, reference_images, mask_image, resolution, aspect_ratio, text_model_config, prompt_rewrite)
         self._task_queue.put(task)
         self._started = True
         self._ensure_workers()
@@ -132,6 +135,7 @@ class ImageGenService:
                             prompt=current_prompt,
                             size=task.size,
                             reference_images=task.reference_images,
+                            mask_image=task.mask_image,
                             resolution=task.resolution,
                             aspect_ratio=task.aspect_ratio,
                         )

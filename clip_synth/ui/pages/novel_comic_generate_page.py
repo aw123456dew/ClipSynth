@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, Qt, QSize, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QImageReader, QPainter, QPixmap
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QImage, QImageReader, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -3223,6 +3223,8 @@ class NovelComicGeneratePage(QFrame):
             self._show_alert("提示", "请输入修改要求")
             return
 
+        mask_path = dialog.mask_path
+
         # 提交到生图队列
         settings = self._settings_service.load()
         image_config = AIModelConfig(
@@ -3260,15 +3262,29 @@ class NovelComicGeneratePage(QFrame):
         signal = self.comic_image_generated
         batch_counter = [0, 0]
 
-        ImageGenService.instance().submit(
-            image_config, edit_prompt,
+        # 如果使用了遮罩，在完成时清理临时文件
+        _mask_cleanup = [mask_path]
+
+        def _edit_on_done(*args, **kwargs):
+            try:
+                if _mask_cleanup[0]:
+                    p = Path(_mask_cleanup[0])
+                    if p.exists():
+                        p.unlink()
+            except Exception:
+                pass
             _make_comic_on_done(
                 self._state_service, self._project_id, self._episode_num,
                 storyboard_index, signal, batch_counter, lambda: None,
-            ),
+            )(*args, **kwargs)
+
+        ImageGenService.instance().submit(
+            image_config, edit_prompt,
+            _edit_on_done,
             _make_comic_on_error(storyboard_index, signal, batch_counter, lambda: None),
             size=size,
             reference_images=[image_path],
+            mask_image=mask_path or None,
             resolution=gen_settings.get("resolution"),
             aspect_ratio=gen_settings.get("aspect_ratio", "3:4"),
             text_model_config=image_text_config,
@@ -4541,50 +4557,191 @@ class _StoryboardPreviewDialog(QDialog):
         self.update()
 
 
+class _MaskEditorWidget(QWidget):
+    """遮罩绘制控件 - 在图片上绘制白色遮罩区域（white = 需要修改的区域）"""
+
+    def __init__(self, image_path: str, parent=None):
+        super().__init__(parent)
+        self._image_path = image_path
+        self._pixmap = QPixmap(image_path)
+        self._pen_radius = 15
+        self._is_erasing = False
+
+        # 遮罩层：全黑（全黑 = 不修改）
+        self._mask_size = self._pixmap.size()
+        self._mask = QImage(self._mask_size, QImage.Format_ARGB32)
+        self._mask.fill(QColor(0, 0, 0))
+
+        self.setMinimumSize(400, 300)
+        self.setMouseTracking(True)
+        self._last_pos: tuple[int, int] | None = None
+
+    def set_pen_radius(self, r: int) -> None:
+        self._pen_radius = max(3, min(r, 80))
+
+    def set_erasing(self, erasing: bool) -> None:
+        self._is_erasing = erasing
+
+    def clear_mask(self) -> None:
+        self._mask.fill(QColor(0, 0, 0))
+        self._last_pos = None
+        self.update()
+
+    def has_mask(self) -> bool:
+        """检查是否有遮罩区域（是否有白色像素）"""
+        for y in range(self._mask.height()):
+            for x in range(0, self._mask.width(), 8):
+                if self._mask.pixelColor(x, y).red() > 0:
+                    return True
+        return False
+
+    def save_mask(self, save_path: str) -> None:
+        """保存遮罩为 PNG 文件"""
+        self._mask.save(save_path)
+
+    def _draw_at(self, x: int, y: int) -> None:
+        painter = QPainter(self._mask)
+        painter.setRenderHint(QPainter.Antialiasing)
+        color = QColor(0, 0, 0) if self._is_erasing else QColor(255, 255, 255)
+        painter.setPen(QPen(color, self._pen_radius * 2, Qt.SolidLine, Qt.RoundCap))
+        painter.drawPoint(x, y)
+        painter.end()
+        self.update()
+
+    def _draw_line(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        painter = QPainter(self._mask)
+        painter.setRenderHint(QPainter.Antialiasing)
+        color = QColor(0, 0, 0) if self._is_erasing else QColor(255, 255, 255)
+        painter.setPen(QPen(color, self._pen_radius * 2, Qt.SolidLine, Qt.RoundCap))
+        painter.drawLine(x1, y1, x2, y2)
+        painter.end()
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        # 缩放图片适配控件
+        scaled = self._pixmap.scaled(
+            self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation,
+        )
+        ox = (self.width() - scaled.width()) // 2
+        oy = (self.height() - scaled.height()) // 2
+        painter.drawPixmap(ox, oy, scaled)
+
+        # 绘制遮罩覆盖层（半透明红色 = 被遮罩区域）
+        mask_scaled = self._mask.scaled(
+            scaled.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation,
+        )
+        for y in range(mask_scaled.height()):
+            for x in range(mask_scaled.width()):
+                c = mask_scaled.pixelColor(x, y)
+                if c.red() > 0:
+                    painter.setPen(QPen(QColor(255, 0, 0, 100), 1))
+                    painter.drawPoint(ox + x, oy + y)
+
+        painter.end()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self._last_pos = (event.position().x(), event.position().y())
+            self._draw_at(event.position().x(), event.position().y())
+
+    def mouseMoveEvent(self, event) -> None:
+        if event.buttons() & Qt.LeftButton and self._last_pos:
+            x, y = event.position().x(), event.position().y()
+            self._draw_line(self._last_pos[0], self._last_pos[1], x, y)
+            self._last_pos = (x, y)
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._last_pos = None
+
+
 class _ImageEditDialog(QDialog):
-    """图片编辑弹窗：显示当前图片 + 文本输入框，返回 (confirmed, edit_instruction)"""
+    """图片编辑弹窗：显示当前图片 + 遮罩绘制 + 文本输入框"""
 
     def __init__(self, image_path: str, storyboard_index: int, parent=None):
         super().__init__(parent)
         self._image_path = image_path
         self._storyboard_index = storyboard_index
+        self._mask_path: str = ""
         self.setWindowTitle(f"分镜 #{storyboard_index} 图片编辑")
         self.setObjectName("imageEditDialog")
-        self.setMinimumSize(600, 500)
+        self.setMinimumSize(700, 680)
         self._setup_ui()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
 
         title = QLabel(f"分镜 #{self._storyboard_index} 图片编辑")
         title.setObjectName("dialogTitle")
         layout.addWidget(title)
 
-        # 上层：图片预览
-        img_label = QLabel()
-        img_label.setObjectName("imageEditPreview")
-        img_label.setAlignment(Qt.AlignCenter)
-        img_label.setMinimumHeight(250)
-        img_label.setStyleSheet("background: #1e293b; border-radius: 8px;")
-        px = QPixmap(self._image_path)
-        if not px.isNull():
-            max_w = min(px.width(), 500)
-            max_h = min(px.height(), 400)
-            img_label.setPixmap(px.scaled(max_w, max_h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        layout.addWidget(img_label, stretch=1)
+        # 中间区域：遮罩编辑器 + 预览
+        self._mask_editor = _MaskEditorWidget(self._image_path)
+        self._mask_editor.setObjectName("imageEditPreview")
+        self._mask_editor.setMinimumHeight(300)
+        layout.addWidget(self._mask_editor, stretch=1)
 
-        # 下层：修改描述输入
+        # 遮罩工具栏
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+
+        brush_size_label = QLabel("画笔大小:")
+        brush_size_label.setStyleSheet("color: #94a3b8; font-size: 13px;")
+        toolbar.addWidget(brush_size_label)
+
+        self._brush_slider = QSlider(Qt.Horizontal)
+        self._brush_slider.setMinimum(3)
+        self._brush_slider.setMaximum(60)
+        self._brush_slider.setValue(15)
+        self._brush_slider.setFixedWidth(120)
+        self._brush_slider.valueChanged.connect(
+            lambda v: self._mask_editor.set_pen_radius(v)
+        )
+        toolbar.addWidget(self._brush_slider)
+
+        self._draw_btn = QPushButton("✏️ 绘制")
+        self._draw_btn.setObjectName("dialogConfirmBtn")
+        self._draw_btn.setFixedHeight(28)
+        self._draw_btn.setStyleSheet("font-size: 12px; padding: 0 10px;")
+        self._draw_btn.clicked.connect(self._on_draw_mode)
+        toolbar.addWidget(self._draw_btn)
+
+        self._erase_btn = QPushButton("🧹 擦除")
+        self._erase_btn.setObjectName("dialogCancelBtn")
+        self._erase_btn.setFixedHeight(28)
+        self._erase_btn.setStyleSheet("font-size: 12px; padding: 0 10px;")
+        self._erase_btn.clicked.connect(self._on_erase_mode)
+        toolbar.addWidget(self._erase_btn)
+
+        clear_btn = QPushButton("🗑 清除遮罩")
+        clear_btn.setObjectName("dialogCancelBtn")
+        clear_btn.setFixedHeight(28)
+        clear_btn.setStyleSheet("font-size: 12px; padding: 0 10px;")
+        clear_btn.clicked.connect(self._mask_editor.clear_mask)
+        toolbar.addWidget(clear_btn)
+
+        toolbar.addStretch()
+
+        hint = QLabel("在图片上涂抹白色区域标记要修改的部分，红色半透明层为遮罩区域")
+        hint.setStyleSheet("color: #64748b; font-size: 12px;")
+
+        layout.addWidget(toolbar)
+        layout.addWidget(hint)
+
+        # 修改描述输入
         desc_label = QLabel("修改要求（描述图片需要怎么修改）")
         desc_label.setObjectName("dialogFieldLabel")
         layout.addWidget(desc_label)
 
         self._edit_input = QPlainTextEdit()
         self._edit_input.setObjectName("imageEditInput")
-        self._edit_input.setPlaceholderText("例如：把人物表情改成微笑、背景颜色换成蓝色、去掉画面中的文字...")
-        self._edit_input.setMinimumHeight(100)
-        self._edit_input.setMaximumHeight(150)
+        self._edit_input.setPlaceholderText("例如：把人物表情改成微笑、背景颜色换成蓝色、把红裙改成白裙...")
+        self._edit_input.setMinimumHeight(80)
+        self._edit_input.setMaximumHeight(120)
         layout.addWidget(self._edit_input)
 
         # 按钮
@@ -4599,14 +4756,36 @@ class _ImageEditDialog(QDialog):
 
         confirm_btn = QPushButton("确认修改")
         confirm_btn.setObjectName("dialogConfirmBtn")
-        confirm_btn.clicked.connect(self.accept)
+        confirm_btn.clicked.connect(self._on_confirm)
         btn_row.addWidget(confirm_btn)
 
         layout.addLayout(btn_row)
 
+    def _on_draw_mode(self) -> None:
+        self._mask_editor.set_erasing(False)
+
+    def _on_erase_mode(self) -> None:
+        self._mask_editor.set_erasing(True)
+
+    def _on_confirm(self) -> None:
+        """保存遮罩并确认"""
+        if self._mask_editor.has_mask():
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            self._mask_path = tmp.name
+            tmp.close()
+            self._mask_editor.save_mask(self._mask_path)
+        else:
+            self._mask_path = ""
+        self.accept()
+
     @property
     def edit_text(self) -> str:
         return self._edit_input.toPlainText().strip()
+
+    @property
+    def mask_path(self) -> str:
+        return self._mask_path
 
 
 class _HistoryImagesDialog(QDialog):

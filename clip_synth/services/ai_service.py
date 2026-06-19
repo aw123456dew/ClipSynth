@@ -241,6 +241,7 @@ class AIService:
         prompt: str,
         size: str = "1024x1024",
         reference_images: list[str] | None = None,
+        mask_image: str | None = None,
         resolution: str | None = None,
         aspect_ratio: str | None = None,
     ) -> bytes:
@@ -253,7 +254,7 @@ class AIService:
             return self._generate_image_manxiaobai(prompt, size, reference_images, resolution, aspect_ratio)
         if self._config.api_type == "gemini":
             return self._generate_image_gemini(prompt, size, reference_images)
-        return self._generate_image_openai(prompt, size, reference_images)
+        return self._generate_image_openai(prompt, size, reference_images, mask_image)
 
     def _is_gemini_model(self) -> bool:
         return self._config.model_name.lower().startswith("gemini")
@@ -286,6 +287,7 @@ class AIService:
         prompt: str,
         size: str,
         reference_images: list[str] | None,
+        mask_image: str | None = None,
     ) -> bytes:
         import base64
         import httpx
@@ -316,6 +318,16 @@ class AIService:
                 ("image[]", (f"{name}.png", data, "image/png"))
                 for name, data in ref_list
             ]
+            # 添加遮罩（如果提供了mask_image）
+            mask_data: bytes | None = None
+            if mask_image:
+                try:
+                    with open(mask_image, "rb") as f:
+                        mask_data = f.read()
+                    files.append(("mask", ("mask.png", mask_data, "image/png")))
+                    logger.info("已添加遮罩文件: %s", mask_image)
+                except Exception as e:
+                    logger.warning("读取遮罩文件失败 %s: %s", mask_image, e)
             with httpx.Client(timeout=httpx.Timeout(900, connect=30)) as http:
                 try:
                     resp = http.post(
@@ -326,7 +338,7 @@ class AIService:
                     )
                     resp.raise_for_status()
                     result = resp.json()
-                    logger.info("/v1/images/edits 成功")
+                    logger.info("/v1/images/edits 成功（mask=%s）", "是" if mask_data else "否")
                 except Exception as e1:
                     logger.warning("/v1/images/edits 失败: %s，回退 generations", e1)
                     resp = http.post(
