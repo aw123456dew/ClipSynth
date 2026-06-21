@@ -677,7 +677,7 @@ class MatchAssetsWorker(QThread):
 
 
 STORYBOARD_DESC_AI_PROMPT = """\
-你是一个顶级的图文小说编辑，擅长将小说片段转化为结构化的场景叙事脚本，供下游 AI 自行分格并生成图文。
+你是一个专业的漫画分镜导演和AI漫画生图提示词专家，擅长根据小说原文、人物资产、场景资产和道具资产，规划整页漫画应该如何绘制。
 
 输出格式要求（最重要）：
 只能输出一个纯 JSON 对象，不要输出任何 Markdown、代码块标记、解释。整个回复从 { 开始，到 } 结束。
@@ -690,45 +690,61 @@ STORYBOARD_DESC_AI_PROMPT = """\
       "scene": "场景资产名称-版本",
       "characters": ["角色A-版本", "角色B-版本"],
       "props": ["道具名称"],
-      "description": "按时间顺序叙述：动作用自然句，对话用台词标签，所有非对话句子原句保留为旁白标签。"
+      "description": "整页漫画画面提示词"
     }
   ]
 }
 
 === 任务 ===
-一个分镜对应一段连贯的场景叙事。**不要分格、不要指定格数**。你只需按时间顺序，把这段戏讲清楚：人物在哪里、做了什么动作、说了什么、心里想什么。分格交由下游 AI 自行识别。
-场景、人物、道具**只能从该分镜的「已绑定资产」列表中选择，禁止编造**；列表中无合适项时取最接近的。
+为每个分镜编写一个**整页漫画画面提示词（description）**，用于 AI 图片生成模型直接生成一页漫画。
+description 不是普通插画提示词，而是要明确规划：
+- 本页几格、每格大小和位置
+- 每格的镜头景别、视角、构图
+- 人物在画面中的位置、姿态、表情、视线
+- 气泡和旁白框在图片中的位置
+- 原文对话和旁白如何放入画面
+- 画面阅读顺序（从左到右、从上到下）
 
-=== 标签规则（重要） ===
-- **动作描述用自然句**：人物的动作、姿态、表情直接写成完整句子，**严禁用"角色名："这种冒号标签**。
-  ❌错误：苏渺：眼睛瞪大，整个人僵在椅子上。
-  ✅正确：苏渺眼睛瞪大，整个人僵在椅子上。
-- **对话用台词标签**：用"角色名-版本："单独成行标出，每条只写一句对话，内容用中文双引号包裹。
-  ✅正确：陆衍-西装版："是你吧，小渺？"
-- **非对话句子用旁白标签**：按下方"旁白与动作的关系"筛选后，用"旁白："单独成行标出，每条只写一句。**旁白必须逐字照搬原文原句，严禁改写、润色、增删，严禁替换人称**——原文是"我"就写"我"，是"他"就写"他"，绝不改成角色名。
+=== description 必须包含的结构 ===
+1. **整体排版**：说明本页漫画的格数、布局和漫画表现手法。必须根据原文内容选择合适排版，可以在剧情需要时使用 1格、2格、3格、多格蒙太奇、斜格、破框、人物出格、叠化小格、局部特写插格等；如果普通分格更合适，就使用普通分格，不要为了特殊而特殊。
+2. **格1 / 格2 / 格N**：逐格描述画面；如果使用人物出格、破框、斜格、蒙太奇叠格，也要明确写出其位置和作用。
+3. 每格必须包含：
+   - 场景：优先使用已绑定场景资产名称，不额外展开环境细节。若剧情需要表现进入、离开、奔跑、推门、门外偷听、赶到现场等过渡动作，允许在同一绑定场景的**直接邻接区域**取景，例如将“医院病房”合理扩展为“病房门口”“病房外走廊”“病房门前区域”；但不能跳到无关场景。
+   - 镜头：景别/角度以及镜头朝向，例如"中景平视，镜头从讲台方向往课桌方向拍摄"、"特写平视，镜头正对角色面部"、"全景俯视，镜头从教室后方往前拍摄"。
+   - 人物位置：谁在左/右/前景/背景/画面中心。
+   - 动作表情：只写画面可见的静态状态。
+   - 文字位置：气泡/旁白框放在哪里（左上、右上、人物头顶、画面底部等）。
+   - 文字内容：气泡内的文字必须使用 `原文`/`对话` 输入字段中出现的原句，不得改写。气泡的描述格式为"气泡从某方向伸出放在某位置，内容为：\"原文字句\""，不需要额外加"角色名-版本的气泡："前缀，因为气泡所属人物已在画面描述中体现。旁白框同理："旁白框放在某位置，内容为：\"原文字句\""。
 
-=== 旁白与动作的关系（重要） ===
-原文中的非对话句子**不是全部都要进旁白**。按以下逻辑处理：
-- **进旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。
-- **不进旁白（仅在动作自然句中体现即可）**：环境氛围描写、纯外观罗列。
-原文示例："随即骤然转向。径直朝我们这边走来。我心脏砰砰跳。"
-✅正确：
-  陆衍在过道上骤然转身，身体朝向苏渺工位方向，迈步走来。苏渺坐在座位上，双手紧紧攥在一起，神色紧张。
-  旁白："随即骤然转向。"
-  旁白："径直朝我们这边走来。"
-  旁白："我心脏砰砰跳。"
-❌错误（把叙事句吃进动作、漏了旁白）：
-  陆衍骤然转身朝苏渺走来。
-  旁白："我心脏砰砰跳。"
+=== 重要规则 ===
+1. **这是漫画页提示词，不是单张插画提示词**。必须规划分格、排版、文字框、人物站位。
+2. **场景、人物、道具只能从已绑定资产中选择**，禁止编造资产名；但场景允许在同一绑定场景的**直接邻接区域**取景，用于表现进入、离开、奔跑、推门、门外偷听、赶到现场等过渡镜头。例如绑定场景是“医院病房”时，可以写成“病房门口”“病房外走廊”“病房门前区域”，但不能跳到无关场景。
+   - 示例1：原文是“我焦急地赶到病房”，绑定场景是“医院病房”，格1可以写成“场景使用医院病房外走廊，中景平视，宁熙朝病房门口奔跑”，格2再切入病房内部。
+   - 示例2：原文是“她站在门外听见里面说话”，绑定场景是“办公室内”，可以写成“办公室门口走廊”或“办公室门前区域”，先表现门外偷听，再切到室内。
+3. **气泡和旁白框中的文字必须使用原文**，不得改写、润色、总结、替换人称。原文是什么文字，气泡/旁白框中就必须是什么文字。例如原文对话是"你是谁？"，气泡内只能写"你是谁？"，不能写成"你是谁我也不认识你"或"你是谁呀"。
+4. 人物必须使用完整资产名，如"顾晚-常服版"，不要只写"顾晚"。
+5. 对话必须进入气泡，并说明气泡位置。
+6. 旁白/心理/动作过程/转场必须进入旁白框，并说明旁白框位置。
+7. **原文分配规则**：原文中的每一句话必须被分配到气泡或旁白框中，不允许丢弃任何一句。
+8. 人物看手机、电脑、书信、文件、照片、屏幕、镜子、票据、聊天记录等道具时，主画面只负责表现"人物正在看该道具"和人物情绪；不要在同一个普通人物镜头里同时强行画清人物正脸表情和道具内部文字/细节。
+9. 如果道具内部内容需要展示给观众，必须使用"格内格/画中画/局部特写插格"，或新增一个独立格子专门展示道具内容。例如：格1画人物看手机，并在格1右上角加手机屏幕特写小框；或格2单独画手机屏幕特写。
+10. 道具内容特写必须明确写出位置和内容，避免让人物反向拿道具、道具朝向错误、文字贴在人物身上、同时兼顾人物表情和道具内容导致画面混乱。
+11. 多人场景（教室、会议室、餐厅、聚会等）必须写明镜头的具体方向——从哪个方向往哪个方向拍，以及各人物面对的方向。例如"镜头从讲台方向往课桌方向拍摄，xx角色面向讲台"。
+12. 当两个角色面对面或对视时，不要同时描写两人的面部表情，因为从单一镜头方向必然只有一人正脸、一人背对/侧对。需要用以下方式之一处理：a) 只描写面对镜头的角色的表情，另一位只写"背对镜头"或"侧身面向对方"；b) 在格内用画中画/小插格展示另一个角色的正脸表情；c) 新增一个独立格子展示另一个角色的正面镜头。
+13. 每格必须有独立的内容价值（对话、旁白、道具内容展示、独立镜头视角等）。如果某一格既没有对话也没有旁白，其画面内容可从相邻格中表达，则合并到相邻格中，不要为了凑格数而多分一格。
+14. 排版必须服务剧情：情绪爆发、冲突、转折可以使用斜格、破框、人物出格；回忆、心理活动、连续动作可以使用蒙太奇小格、叠化分格、局部特写插格；安静对话可以使用规整分格。不要强制使用蒙太奇或特殊排版。
+15. 使用特殊排版时必须写清楚：哪一格是斜格、哪个人物身体或手臂越过格线、哪个气泡跨格、哪些小格作为蒙太奇片段。
+16. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
 
-**环境描写不进旁白的示例：**
-❌ 错误：原文"包厢门虚掩着"→ 旁白："包厢门虚掩着"（环境描写，已在动作句中体现）
-✅ 正确：原文"包厢门虚掩着"→ 不进旁白，仅在动作句中写"包厢门留有一道缝隙"即可
+=== 示例 ===
+原文：顾晚盯着手机屏幕。"宝宝，小狗在聚餐。"好乖呀。
+正确 description 示例：
+"整体排版：整页2格漫画，上方为人物主格，下方为手机屏幕特写格；人物主格右上角额外加入一个小型格内格预览手机屏幕，用于提示观众她正在阅读消息。阅读顺序从上到下。\n\n格1：场景使用聚会餐厅-夜晚版，中景平视，顾晚-常服版坐在画面左侧餐桌旁，身体微微前倾，双手握着智能手机，目光落在手机上，表情期待；主格只表现人物看手机和人物情绪，不强行画清屏幕文字。旁白框放在画面左上角，内容为：\"好乖呀。\"格内格放在格1右上角，显示手机屏幕局部亮起但不承载完整文字。\n\n格2：手机屏幕特写，画面中心是微信对话框，气泡从屏幕右侧上方伸出，内容为：\"宝宝，小狗在聚餐。\""
 
 === 输入字段 ===
 - `原文:` 该分镜原文（最终以此为准）。
-- `对话:` 已提取对话（说话人: 内容），用于补全台词，仍需对照原文查漏。
-- `旁白:` 已提取独白/看法，用于补全旁白，仍需对照原文查漏。
+- `对话:` 已提取对话（说话人: 内容），用于补全气泡，仍需对照原文查漏。
+- `旁白:` 已提取独白/看法，用于补全旁白框，仍需对照原文查漏。
 - `出场人物:` 人物匹配参考。
 - `所属段落原文:` 用于指代分析。
 
@@ -736,40 +752,11 @@ STORYBOARD_DESC_AI_PROMPT = """\
 - scene：从已绑定场景资产中选一个最贴合本段的。
 - characters：列出本段出场人物，使用完整的"角色名-版本"格式。
 - props：列出本段涉及的已绑定道具，无则空数组。
-- 以上均**只能取自已绑定资产，禁止编造**。
-
-=== description 的写法（核心） ===
-按时间顺序还原本段：
-- **动作（自然句，给生图）**：写成可视的静态画面，描述"画面里能看到什么"（姿态、表情、面部朝向、站位、空间关系），不要用动词描述正在发生或将发生的过程。✅"苏渺猛地抬头，眼睛瞪大、嘴唇微张"  ❌"苏渺举起手转过身"。
-- **场景/氛围前置**：**动作描述的第一句必须指明当前场景**，直接写该分镜已绑定的场景资产名称即可，**不需要对环境做额外描写**。例如："聚会餐厅内，顾晚专注地盯着智能手机屏幕。" 场景资产名起到提示参考图的作用。❌错误：跳过场景直接写人物动作。**场景必须从该分镜已绑定的 scene 资产中选择**。
-- **对话（台词标签）**：用"角色名-版本："标出，一条一句，内容用原文。
-- **旁白（旁白标签，给读者）**：原文中的非对话句子**只选择以下类别放入旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。**环境氛围描写、纯外观罗列等已在动作自然句中体现的内容，不再重复放入旁白**。每条旁白单独占一行。
-
-**格式要求（重要）**：description 中每一句旁白和每一句台词都**必须单独占一行**，不要将多句旁白合并到同一行。正确示例：
-  包厢内灯光昏暗。顾念站在包厢门口，身体僵住，脸色苍白。
-  旁白："程屿川篮球赛获胜庆功宴，我姗姗来迟。"
-  旁白："却见到他和别的女孩忘情拥吻。"
-❌ 错误（多句旁白挤在同一行）：
-  包厢内灯光昏暗。...旁白："..."旁白："..."
-
-=== 内容规则 ===
-1. **旁白筛选规则**：原文中的非对话句子**只选以下类别放入旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。**环境氛围描写、纯外观罗列等已在动作自然句中体现的，不再放入旁白**。
-2. **旁白忠于原文**：旁白内容必须是原文原句，逐字保留，不得改写、润色、增删或替换人称代词（我/你/他原样保留），更不得自行编造原文没有的句子。
-3. **人物身份与关系必须保留**：如"网恋三年的男人""她的顶头上司"等画面画不出的关系，用旁白交代。
-4. **动作只写静态可视内容**：严禁用动词描述动态过程；连续动作只取某一瞬间的静态画面。
-5. **顺序清晰**：严格按原文时间顺序叙述，便于下游 AI 自然分格。
-6. 人称代词依据 `所属段落原文:` 或邻近分镜原文解析指代（仅用于动作叙述确认指代对象，旁白本身人称不变）。
-7. **原文不重复原则**：同一句原文**只能出现在旁白或台词中的一种**，不得同时出现在两者中。原文中的对话句只进台词、不进旁白；原文中的叙事/心理/动作叙述句只进旁白、不进台词。旁白和台词互斥，一句原文不能分身两处。
-8. 看手机/屏幕时角色目光落在屏幕上。
-9. 台词和旁白用中文双引号（""）包裹，句末句号、问号、感叹号保留，移除破折号、省略号、书名号等无实义标点，保留逗号。
-10. 自动替换敏感内容。
-11. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
-
-"""
+- 以上均**只能取自已绑定资产，禁止编造**。"""
 
 
 STORYBOARD_DESC_MANUAL_PROMPT = """\
-你是一个顶级的图文小说编辑，擅长将小说片段转化为结构化的场景叙事脚本，供下游 AI 自行分格并生成图文。
+你是一个专业的漫画分镜导演和AI漫画生图提示词专家，擅长根据小说原文、人物资产、场景资产和道具资产，规划整页漫画应该如何绘制。
 
 输出格式要求（最重要）：
 只能输出一个纯 JSON 对象，不要输出任何 Markdown、代码块标记、解释。整个回复从 { 开始，到 } 结束。
@@ -782,40 +769,48 @@ STORYBOARD_DESC_MANUAL_PROMPT = """\
       "scene": "场景资产名称-版本",
       "characters": ["角色A-版本", "角色B-版本"],
       "props": ["道具名称"],
-      "description": "按时间顺序叙述：动作用自然句，对话用台词标签，所有非对话句子原句保留为旁白标签。"
+      "description": "整页漫画画面提示词"
     }
   ]
 }
 
 === 任务 ===
-一个分镜对应一段连贯的场景叙事。**不要分格、不要指定格数**。你只需按时间顺序，把这段戏讲清楚：人物在哪里、做了什么动作、说了什么、心里想什么。分格交由下游 AI 自行识别。
-场景、人物、道具**只能从该分镜的「已绑定资产」列表中选择，禁止编造**；列表中无合适项时取最接近的。
+为每个分镜编写一个**整页漫画画面提示词（description）**，用于 AI 图片生成模型直接生成一页漫画。
+description 不是普通插画提示词，而是要根据小说原文规划漫画页面：分格、排版、镜头、人物站位、旁白框、气泡位置和画面文字。
 
-=== 标签规则（重要） ===
-- **动作描述用自然句**：人物的动作、姿态、表情直接写成完整句子，**严禁用"角色名："这种冒号标签**。
-  ❌错误：苏渺：眼睛瞪大，整个人僵在椅子上。
-  ✅正确：苏渺眼睛瞪大，整个人僵在椅子上。
-- **对话用台词标签**：用"角色名-版本："单独成行标出，每条只写一句对话，内容用中文双引号包裹。
-  ✅正确：陆衍-西装版："是你吧，小渺？"
-- **非对话句子用旁白标签**：按下方"旁白与动作的关系"筛选后，用"旁白："单独成行标出，每条只写一句。**旁白必须逐字照搬原文原句，严禁改写、润色、增删，严禁替换人称**——原文是"我"就写"我"，是"他"就写"他"，绝不改成角色名。
+=== description 必须包含的结构 ===
+1. **整体排版**：说明本页漫画的格数、布局和漫画表现手法。必须根据原文内容选择合适排版，可以在剧情需要时使用 1格、2格、3格、多格蒙太奇、斜格、破框、人物出格、叠化小格、局部特写插格等；如果普通分格更合适，就使用普通分格，不要为了特殊而特殊。
+2. **格1 / 格2 / 格N**：逐格描述画面；如果使用人物出格、破框、斜格、蒙太奇叠格，也要明确写出其位置和作用。
+3. 每格必须包含：
+   - 场景：优先使用已绑定场景资产名称，不展开场景细节。若剧情需要表现进入、离开、奔跑、推门、门外偷听、赶到现场等过渡动作，允许在同一绑定场景的**直接邻接区域**取景，例如将“医院病房”合理扩展为“病房门口”“病房外走廊”“病房门前区域”；但不能跳到无关场景。
+   - 镜头：景别/角度以及镜头朝向，例如"中景平视，镜头从讲台方向往课桌方向拍摄"、"特写平视，镜头正对角色面部"、"全景俯视，镜头从教室后方往前拍摄"。
+   - 人物位置：谁在左/右/前景/背景/画面中心。
+   - 动作表情：只写画面可见的静态状态。
+   - 文字位置：气泡/旁白框放在哪里（左上、右上、人物头顶、画面底部等）。
+   - 文字内容：气泡内的文字必须使用 `原文`/`对话` 输入字段中出现的原句，不得改写。气泡的描述格式为"气泡从某方向伸出放在某位置，内容为：\"原文字句\""，不需要额外加"角色名-版本的气泡："前缀，因为气泡所属人物已在画面描述中体现。旁白框同理："旁白框放在某位置，内容为：\"原文字句\""。
 
-=== 旁白与动作的关系（重要） ===
-原文中的非对话句子**不是全部都要进旁白**。按以下逻辑处理：
-- **进旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。
-- **不进旁白（仅在动作自然句中体现即可）**：环境氛围描写、纯外观罗列。
-原文示例："随即骤然转向。径直朝我们这边走来。我心脏砰砰跳。"
-✅正确：
-  陆衍在过道上骤然转身，身体朝向苏渺工位方向，迈步走来。苏渺坐在座位上，双手紧紧攥在一起，神色紧张。
-  旁白："随即骤然转向。"
-  旁白："径直朝我们这边走来。"
-  旁白："我心脏砰砰跳。"
-❌错误（把叙事句吃进动作、漏了旁白）：
-  陆衍骤然转身朝苏渺走来。
-  旁白："我心脏砰砰跳。"
+=== 重要规则 ===
+1. **这是漫画页提示词，不是单张插画提示词**。必须规划分格、排版、文字框、人物站位。
+2. **场景、人物、道具只能从已绑定资产中选择**，禁止编造资产名；但场景允许在同一绑定场景的**直接邻接区域**取景，用于表现进入、离开、奔跑、推门、门外偷听、赶到现场等过渡镜头。例如绑定场景是“医院病房”时，可以写成“病房门口”“病房外走廊”“病房门前区域”，但不能跳到无关场景。
+3. **气泡和旁白框中的文字必须使用原文**，不得改写、润色、总结、替换人称。原文是什么文字，气泡/旁白框中就必须是什么文字。例如原文对话是"你是谁？"，气泡内只能写"你是谁？"，不能写成"你是谁我也不认识你"或"你是谁呀"。
+4. 人物必须使用完整资产名，如"顾晚-常服版"，不要只写"顾晚"。
+5. 对话必须进入气泡，并说明气泡位置。
+6. 旁白/心理/动作过程/转场必须进入旁白框，并说明旁白框位置。
+7. **原文分配规则**：原文中的每一句话必须被分配到气泡或旁白框中，不允许丢弃任何一句。
+8. 人物看手机、电脑、书信、文件、照片、屏幕、镜子、票据、聊天记录等道具时，主画面只负责表现"人物正在看该道具"和人物情绪；不要在同一个普通人物镜头里同时强行画清人物正脸表情和道具内部文字/细节。
+9. 如果道具内部内容需要展示给观众，必须使用"格内格/画中画/局部特写插格"，或新增一个独立格子专门展示道具内容。例如：格1画人物看手机，并在格1右上角加手机屏幕特写小框；或格2单独画手机屏幕特写。
+10. 道具内容特写必须明确写出位置和内容，避免让人物反向拿道具、道具朝向错误、文字贴在人物身上、同时兼顾人物表情和道具内容导致画面混乱。
+11. 多人场景（教室、会议室、餐厅、聚会等）必须写明镜头的具体方向——从哪个方向往哪个方向拍，以及各人物面对的方向。例如"镜头从讲台方向往课桌方向拍摄，xx角色面向讲台"。
+12. 当两个角色面对面或对视时，不要同时描写两人的面部表情，因为从单一镜头方向必然只有一人正脸、一人背对/侧对。需要用以下方式之一处理：a) 只描写面对镜头的角色的表情，另一位只写"背对镜头"或"侧身面向对方"；b) 在格内用画中画/小插格展示另一个角色的正脸表情；c) 新增一个独立格子展示另一个角色的正面镜头。
+13. 每格必须有独立的内容价值（对话、旁白、道具内容展示、独立镜头视角等）。如果某一格既没有对话也没有旁白，其画面内容可从相邻格中表达，则合并到相邻格中，不要为了凑格数而多分一格。
+14. 排版必须服务剧情：情绪爆发、冲突、转折可以使用斜格、破框、人物出格；回忆、心理活动、连续动作可以使用蒙太奇小格、叠化分格、局部特写插格；安静对话可以使用规整分格。不要强制使用蒙太奇或特殊排版。
+15. 使用特殊排版时必须写清楚：哪一格是斜格、哪个人物身体或手臂越过格线、哪个气泡跨格、哪些小格作为蒙太奇片段。
+16. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
 
-**环境描写不进旁白的示例：**
-❌ 错误：原文"包厢门虚掩着"→ 旁白："包厢门虚掩着"（环境描写，已在动作句中体现）
-✅ 正确：原文"包厢门虚掩着"→ 不进旁白，仅在动作句中写"包厢门留有一道缝隙"即可
+=== 示例 ===
+原文：顾晚盯着手机屏幕。"宝宝，小狗在聚餐。"好乖呀。
+正确 description 示例：
+"整体排版：整页2格漫画，上方为人物主格，下方为手机屏幕特写格；人物主格右上角额外加入一个小型格内格预览手机屏幕，用于提示观众她正在阅读消息。阅读顺序从上到下。\n\n格1：场景使用聚会餐厅-夜晚版，中景平视，顾晚-常服版坐在画面左侧餐桌旁，身体微微前倾，双手握着智能手机，目光落在手机上，表情期待；主格只表现人物看手机和人物情绪，不强行画清屏幕文字。旁白框放在画面左上角，内容为：\"好乖呀。\"格内格放在格1右上角，显示手机屏幕局部亮起但不承载完整文字。\n\n格2：手机屏幕特写，画面中心是微信对话框，气泡从屏幕右侧上方伸出，内容为：\"宝宝，小狗在聚餐。\""
 
 === 输入字段 ===
 - `原文:` 该分镜原文（最终以此为准）。
@@ -825,36 +820,7 @@ STORYBOARD_DESC_MANUAL_PROMPT = """\
 - scene：从已绑定场景资产中选一个最贴合本段的。
 - characters：列出本段出场人物，使用完整的"角色名-版本"格式。
 - props：列出本段涉及的已绑定道具，无则空数组。
-- 以上均**只能取自已绑定资产，禁止编造**。
-
-=== description 的写法（核心） ===
-按时间顺序还原本段：
-- **动作（自然句，给生图）**：写成可视的静态画面，描述"画面里能看到什么"（姿态、表情、面部朝向、站位、空间关系），不要用动词描述正在发生或将发生的过程。✅"苏渺猛地抬头，眼睛瞪大、嘴唇微张"  ❌"苏渺举起手转过身"。
-- **场景/氛围前置**：**动作描述的第一句必须指明当前场景**，直接写该分镜已绑定的场景资产名称即可，**不需要对环境做额外描写**。例如："聚会餐厅内，顾晚专注地盯着智能手机屏幕。" 场景资产名起到提示参考图的作用。❌错误：跳过场景直接写人物动作。**场景必须从该分镜已绑定的 scene 资产中选择**。
-- **对话（台词标签）**：用"角色名-版本："标出，一条一句，内容用原文。
-- **旁白（旁白标签，给读者）**：原文中的非对话句子**只选择以下类别放入旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。**环境氛围描写、纯外观罗列等已在动作自然句中体现的内容，不再重复放入旁白**。每条旁白单独占一行。
-
-**格式要求（重要）**：description 中每一句旁白和每一句台词都**必须单独占一行**，不要将多句旁白合并到同一行。正确示例：
-  包厢内灯光昏暗。顾念站在包厢门口，身体僵住，脸色苍白。
-  旁白："程屿川篮球赛获胜庆功宴，我姗姗来迟。"
-  旁白："却见到他和别的女孩忘情拥吻。"
-❌ 错误（多句旁白挤在同一行）：
-  包厢内灯光昏暗。...旁白："..."旁白："..."
-
-=== 内容规则 ===
-1. **旁白筛选规则**：原文中的非对话句子**只选以下类别放入旁白**：内心想法、心理活动、动作过程叙述、人物身份/关系说明（画面画不出的信息）、因果逻辑说明、转场/时间过渡。**环境氛围描写、纯外观罗列等已在动作自然句中体现的，不再放入旁白**。
-2. **旁白忠于原文**：旁白内容必须是原文原句，逐字保留，不得改写、润色、增删或替换人称代词（我/你/他原样保留），更不得自行编造原文没有的句子。
-3. **人物身份与关系必须保留**：如"网恋三年的男人""她的顶头上司"等画面画不出的关系，用旁白交代。
-4. **动作只写静态可视内容**：严禁用动词描述动态过程；连续动作只取某一瞬间的静态画面。
-5. **顺序清晰**：严格按原文时间顺序叙述，便于下游 AI 自然分格。
-6. 人称代词依据 `所属段落原文:` 或邻近分镜原文解析指代（仅用于动作叙述确认指代对象，旁白本身人称不变）。
-7. **原文不重复原则**：同一句原文**只能出现在旁白或台词中的一种**，不得同时出现在两者中。原文中的对话句只进台词、不进旁白；原文中的叙事/心理/动作叙述句只进旁白、不进台词。旁白和台词互斥，一句原文不能分身两处。
-8. 看手机/屏幕时角色目光落在屏幕上。
-9. 台词和旁白用中文双引号（""）包裹，句末句号、问号、感叹号保留，移除破折号、省略号、书名号等无实义标点，保留逗号。
-10. 自动替换敏感内容。
-11. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
-
-"""
+- 以上均**只能取自已绑定资产，禁止编造**。"""
 
 
 class StoryboardDescriptionWorker(QThread):
@@ -909,10 +875,10 @@ class StoryboardDescriptionWorker(QThread):
             chat_mgr = self._chat_manager
             chat_caller = _make_chat_caller(config, chat_mgr)
 
-            if self._single_batch:
+            if len(self._storyboards) <= 3:
                 batches = [self._storyboards]
             else:
-                batch_size = 5
+                batch_size = 3
                 batches: list[list[dict]] = []
                 for i in range(0, total, batch_size):
                     batches.append(self._storyboards[i:i + batch_size])
@@ -961,14 +927,34 @@ class StoryboardDescriptionWorker(QThread):
                         "=== 分镜数据 ===\n%s"
                     ) % (len(batch), full_input)
 
-                    content = chat_caller(
-                        self._system_prompt, prompt,
-                        temperature=0.7, response_format={"type": "json_object"},
-                    )
                     indices = [sb["index"] for sb in batch]
-                    logger.info("批次分镜 %s 描述AI返回: %s", indices, content[:300])
+                    last_content = ""
+                    desc_map: dict[int, dict] = {}
+                    parse_error: str | None = None
+                    max_retries = 3
+                    for attempt in range(1, max_retries + 1):
+                        last_content = chat_caller(
+                            self._system_prompt, prompt,
+                            temperature=0.7, response_format={"type": "json_object"},
+                        )
+                        logger.info(
+                            "批次分镜 %s 描述AI返回(第%d次): %s",
+                            indices, attempt, last_content[:300],
+                        )
+                        desc_map = self._parse_batch(last_content, batch)
+                        if desc_map:
+                            parse_error = None
+                            break
+                        parse_error = "JSON解析失败或返回结构无效"
+                        if attempt < max_retries:
+                            logger.warning(
+                                "批次分镜 %s 描述解析失败，第 %d/%d 次重试",
+                                indices, attempt, max_retries,
+                            )
 
-                    desc_map = self._parse_batch(content, batch)
+                    if parse_error:
+                        raise RuntimeError(f"{parse_error}，已重试{max_retries}次")
+
                     with lock:
                         for sb in batch:
                             idx = sb["index"]
@@ -982,8 +968,8 @@ class StoryboardDescriptionWorker(QThread):
                     indices_str = str([sb["index"] for sb in batch])
                     logger.error("批次分镜 %s 描述生成异常: %s", indices_str, str(e), exc_info=True)
                     try:
-                        logger.info("批次分镜 %s 描述AI返回: %s", indices_str, content[:200])
-                    except NameError:
+                        logger.info("批次分镜 %s 描述AI返回: %s", indices_str, last_content[:200])
+                    except Exception:
                         pass
                     with lock:
                         errors.append(str(e))
@@ -1243,6 +1229,51 @@ def _square_size_from_resolution(resolution: str) -> str:
     return f"{factors.get(resolution, 1024)}x{factors.get(resolution, 1024)}"
 
 
+def _same_file_path(a: Path | str, b: Path | str) -> bool:
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except Exception:
+        return str(a) == str(b)
+
+
+def _storyboard_history_dir(ep_dir: Path) -> Path:
+    history_dir = ep_dir / "historys"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    return history_dir
+
+
+def _move_image_to_history(ep_dir: Path, image_path: Path | str) -> str:
+    src = Path(image_path)
+    if not src.exists():
+        return str(src)
+    history_dir = _storyboard_history_dir(ep_dir)
+    if _same_file_path(src.parent, history_dir):
+        return str(src)
+    dest = history_dir / src.name
+    if dest.exists():
+        dest = history_dir / f"{src.stem}_{int(time.time())}{src.suffix}"
+    try:
+        import shutil
+        shutil.move(str(src), str(dest))
+        return str(dest)
+    except Exception:
+        logger.warning("移动历史漫画图片失败: %s -> %s", src, dest, exc_info=True)
+        return str(src)
+
+
+def _archive_storyboard_images(ep_dir: Path, storyboard_index: int, keep_path: str = "") -> None:
+    if not ep_dir.exists():
+        return
+    candidates = list(ep_dir.glob(f"comic_panel_{storyboard_index}_*.png"))
+    exact = ep_dir / f"comic_panel_{storyboard_index}.png"
+    if exact.exists():
+        candidates.append(exact)
+    for fp in candidates:
+        if keep_path and _same_file_path(fp, keep_path):
+            continue
+        _move_image_to_history(ep_dir, fp)
+
+
 def _make_comic_on_done(
     state_service: NovelComicStateService,
     project_id: str,
@@ -1258,6 +1289,7 @@ def _make_comic_on_done(
             images_dir = state_service.get_project_images_dir(project_id)
             images_dir = images_dir / f"ep_{episode_num}"
             images_dir.mkdir(parents=True, exist_ok=True)
+            _archive_storyboard_images(images_dir, storyboard_index)
             file_path = str(images_dir / f"comic_panel_{storyboard_index}_{int(time.time())}.png")
             Path(file_path).write_bytes(image_data)
             logger.info("分镜图片保存成功 #%d: %s (%d bytes)", storyboard_index, file_path, len(image_data))
@@ -2461,6 +2493,44 @@ class NovelComicGeneratePage(QFrame):
         saved = project.extra_data.get(self._storyboards_key())
         if saved and isinstance(saved, list):
             self._storyboards = saved
+            self._normalize_episode_images()
+
+    def _normalize_episode_images(self) -> None:
+        ep_dir = self._images_dir()
+        history_dir = _storyboard_history_dir(ep_dir)
+        changed = False
+        current_paths: set[str] = set()
+
+        for sb in self._storyboards:
+            img = sb.get("generated_image", "")
+            if not img:
+                continue
+            img_path = Path(img)
+            if img_path.exists() and _same_file_path(img_path.parent, history_dir):
+                target = ep_dir / img_path.name
+                if target.exists():
+                    target = ep_dir / f"comic_panel_{sb.get('index', 0)}_{int(time.time())}{img_path.suffix}"
+                try:
+                    import shutil
+                    shutil.move(str(img_path), str(target))
+                    sb["generated_image"] = str(target)
+                    img_path = target
+                    changed = True
+                except Exception:
+                    logger.warning("恢复当前漫画图片失败: %s", img_path, exc_info=True)
+            if img_path.exists():
+                current_paths.add(str(img_path.resolve()))
+
+        for fp in ep_dir.glob("comic_panel_*.png"):
+            try:
+                if str(fp.resolve()) in current_paths:
+                    continue
+            except Exception:
+                pass
+            _move_image_to_history(ep_dir, fp)
+
+        if changed:
+            self._save_storyboards()
 
     def _save_storyboards(self) -> None:
         project = self._state_service.load_project(self._project_id)
@@ -3153,6 +3223,26 @@ class NovelComicGeneratePage(QFrame):
         )
         if dialog.exec() == QDialog.Accepted and dialog.selected_path:
             selected = dialog.selected_path
+            ep_dir = self._images_dir()
+            current_path = ""
+            for sb in self._storyboards:
+                if sb["index"] == storyboard_index:
+                    current_path = sb.get("generated_image", "")
+                    break
+            if current_path and Path(current_path).exists():
+                _move_image_to_history(ep_dir, current_path)
+            selected_path = Path(selected)
+            if selected_path.exists() and _same_file_path(selected_path.parent, ep_dir / "historys"):
+                target = ep_dir / selected_path.name
+                if target.exists():
+                    target = ep_dir / f"comic_panel_{storyboard_index}_{int(time.time())}{selected_path.suffix}"
+                try:
+                    import shutil
+                    shutil.move(str(selected_path), str(target))
+                    selected = str(target)
+                except Exception:
+                    logger.warning("恢复历史漫画图片失败: %s", selected_path, exc_info=True)
+            _archive_storyboard_images(ep_dir, storyboard_index, keep_path=selected)
             for sb in self._storyboards:
                 if sb["index"] == storyboard_index:
                     sb["generated_image"] = selected
@@ -3496,21 +3586,54 @@ class NovelComicGeneratePage(QFrame):
     ) -> tuple[str, str, list[str]]:
         desc = sb.get("description", "")
         asset_names = sb.get("assets", [])
-        asset_descs: list[str] = []
         reference_paths: list[str] = []
+        asset_tag_parts: list[str] = []
+        asset_desc_parts: list[str] = []
 
-        if project:
-            for a in project.assets:
-                if a.name in asset_names:
-                    asset_descs.append(f"「{a.name}」: {a.desc}")
-                    if a.image_path and Path(a.image_path).exists():
-                        reference_paths.append(a.image_path)
-
-        global_prefix = gen_settings.get("prefix", "").strip()
+        # 构建最终参考图列表顺序：画风参考图 → 资产参考图
         sr_settings = gen_settings.get("style_ref", {})
         sr_enabled = sr_settings.get("enabled", False)
         sr_paths: list[str] = sr_settings.get("paths", [])
-        logger.debug("_build_comic_prompt: sr_enabled=%s, sr_paths=%s", sr_enabled, sr_paths)
+        if sr_enabled:
+            sr_refs = [p for p in sr_paths if p and Path(p).exists()]
+            reference_paths.extend(sr_refs)
+
+        # 收集资产参考图路径，并确定各资产的图片序号/描述
+        asset_paths_map: dict[str, str] = {}  # name -> image_path
+        if project:
+            for a in project.assets:
+                if a.name in asset_names:
+                    if a.image_path and Path(a.image_path).exists():
+                        asset_paths_map[a.name] = a.image_path
+
+        # 资产参考图追加到 reference_paths 末尾
+        for name in asset_names:
+            if name in asset_paths_map:
+                reference_paths.append(asset_paths_map[name])
+
+        # 构建 prompt 中的资产引用：有图用 @图片N，同时也保留文字描述
+        sr_count = len([p for p in sr_paths if p and Path(p).exists()]) if sr_enabled else 0
+        asset_with_img_index = 0
+        for a_name in asset_names:
+            # 从 project.assets 中找到对应资产信息
+            asset_obj = next(
+                (a for a in (project.assets if project else []) if a.name == a_name),
+                None,
+            )
+            if asset_obj is None:
+                continue
+            if a_name in asset_paths_map:
+                asset_with_img_index += 1
+                asset_idx = sr_count + asset_with_img_index
+                asset_tag_parts.append(f"{a_name}是@图片{asset_idx}")
+            asset_desc_parts.append(f"「{a_name}」: {asset_obj.desc}")
+
+        logger.debug(
+            "_build_comic_prompt: asset_tag_parts=%s, asset_desc_parts=%s, reference_paths=%d",
+            asset_tag_parts, asset_desc_parts, len(reference_paths),
+        )
+
+        global_prefix = gen_settings.get("prefix", "").strip()
 
         prompt = desc
         if sr_enabled:
@@ -3526,15 +3649,20 @@ class NovelComicGeneratePage(QFrame):
 
         if global_prefix:
             prompt = global_prefix + "，" + prompt
-        if asset_descs:
-            prompt += "。参考资产形象：" + "；".join(asset_descs)
+
+        # 资产引用
+        ref_parts: list[str] = []
+        if asset_tag_parts:
+            ref_parts.append("；".join(asset_tag_parts))
+        if asset_desc_parts:
+            ref_parts.append("参考资产形象：" + "；".join(asset_desc_parts))
+        if ref_parts:
+            prompt += "。" + "。".join(ref_parts)
 
         ratio = gen_settings.get("aspect_ratio", "3:4")
         resolution = gen_settings.get("resolution", "1K")
         size = _image_size_from_settings(ratio, resolution)
-        prompt += f"。去除图像中的噪点和高频细节。保持所有的线条、颜色和亮度不变"
-        # prompt += f"，{resolution}分辨率，图片比例{ratio}，尺寸{size}"
-        prompt = "将以下内容画成网格漫画。蒙太奇排版。" + prompt
+        prompt += f"弱化背景细节，专注人物细节。smooth shading, softlighting, controlled details, minimal texture, high clarity, refined edges, smooth gradients --- no noise, grain, artifacts, high frequency detail, dirty texture, oversharpen, blotchy, chaotic details."
 
         return prompt, size, reference_paths
 
@@ -4599,6 +4727,26 @@ class _MaskEditorWidget(QWidget):
         """保存遮罩为 PNG 文件"""
         self._mask.save(save_path)
 
+    def _image_rect(self) -> tuple[int, int, int, int]:
+        scaled = self._pixmap.scaled(
+            self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation,
+        )
+        ox = (self.width() - scaled.width()) // 2
+        oy = (self.height() - scaled.height()) // 2
+        return ox, oy, scaled.width(), scaled.height()
+
+    def _widget_to_image_pos(self, x: float, y: float) -> tuple[int, int] | None:
+        ox, oy, sw, sh = self._image_rect()
+        if sw <= 0 or sh <= 0:
+            return None
+        if x < ox or y < oy or x > ox + sw or y > oy + sh:
+            return None
+        ix = int((x - ox) * self._mask.width() / sw)
+        iy = int((y - oy) * self._mask.height() / sh)
+        ix = max(0, min(ix, self._mask.width() - 1))
+        iy = max(0, min(iy, self._mask.height() - 1))
+        return ix, iy
+
     def _draw_at(self, x: int, y: int) -> None:
         painter = QPainter(self._mask)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -4625,8 +4773,7 @@ class _MaskEditorWidget(QWidget):
         scaled = self._pixmap.scaled(
             self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation,
         )
-        ox = (self.width() - scaled.width()) // 2
-        oy = (self.height() - scaled.height()) // 2
+        ox, oy, _, _ = self._image_rect()
         painter.drawPixmap(ox, oy, scaled)
 
         # 绘制遮罩覆盖层（半透明红色 = 被遮罩区域）
@@ -4644,14 +4791,21 @@ class _MaskEditorWidget(QWidget):
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
-            self._last_pos = (event.position().x(), event.position().y())
-            self._draw_at(event.position().x(), event.position().y())
+            pos = self._widget_to_image_pos(event.position().x(), event.position().y())
+            if pos is None:
+                self._last_pos = None
+                return
+            self._last_pos = pos
+            self._draw_at(pos[0], pos[1])
 
     def mouseMoveEvent(self, event) -> None:
         if event.buttons() & Qt.LeftButton and self._last_pos:
-            x, y = event.position().x(), event.position().y()
-            self._draw_line(self._last_pos[0], self._last_pos[1], x, y)
-            self._last_pos = (x, y)
+            pos = self._widget_to_image_pos(event.position().x(), event.position().y())
+            if pos is None:
+                self._last_pos = None
+                return
+            self._draw_line(self._last_pos[0], self._last_pos[1], pos[0], pos[1])
+            self._last_pos = pos
 
     def mouseReleaseEvent(self, event) -> None:
         self._last_pos = None
@@ -4729,7 +4883,7 @@ class _ImageEditDialog(QDialog):
         hint = QLabel("在图片上涂抹白色区域标记要修改的部分，红色半透明层为遮罩区域")
         hint.setStyleSheet("color: #64748b; font-size: 12px;")
 
-        layout.addWidget(toolbar)
+        layout.addLayout(toolbar)
         layout.addWidget(hint)
 
         # 修改描述输入
@@ -4827,10 +4981,15 @@ class _HistoryImagesDialog(QDialog):
 
         images_dir = self._state_service.get_project_images_dir(self._project_id)
         ep_dir = images_dir / f"ep_{self._episode_num}"
+        history_dir = ep_dir / "historys"
         image_files: list[Path] = []
-        if ep_dir.exists():
+        if history_dir.exists():
             pattern = f"comic_panel_{self._storyboard_index}_*.png"
-            image_files = sorted(ep_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+            image_files = list(history_dir.glob(pattern))
+            exact = history_dir / f"comic_panel_{self._storyboard_index}.png"
+            if exact.exists():
+                image_files.append(exact)
+            image_files = sorted(image_files, key=lambda p: p.stat().st_mtime, reverse=True)
 
         if not image_files:
             hint = QLabel("暂无历史生成记录")
