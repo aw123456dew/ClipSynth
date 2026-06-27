@@ -292,16 +292,17 @@ STORYBOARD_SPLIT_SYSTEM_PROMPT = """\
 }
 
 核心要求：
-1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加。每个分镜对应的text不得低于30个字，不得超过60个字。并且一个分镜中不超出3个句号
+1. text 为该分镜对应的原文片段，保留原文文字，不要做任何修改、润色、删减或添加。每个分镜对应的text不得低于30个字，不得超过60个字，并且结尾必须有标点符号，不能中途断句到下个分镜。并且一个分镜中不超出3个句号
 2. 每个分镜对应一页漫画，一页漫画 1-3 格。一个格能表达清楚就只用 1 格（大画面），内容较多时用 2 格，复杂时才用 3-4 格。
 3. panel_count_suggestion 是推荐格数，根据本页内容的节奏和复杂度给出合理建议（整数 1-4）
 4. present_characters 列出本页出场的人物名称，不要遗漏
-5. bubbles 列出本页中所有角色的对话，speaker 是说话人，text 是对话内容。text 字段中凡是对话部分都要提取到 bubbles 中
-6. narrative 仅保留角色的内心独白、内心想法或主观看法（心理活动、内心感受、主观评价等），按顺序放入数组。其他所有的叙事描述（场景描写、环境交代、角色动作、面部表情等）**一律省略不放入 narrative**，以精简内容，并且移除所有无意义的标点符号（如破折号、省略号、书名号、单双引号等）。
-7. 所有分镜按原文顺序排列，覆盖全文，不要遗漏原文内容
+5. bubbles 列出本页中所有角色的对话，speaker 是说话人，text 是对话内容。text 字段中凡是对话部分都要提取到 bubbles 中，**不得遗漏任何直接引语、转述中的完整发言、低声说/喊/问/回/答等说话内容**
+6. narrative 仅保留角色的内心独白、内心想法或主观看法（心理活动、内心感受、主观评价等），以及**无法归入对话、但属于原文必须呈现的叙述性句子**，按原文顺序放入数组。其他所有的叙事描述（场景描写、环境交代、角色动作、面部表情等）**一律省略不放入 narrative**，以精简内容，并且移除所有无意义的标点符号（如破折号、省略号、书名号、单双引号等）。
+7. 所有分镜按原文顺序排列，覆盖全文，不要遗漏原文内容；**每个分镜 text 中的全部文字，都必须完整映射到 bubbles 或 narrative，不能有任何一句游离在这两个字段之外**
 8. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符
 9. 所有字段必须使用与原文一致的语言（原文是中文则用中文，英文则用英文），**严禁出现英文的人称代词(he/she/him/her等)或英文单词，中文原文必须全部用中文表达**
-10. 旁白和对话的文字中必须移除无意义的标点符号（如破折号、省略号、书名号、单双引号等），只保留逗号、句号、感叹号、问号、顿号"""
+10. 旁白和对话的文字中必须移除无意义的标点符号（如破折号、省略号、书名号、单双引号等），只保留逗号、句号、感叹号、问号、顿号
+11. **原文不能多不能少**：每个分镜 text 中的每一句话必须且只能被分配到 bubbles（对话）或 narrative（旁白）中，不允许有任何一句遗漏（不能少），也不允许凭空添加原文中没有的文字（不能多）。"""
 
 
 def _save_project_storyboards(
@@ -436,21 +437,15 @@ class StoryboardSplitWorker(QThread):
                             self.progress.emit(f"正在生成分镜 {done_ctr[0]}/{total_segments}...")
                         return
 
-                    except (ValueError, json.JSONDecodeError) as e:
+                    except Exception as e:
                         last_error = str(e)
-                        logger.warning("片段 #%d 解析失败, 重试 %d/3: %s", seg_idx + 1, attempt + 1, last_error)
+                        logger.warning("片段 #%d 失败(第%d/3次): %s", seg_idx + 1, attempt + 1, last_error)
                         if attempt < 2:
+                            import time
+                            time.sleep(2 ** attempt)
                             continue
                         with lock:
                             errors_per_seg[seg_idx] = last_error
-                            done_ctr[0] += 1
-                            self.progress.emit(f"正在生成分镜 {done_ctr[0]}/{total_segments}...")
-                        return
-
-                    except Exception as e:
-                        logger.error("片段 #%d 生成失败: %s", seg_idx + 1, str(e), exc_info=True)
-                        with lock:
-                            errors_per_seg[seg_idx] = str(e)
                             done_ctr[0] += 1
                             self.progress.emit(f"正在生成分镜 {done_ctr[0]}/{total_segments}...")
                         return
@@ -508,7 +503,10 @@ MATCH_ASSETS_SYSTEM_PROMPT = """
     {
       "index": 1,
       "scenes": ["场景A", "场景B"],
-      "characters": ["人物A", "人物B"],
+      "characters": [
+        {"name": "人物A-常服版", "action": "站立"},
+        {"name": "人物B-校服版", "action": "坐着"}
+      ],
       "props": ["道具X"]
     }
   ]
@@ -520,12 +518,13 @@ MATCH_ASSETS_SYSTEM_PROMPT = """
 
 核心规则：
 1. 每个分镜可以选择零个、一个或多个场景（scenes），根据分镜内容判断发生在哪些场景中。场景字段为数组，哪怕只有一个场景也要用数组格式
-2. 每个分镜可以选择零个或多个人物（characters），优先参考分镜已有的 present_characters 字段
+2. 每个分镜可以选择零个或多个人物（characters），优先参考分镜已有的 present_characters 字段。**characters 现在是对象数组，每个对象包含 name（人物资产名）和 action（该人物在该分镜中的动作/姿态，如站立、坐着、躺着、趴着、跪着、蹲着、倚靠、行走、奔跑等）**
 3. 每个分镜可以选择零个或多个道具（props），根据分镜的原文文本、旁白叙述判断使用了哪些道具
 4. 只从提供的资产池中选择，不要编造不存在的资产名称。如果资产池中没有匹配的人物，则从 present_characters 中选择已有角色名
 5. 根据分镜的原文文本、出场人物、对话台词和旁白叙述综合判断该分镜发生在哪些场景、出现了哪些人物、使用了哪些道具
 6. **版本资产匹配规则**：资产池中可能存在同一基础人物的不同版本（如 `陆宴知-常服版`、`陆宴知-校服版`），同一基础场景的不同版本（如 `教室-白天版`、`教室-夜晚版`）。请根据分镜的时间、天气、角色着装描述，选择最合适的版本。如果分镜描述中是白天教室场景，应匹配 `教室-白天版`；如果是夜晚校园场景，应匹配 `校园-夜晚版`。角色同理，根据原文中该分镜的着装描述选择对应的服装版本。
-7. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。
+7. **动作推断规则**：根据分镜的原文文本、对话和旁白，推断每个出场人物的动作/姿态。动作必须是简洁的静态描述词，如：站立、坐着、躺着、趴着、跪着、蹲着、倚靠、行走、奔跑、弯腰、低头、抬头、转身、躺着、侧卧等。如果原文没有明确描述动作，根据上下文合理推断。
+8. 输出合法 JSON：所有字符串值内的英文双引号（"）必须用反斜杠转义（\\"），不得出现未转义的换行符。确保返回的 JSON 可以被 json.loads 正确解析。
 """
 
 
@@ -655,6 +654,10 @@ class MatchAssetsWorker(QThread):
                 for p in entry.get("props", []):
                     parts.append(p)
                 sb["assets"] = parts
+                # 保存人物动作信息
+                char_actions = entry.get("character_actions", {})
+                if char_actions:
+                    sb["character_actions"] = char_actions
         _save_project_storyboards(
             self._state_service, self._project_id, self._episode_num, self._storyboards,
         )
@@ -667,10 +670,25 @@ class MatchAssetsWorker(QThread):
             idx = item.get("index", 0)
             scenes = item.get("scenes", []) or []
             scene = item.get("scene", "")
+            raw_chars = item.get("characters", []) or []
+            # 兼容新旧格式：新格式是 [{name, action}], 旧格式是 [name]
+            char_names: list[str] = []
+            char_actions: dict[str, str] = {}
+            for c in raw_chars:
+                if isinstance(c, dict):
+                    name = c.get("name", "")
+                    action = c.get("action", "")
+                    if name:
+                        char_names.append(name)
+                        if action:
+                            char_actions[name] = action
+                elif isinstance(c, str) and c:
+                    char_names.append(c)
             result[idx] = {
                 "scenes": scenes if isinstance(scenes, list) else ([scenes] if scenes else []),
                 "scene": scene,
-                "characters": item.get("characters", []) or [],
+                "characters": char_names,
+                "character_actions": char_actions,
                 "props": item.get("props", []) or [],
             }
         return result
@@ -701,6 +719,7 @@ description 不是普通插画提示词，而是要明确规划：
 - 本页几格、每格大小和位置
 - 每格的镜头景别、视角、构图
 - 人物在画面中的位置、姿态、表情、视线
+- **每格的核心情感基调**：画面要传递什么样的情绪氛围（紧张、悲伤、愤怒、温馨、震惊、恐惧等），所有构图和光影选择都必须服务于情感传递。**每句话都要带有情绪温度，禁止中性罗列画面。**
 - 气泡和旁白框在图片中的位置
 - 原文对话和旁白如何放入画面
 - 画面阅读顺序（从左到右、从上到下）
@@ -709,6 +728,7 @@ description 不是普通插画提示词，而是要明确规划：
 1. **整体排版**：说明本页漫画的格数、布局和漫画表现手法。必须根据原文内容选择合适排版，可以在剧情需要时使用 1格、2格、3格、多格蒙太奇、斜格、破框、人物出格、叠化小格、局部特写插格等；如果普通分格更合适，就使用普通分格，不要为了特殊而特殊。
 2. **格1 / 格2 / 格N**：逐格描述画面；如果使用人物出格、破框、斜格、蒙太奇叠格，也要明确写出其位置和作用。
 3. 每格必须包含：
+   - **该格的情感锚点**：该格要让观众感受到什么情绪（愤怒、悲伤、紧张、温暖、震惊、恐惧等），先写情感锚点再写具体画面
    - 场景：优先使用已绑定场景资产名称，不额外展开环境细节。若剧情需要表现进入、离开、奔跑、推门、门外偷听、赶到现场等过渡动作，允许在同一绑定场景的**直接邻接区域**取景，例如将“医院病房”合理扩展为“病房门口”“病房外走廊”“病房门前区域”；但不能跳到无关场景。
    - 镜头：景别/角度以及镜头朝向，例如"中景平视，镜头从讲台方向往课桌方向拍摄"、"特写平视，镜头正对角色面部"、"全景俯视，镜头从教室后方往前拍摄"。
    - 人物位置：谁在左/右/前景/背景/画面中心。
@@ -717,6 +737,8 @@ description 不是普通插画提示词，而是要明确规划：
    - 文字内容：气泡内的文字必须使用 `原文`/`对话` 输入字段中出现的原句，不得改写。气泡的描述格式为"气泡从某方向伸出放在某位置，内容为：\"原文字句\""，不需要额外加"角色名-版本的气泡："前缀，因为气泡所属人物已在画面描述中体现。旁白框同理："旁白框放在某位置，内容为：\"原文字句\""。
 
 === 重要规则 ===
+0. **情感传递是核心，动作表情只是载体**：每个格子的首要任务是让观众**感受到一种情绪**（紧张、悲伤、愤怒、温暖、恐惧、震惊、甜蜜等），而不是罗列人物在做什么。**每一格必须先明确其情感锚点（该格要让观众感受到什么情绪），再用画面细节支撑这个情绪。** 描述必须使用有情绪冲击力的语言——用"她的愤怒几乎穿透画面"替代"她皱着眉头握紧拳头"；用"房间里的压抑感令人窒息"替代"两个人都不说话"；用"绝望从她低垂的眼帘中弥漫开来"替代"她低着头很难过"。
+**禁止使用平铺直叙的中性描述**，每个格子的描述必须能让人直观感受到情绪温度。动作和表情只是传递情感的手段，不要本末倒置。
 1. **这是漫画页提示词，不是单张插画提示词**。必须规划分格、排版、文字框、人物站位。
 2. **场景、人物、道具只能从已绑定资产中选择**，禁止编造资产名；但场景允许在同一绑定场景的**直接邻接区域**取景，用于表现进入、离开、奔跑、推门、门外偷听、赶到现场等过渡镜头。例如绑定场景是“医院病房”时，可以写成“病房门口”“病房外走廊”“病房门前区域”，但不能跳到无关场景。
    - 示例1：原文是“我焦急地赶到病房”，绑定场景是“医院病房”，格1可以写成“场景使用医院病房外走廊，中景平视，宁熙朝病房门口奔跑”，格2再切入病房内部。
@@ -726,15 +748,20 @@ description 不是普通插画提示词，而是要明确规划：
 5. 对话必须进入气泡，并说明气泡位置。
 6. 旁白/心理/动作过程/转场必须进入旁白框，并说明旁白框位置。
 7. **原文分配规则**：原文中的每一句话必须被分配到气泡或旁白框中，不允许丢弃任何一句。
-8. 人物看手机、电脑、书信、文件、照片、屏幕、镜子、票据、聊天记录等道具时，主画面只负责表现"人物正在看该道具"和人物情绪；不要在同一个普通人物镜头里同时强行画清人物正脸表情和道具内部文字/细节。
-9. 如果道具内部内容需要展示给观众，必须使用"格内格/画中画/局部特写插格"，或新增一个独立格子专门展示道具内容。例如：格1画人物看手机，并在格1右上角加手机屏幕特写小框；或格2单独画手机屏幕特写。
-10. 道具内容特写必须明确写出位置和内容，避免让人物反向拿道具、道具朝向错误、文字贴在人物身上、同时兼顾人物表情和道具内容导致画面混乱。
-11. 多人场景（教室、会议室、餐厅、聚会等）必须写明镜头的具体方向——从哪个方向往哪个方向拍，以及各人物面对的方向。例如"镜头从讲台方向往课桌方向拍摄，xx角色面向讲台"。
-12. 当两个角色面对面或对视时，不要同时描写两人的面部表情，因为从单一镜头方向必然只有一人正脸、一人背对/侧对。需要用以下方式之一处理：a) 只描写面对镜头的角色的表情，另一位只写"背对镜头"或"侧身面向对方"；b) 在格内用画中画/小插格展示另一个角色的正脸表情；c) 新增一个独立格子展示另一个角色的正面镜头。
-13. 每格必须有独立的内容价值（对话、旁白、道具内容展示、独立镜头视角等）。如果某一格既没有对话也没有旁白，其画面内容可从相邻格中表达，则合并到相邻格中，不要为了凑格数而多分一格。
-14. 排版必须服务剧情：情绪爆发、冲突、转折可以使用斜格、破框、人物出格；回忆、心理活动、连续动作可以使用蒙太奇小格、叠化分格、局部特写插格；安静对话可以使用规整分格。不要强制使用蒙太奇或特殊排版。
-15. 使用特殊排版时必须写清楚：哪一格是斜格、哪个人物身体或手臂越过格线、哪个气泡跨格、哪些小格作为蒙太奇片段。
-16. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
+8. **覆盖校验规则**：生成 description 前，必须先逐句核对 `原文`、`对话`、`旁白` 三个输入字段，确保原文中所有可见文字都已经被放进气泡或旁白框；如果 `对话` / `旁白` 提取不完整，也必须以 `原文` 为准主动补齐，禁止遗漏。
+9. **叙述句处理规则**：凡是不属于角色口头发言、但属于剧情表达必须保留的叙述句、心理句、状态句、转场句，都必须进入旁白框；不能只画人物表情或动作而不放文字。
+10. **原文不能多不能少**：气泡和旁白框中的文字总和必须严格等于 `原文` 中的所有文字，不能遗漏任何一句（不能少），不能添加原文中没有的字句（不能多）。
+11. 道具内容特写必须明确写出位置和内容，避免让人物反向拿道具、道具朝向错误、文字贴在人物身上、同时兼顾人物表情和道具内容导致画面混乱。
+12. 多人场景（教室、会议室、餐厅、聚会等）必须写明镜头的具体方向——从哪个方向往哪个方向拍，以及各人物面对的方向。例如"镜头从讲台方向往课桌方向拍摄，xx角色面向讲台"。
+13. 当两个角色面对面或对视时，不要同时描写两人的面部表情，因为从单一镜头方向必然只有一人正脸、一人背对/侧对。需要用以下方式之一处理：a) 只描写面对镜头的角色的表情，另一位只写"背对镜头"或"侧身面向对方"；b) 在格内用画中画/小插格展示另一个角色的正脸表情；c) 新增一个独立格子展示另一个角色的正面镜头。
+14. 每格必须有独立的内容价值（对话、旁白、道具内容展示、独立镜头视角等）。如果某一格既没有对话也没有旁白，其画面内容可从相邻格中表达，则合并到相邻格中，不要为了凑格数而多分一格。
+15. 排版必须服务剧情：情绪爆发、冲突、转折应优先使用斜格、破框、人物出格等冲击性排版；回忆、心理活动、连续动作应优先使用蒙太奇小格、叠化分格、局部特写插格；安静对话使用规整分格即可。避免无脑堆砌，排版选择必须服务于叙事节奏。
+16. **情感先于技术规则**：不要机械地套用"每页至少2个特写"的公式。始终以情感传递为最终目标来选择景别——当需要让观众沉浸于角色的内心感受时用特写，当需要让观众感受角色的孤立无援时用远景。特写格必须服务于"让观众感受到角色的某种情绪"这个目的，描述时应先写情绪感受、再写画面细节。例如优先写"她的绝望透过低垂的眼帘弥漫开来"而不是"特写拍她的脸，眼神低垂"。
+17. **单人镜头优先规则**：在表现角色对话、对峙、情感爆发等双人/多人场景时，优先使用**单人特写/近景交替切换**的方式，取代双人同框的中景镜头。例如两人对话应使用"角色A面部特写→角色B面部特写→角色A反应特写"的组接方式，避免两人同时出现在同一格中导致情绪表达被稀释。只有在需要交代空间关系和人物相对位置时才使用双人全景/中景，且之后应立即切回单人特写聚焦情绪。
+18. **运镜多样性规则**：同一页内连续两格禁止使用相同景别。必须交替使用远景、全景、中景、近景、特写、极近特写、俯拍、仰拍、过肩镜头等不同景别和视角，避免整页都是中景平视的单调画面。单人面部特写是优先景别，应占每页总格数的 1/3 以上。
+19. 使用特殊排版时必须写清楚：哪一格是斜格、哪个人物身体或手臂越过格线、哪个气泡跨格、哪些小格作为蒙太奇片段。
+20. **人物动作约束**：`人物动作` 字段标注的角色姿态（坐着、站立、躺着等）是参考基准，但**当情感表达需要时，可以调整角色姿态以增强情绪感染力**。例如角色标注为"坐着"，但通过特写其面部表情来传递悲伤情绪时，可弱化坐姿的描写、聚焦眉眼嘴角的微表情细节。规则优先级：情感传递 > 姿态准确。
+21. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
 
 === 示例 ===
 原文：顾晚盯着手机屏幕。"宝宝，小狗在聚餐。"好乖呀。
@@ -746,6 +773,7 @@ description 不是普通插画提示词，而是要明确规划：
 - `对话:` 已提取对话（说话人: 内容），用于补全气泡，仍需对照原文查漏。
 - `旁白:` 已提取独白/看法，用于补全旁白框，仍需对照原文查漏。
 - `出场人物:` 人物匹配参考。
+- `人物动作:` 各人物在该分镜中的动作/姿态（如坐着、站立、躺着等），生成画面时角色的姿态必须与此一致，除非原文有明确的姿态变化描述。
 - `所属段落原文:` 用于指代分析。
 
 === scene / characters / props 字段 ===
@@ -777,11 +805,14 @@ STORYBOARD_DESC_MANUAL_PROMPT = """\
 === 任务 ===
 为每个分镜编写一个**整页漫画画面提示词（description）**，用于 AI 图片生成模型直接生成一页漫画。
 description 不是普通插画提示词，而是要根据小说原文规划漫画页面：分格、排版、镜头、人物站位、旁白框、气泡位置和画面文字。
+**但是，所有技术规划最终服务于一个目标——让观众感受到情绪。** 每个格子先确定要传递什么情感（紧张、悲伤、愤怒、温馨、震惊等），再围绕这个情感选择镜头、构图和光影。
+**每一格的描述必须让读者透过文字就能感受到这个情绪——禁止中性的画面罗列，每句话都要带有情感温度。**
 
 === description 必须包含的结构 ===
 1. **整体排版**：说明本页漫画的格数、布局和漫画表现手法。必须根据原文内容选择合适排版，可以在剧情需要时使用 1格、2格、3格、多格蒙太奇、斜格、破框、人物出格、叠化小格、局部特写插格等；如果普通分格更合适，就使用普通分格，不要为了特殊而特殊。
 2. **格1 / 格2 / 格N**：逐格描述画面；如果使用人物出格、破框、斜格、蒙太奇叠格，也要明确写出其位置和作用。
 3. 每格必须包含：
+   - **该格的情感锚点**：该格要让观众感受到什么情绪（愤怒、悲伤、紧张、温暖、震惊、恐惧等），先写情感锚点再写具体画面
    - 场景：优先使用已绑定场景资产名称，不展开场景细节。若剧情需要表现进入、离开、奔跑、推门、门外偷听、赶到现场等过渡动作，允许在同一绑定场景的**直接邻接区域**取景，例如将“医院病房”合理扩展为“病房门口”“病房外走廊”“病房门前区域”；但不能跳到无关场景。
    - 镜头：景别/角度以及镜头朝向，例如"中景平视，镜头从讲台方向往课桌方向拍摄"、"特写平视，镜头正对角色面部"、"全景俯视，镜头从教室后方往前拍摄"。
    - 人物位置：谁在左/右/前景/背景/画面中心。
@@ -790,22 +821,31 @@ description 不是普通插画提示词，而是要根据小说原文规划漫�
    - 文字内容：气泡内的文字必须使用 `原文`/`对话` 输入字段中出现的原句，不得改写。气泡的描述格式为"气泡从某方向伸出放在某位置，内容为：\"原文字句\""，不需要额外加"角色名-版本的气泡："前缀，因为气泡所属人物已在画面描述中体现。旁白框同理："旁白框放在某位置，内容为：\"原文字句\""。
 
 === 重要规则 ===
+0. **情感传递是核心，动作表情只是载体**：每个格子的首要任务是让观众**感受到一种情绪**（紧张、悲伤、愤怒、温暖、恐惧、震惊、甜蜜等），而不是罗列人物在做什么。**每一格必须先明确其情感锚点（该格要让观众感受到什么情绪），再用画面细节支撑这个情绪。** 描述必须使用有情绪冲击力的语言——用"她的愤怒几乎穿透画面"替代"她皱着眉头握紧拳头"；用"房间里的压抑感令人窒息"替代"两个人都不说话"；用"绝望从她低垂的眼帘中弥漫开来"替代"她低着头很难过"。
+**禁止使用平铺直叙的中性描述**，每个格子的描述必须能让人直观感受到情绪温度。动作和表情只是传递情感的手段，不要本末倒置。
 1. **这是漫画页提示词，不是单张插画提示词**。必须规划分格、排版、文字框、人物站位。
-2. **场景、人物、道具只能从已绑定资产中选择**，禁止编造资产名；但场景允许在同一绑定场景的**直接邻接区域**取景，用于表现进入、离开、奔跑、推门、门外偷听、赶到现场等过渡镜头。例如绑定场景是“医院病房”时，可以写成“病房门口”“病房外走廊”“病房门前区域”，但不能跳到无关场景。
+2. **以已绑定资产为参考池，情感优先可精简**：禁止编造资产名，人物/场景/道具名称只能从已绑定资产中选取。但**不必让所有绑定资产都出镜**——如果只使用部分人物/场景/道具能更好地传递情感，可以只取子集。例如绑定了两个角色，但单人面部特写的情感冲击力更强，则只让一个角色出镜即可。场景允许在同一绑定场景的**直接邻接区域**取景，用于表现进入、离开、奔跑、推门、门外偷听、赶到现场等过渡镜头。例如绑定场景是"医院病房"时，可以写成"病房门口""病房外走廊""病房门前区域"，但不能跳到无关场景。
 3. **气泡和旁白框中的文字必须使用原文**，不得改写、润色、总结、替换人称。原文是什么文字，气泡/旁白框中就必须是什么文字。例如原文对话是"你是谁？"，气泡内只能写"你是谁？"，不能写成"你是谁我也不认识你"或"你是谁呀"。
 4. 人物必须使用完整资产名，如"顾晚-常服版"，不要只写"顾晚"。
 5. 对话必须进入气泡，并说明气泡位置。
 6. 旁白/心理/动作过程/转场必须进入旁白框，并说明旁白框位置。
 7. **原文分配规则**：原文中的每一句话必须被分配到气泡或旁白框中，不允许丢弃任何一句。
-8. 人物看手机、电脑、书信、文件、照片、屏幕、镜子、票据、聊天记录等道具时，主画面只负责表现"人物正在看该道具"和人物情绪；不要在同一个普通人物镜头里同时强行画清人物正脸表情和道具内部文字/细节。
-9. 如果道具内部内容需要展示给观众，必须使用"格内格/画中画/局部特写插格"，或新增一个独立格子专门展示道具内容。例如：格1画人物看手机，并在格1右上角加手机屏幕特写小框；或格2单独画手机屏幕特写。
-10. 道具内容特写必须明确写出位置和内容，避免让人物反向拿道具、道具朝向错误、文字贴在人物身上、同时兼顾人物表情和道具内容导致画面混乱。
-11. 多人场景（教室、会议室、餐厅、聚会等）必须写明镜头的具体方向——从哪个方向往哪个方向拍，以及各人物面对的方向。例如"镜头从讲台方向往课桌方向拍摄，xx角色面向讲台"。
-12. 当两个角色面对面或对视时，不要同时描写两人的面部表情，因为从单一镜头方向必然只有一人正脸、一人背对/侧对。需要用以下方式之一处理：a) 只描写面对镜头的角色的表情，另一位只写"背对镜头"或"侧身面向对方"；b) 在格内用画中画/小插格展示另一个角色的正脸表情；c) 新增一个独立格子展示另一个角色的正面镜头。
-13. 每格必须有独立的内容价值（对话、旁白、道具内容展示、独立镜头视角等）。如果某一格既没有对话也没有旁白，其画面内容可从相邻格中表达，则合并到相邻格中，不要为了凑格数而多分一格。
-14. 排版必须服务剧情：情绪爆发、冲突、转折可以使用斜格、破框、人物出格；回忆、心理活动、连续动作可以使用蒙太奇小格、叠化分格、局部特写插格；安静对话可以使用规整分格。不要强制使用蒙太奇或特殊排版。
-15. 使用特殊排版时必须写清楚：哪一格是斜格、哪个人物身体或手臂越过格线、哪个气泡跨格、哪些小格作为蒙太奇片段。
-16. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
+8. **覆盖校验规则**：生成 description 前，必须先逐句核对 `原文`，确保原文中所有可见文字都已经被放进气泡或旁白框，禁止遗漏。
+9. **叙述句处理规则**：凡是不属于角色口头发言、但属于剧情表达必须保留的叙述句、心理句、状态句、转场句，都必须进入旁白框；不能只画人物表情或动作而不放文字。
+10. **原文不能多不能少**：气泡和旁白框中的文字总和必须严格等于 `原文` 中的所有文字，不能遗漏任何一句（不能少），不能添加原文中没有的字句（不能多）。
+11. 人物看手机、电脑、书信、文件、照片、屏幕、镜子、票据、聊天记录等道具时，主画面只负责表现"人物正在看该道具"和人物情绪；不要在同一个普通人物镜头里同时强行画清人物正脸表情和道具内部文字/细节。
+12. 如果道具内部内容需要展示给观众，必须使用"格内格/画中画/局部特写插格"，或新增一个独立格子专门展示道具内容。例如：格1画人物看手机，并在格1右上角加手机屏幕特写小框；或格2单独画手机屏幕特写。
+13. 道具内容特写必须明确写出位置和内容，避免让人物反向拿道具、道具朝向错误、文字贴在人物身上、同时兼顾人物表情和道具内容导致画面混乱。
+14. 多人场景（教室、会议室、餐厅、聚会等）必须写明镜头的具体方向——从哪个方向往哪个方向拍，以及各人物面对的方向。例如"镜头从讲台方向往课桌方向拍摄，xx角色面向讲台"。
+15. 当两个角色面对面或对视时，不要同时描写两人的面部表情，因为从单一镜头方向必然只有一人正脸、一人背对/侧对。需要用以下方式之一处理：a) 只描写面对镜头的角色的表情，另一位只写"背对镜头"或"侧身面向对方"；b) 在格内用画中画/小插格展示另一个角色的正脸表情；c) 新增一个独立格子展示另一个角色的正面镜头。
+16. 每格必须有独立的内容价值（对话、旁白、道具内容展示、独立镜头视角等）。如果某一格既没有对话也没有旁白，其画面内容可从相邻格中表达，则合并到相邻格中，不要为了凑格数而多分一格。
+17. 排版必须服务剧情：情绪爆发、冲突、转折应优先使用斜格、破框、人物出格等冲击性排版；回忆、心理活动、连续动作应优先使用蒙太奇小格、叠化分格、局部特写插格；安静对话使用规整分格即可。避免无脑堆砌，排版选择必须服务于叙事节奏。
+18. **情感先于技术规则**：不要机械地套用"每页至少2个特写"的公式。始终以情感传递为最终目标来选择景别——当需要让观众沉浸于角色的内心感受时用特写，当需要让观众感受角色的孤立无援时用远景。特写格必须服务于"让观众感受到角色的某种情绪"这个目的，描述时应先写情绪感受、再写画面细节。例如优先写"她的绝望透过低垂的眼帘弥漫开来"而不是"特写拍她的脸，眼神低垂"。
+19. **单人镜头优先规则**：在表现角色对话、对峙、情感爆发等双人/多人场景时，优先使用**单人特写/近景交替切换**的方式，取代双人同框的中景镜头。例如两人对话应使用"角色A面部特写→角色B面部特写→角色A反应特写"的组接方式，避免两人同时出现在同一格中导致情绪表达被稀释。只有在需要交代空间关系和人物相对位置时才使用双人全景/中景，且之后应立即切回单人特写聚焦情绪。
+20. **运镜多样性规则**：同一页内连续两格禁止使用相同景别。必须交替使用远景、全景、中景、近景、特写、极近特写、俯拍、仰拍、过肩镜头等不同景别和视角，避免整页都是中景平视的单调画面。单人面部特写是优先景别，应占每页总格数的 1/3 以上。
+21. 使用特殊排版时必须写清楚：哪一格是斜格、哪个人物身体或手臂越过格线、哪个气泡跨格、哪些小格作为蒙太奇片段。
+22. **人物动作约束**：`人物动作` 字段标注的角色姿态（坐着、站立、躺着等）是参考基准，但**当情感表达需要时，可以调整角色姿态以增强情绪感染力**。例如角色标注为"坐着"，但通过特写其面部表情来传递悲伤情绪时，可弱化坐姿的描写、聚焦眉眼嘴角的微表情细节。规则优先级：情感传递 > 姿态准确。
+23. 输出合法 JSON：英文双引号转义为 \\"，中文双引号不转义。
 
 === 示例 ===
 原文：顾晚盯着手机屏幕。"宝宝，小狗在聚餐。"好乖呀。
@@ -817,9 +857,9 @@ description 不是普通插画提示词，而是要根据小说原文规划漫�
 - `所属段落原文:` 用于指代分析。
 
 === scene / characters / props 字段 ===
-- scene：从已绑定场景资产中选一个最贴合本段的。
-- characters：列出本段出场人物，使用完整的"角色名-版本"格式。
-- props：列出本段涉及的已绑定道具，无则空数组。
+- scene：从已绑定场景资产中选一个最贴合本段的。如情感表达需要，可只选部分场景或只聚焦场景的局部细节（如窗边的光影、桌上的物品）。
+- characters：列出本段出场人物，使用完整的"角色名-版本"格式。对话中被提及但不在画面中出现的角色不应列入。如有多个绑定人物，可根据情感表达需要只取部分角色出镜。
+- props：列出本段涉及的已绑定道具，无则空数组。可根据情感需要决定是否让道具出镜。
 - 以上均**只能取自已绑定资产，禁止编造**。"""
 
 
@@ -833,6 +873,7 @@ class StoryboardDescriptionWorker(QThread):
         storyboards: list[dict],
         project_id: str,
         episode_num: int,
+        chapter_text: str,
         settings_service: SettingsService,
         state_service: NovelComicStateService,
         chat_manager: MultiRoundChatManager | None = None,
@@ -844,6 +885,7 @@ class StoryboardDescriptionWorker(QThread):
         self._storyboards = storyboards
         self._project_id = project_id
         self._episode_num = episode_num
+        self._chapter_text = chapter_text
         self._settings_service = settings_service
         self._state_service = state_service
         self._chat_manager = chat_manager
@@ -913,19 +955,22 @@ class StoryboardDescriptionWorker(QThread):
                         bound_assets = sb.get("assets", [])
                         if bound_assets:
                             lines.append(f"已绑定资产: {', '.join(bound_assets)}")
-
-                        seg_text = sb.get("segment_text", "")
-                        if seg_text:
-                            lines.append(f"所属段落原文: {seg_text}")
+                        # 人物动作信息
+                        char_actions = sb.get("character_actions", {})
+                        if char_actions:
+                            action_strs = [f"{name}:{action}" for name, action in char_actions.items()]
+                            lines.append(f"人物动作: {'; '.join(action_strs)}")
                         batch_parts.append("\n".join(lines))
                     full_input = "\n\n".join(batch_parts)
 
                     prompt = (
                         "请为以下 %d 个分镜分别生成详细的一页漫画分镜描述。"
                         "严格按照系统提示中的 JSON 格式输出，不要输出任何其他内容。"
-                        "必须为每个分镜生成独立的 description。\n\n"
+                        "必须为每个分镜生成独立的 description。"
+                        "生成时请以全文为主要上下文，不要只根据分镜片段理解剧情。\n\n"
+                        "=== 小说全文 ===\n%s\n\n"
                         "=== 分镜数据 ===\n%s"
-                    ) % (len(batch), full_input)
+                    ) % (len(batch), self._chapter_text, full_input)
 
                     indices = [sb["index"] for sb in batch]
                     last_content = ""
@@ -962,6 +1007,18 @@ class StoryboardDescriptionWorker(QThread):
                             desc = entry.get("description", "") if isinstance(entry, dict) else entry
                             results[idx] = {"index": idx, "description": desc}
                             sb["description"] = desc
+                            # 保存描述AI返回的 scene/characters/props，用于后续生图参考
+                            if isinstance(entry, dict):
+                                scene = entry.get("scene", "")
+                                chars = entry.get("characters", [])
+                                props_list = entry.get("props", [])
+                                desc_assets = []
+                                if scene:
+                                    desc_assets.append(scene)
+                                desc_assets.extend(chars)
+                                desc_assets.extend(props_list)
+                                if desc_assets:
+                                    sb["desc_assets"] = desc_assets
                             done_ctr[0] += 1
                             self.progress.emit(idx, done_ctr[0], total, desc)
                 except Exception as e:
@@ -1054,6 +1111,7 @@ class SingleDescWorker(QThread):
         all_storyboards: list[dict],
         project_id: str,
         episode_num: int,
+        chapter_text: str,
         settings_service: SettingsService,
         state_service: NovelComicStateService,
         chat_manager: MultiRoundChatManager | None = None,
@@ -1064,6 +1122,7 @@ class SingleDescWorker(QThread):
         self._all_storyboards = all_storyboards
         self._project_id = project_id
         self._episode_num = episode_num
+        self._chapter_text = chapter_text
         self._settings_service = settings_service
         self._state_service = state_service
         self._chat_manager = chat_manager
@@ -1124,10 +1183,11 @@ class SingleDescWorker(QThread):
                         bound_assets = s.get("assets", [])
                         if bound_assets:
                             s_lines.append(f"已绑定资产: {', '.join(bound_assets)}")
-
-                    seg_text = s.get("segment_text", "")
-                    if seg_text:
-                        s_lines.append(f"所属段落原文: {seg_text}")
+                        # 人物动作信息
+                        char_actions = s.get("character_actions", {})
+                        if char_actions:
+                            action_strs = [f"{name}:{action}" for name, action in char_actions.items()]
+                            s_lines.append(f"人物动作: {'; '.join(action_strs)}")
                 else:
                     s_lines.append(f"摘要: {s.get('summary', '') or s.get('text', '')[:100]}")
                 context_parts.append("\n".join(s_lines))
@@ -1148,7 +1208,7 @@ class SingleDescWorker(QThread):
             logger.info("分镜 #%d 单条描述AI返回: %s", sb['index'], content[:200])
 
             data = _parse_json(content)
-            
+
             if data is None:
                 logger.warning(f"分镜 #%d 描述解析失败：AI返回的JSON数据为空或无效", sb['index'])
                 desc = ""
@@ -1165,6 +1225,10 @@ class SingleDescWorker(QThread):
                     if not isinstance(desc, str):
                         logger.warning(f"分镜 #%d 描述解析失败：description不是字符串类型", sb['index'])
                         desc = ""
+                    else:
+                        ai_scene = item.get("scene", "")
+                        ai_chars = item.get("characters", []) if isinstance(item.get("characters"), list) else []
+                        ai_props = item.get("props", []) if isinstance(item.get("props"), list) else []
                 else:
                     logger.warning(f"分镜 #%d 描述解析失败：数据格式不正确", sb['index'])
                     desc = ""
@@ -1426,14 +1490,7 @@ COMIC_STYLE_PRESETS = [
         "name": "商业韩漫",
         "prompt": (
             """
-            【画风定位】
-            韩国主流商业网漫画风（Naver Webtoon / Kakao Page），竖版长条构图，适合手机滑屏阅读。人物精致漂亮，具有偶像气质，画面饱和明亮，视觉冲击力强。
-            【色调与光影】
-            高饱和度、高明度的鲜艳配色（糖果色、荧光粉、宝石蓝、薄荷绿），整体通透亮眼。光影对比明显，多层光源，高光突出（瞳孔、发丝、金属），阴影偏冷灰或淡紫，柔和但有层次。可带轻微泛光或光晕。
-            【线条与上色】
-            线条纤细、干净、流畅，无毛躁。上色为平涂+多层渐变（皮肤、头发、衣褶均有细腻过渡），无可见笔触，保留高光层和阴影层。背景可做模糊或光效处理。
-            【负面约束】
-            不要横屏或方形的页漫构图。不要厚涂油画风格。不要低饱和粉彩或大面积留白（商业韩漫背景较饱满）。
+            顶级韩漫风格，融合精致日系2D插画美学，精细线稿，柔和色彩，电影级光影，高对比度。
             """
         ),
     },
@@ -1660,12 +1717,13 @@ class _SplitModeDialog(QDialog):
 
 
 class _GenerateSettingsDialog(QDialog):
-    def __init__(self, current_settings: dict, project_name: str, parent: QWidget | None = None):
+    def __init__(self, current_settings: dict, project_name: str, settings_service, parent: QWidget | None = None):
         super().__init__(parent)
         self._settings = dict(current_settings)
         self._project_name = project_name
+        self._settings_service = settings_service
         self.setWindowTitle("生图设置")
-        self.setFixedSize(560, 850)
+        self.setFixedSize(560, 900)
         self.setObjectName("genSettingsDialog")
         self._setup_ui()
 
@@ -1702,6 +1760,17 @@ class _GenerateSettingsDialog(QDialog):
         self._concurrency_spin.setValue(self._settings.get("concurrency", 3))
         self._concurrency_spin.setFixedHeight(36)
         layout.addWidget(self._concurrency_spin)
+
+        # === 图片模型选择 ===
+        model_label = QLabel("图片生成模型")
+        model_label.setObjectName("dialogFieldLabel")
+        layout.addWidget(model_label)
+
+        self._model_combo = QComboBox()
+        self._model_combo.setObjectName("genSettingsCombo")
+        self._model_combo.setFixedHeight(36)
+        self._populate_model_combo()
+        layout.addWidget(self._model_combo)
 
         style_label = QLabel("漫画风格")
         style_label.setObjectName("dialogFieldLabel")
@@ -2018,8 +2087,24 @@ class _GenerateSettingsDialog(QDialog):
     def _on_style_changed(self, _index: int) -> None:
         pass
 
+    def _populate_model_combo(self) -> None:
+        self._model_combo.clear()
+        try:
+            settings = self._settings_service.load()
+            for m in settings.image_models:
+                if m.name:
+                    self._model_combo.addItem(m.name, m.name)
+        except Exception as e:
+            logger.warning("加载图片模型列表失败: %s", e)
+        # 默认选中第一个
+        if self._model_combo.count() > 0:
+            saved = self._settings.get("image_model_name", "")
+            idx = self._model_combo.findText(saved)
+            self._model_combo.setCurrentIndex(idx if idx >= 0 else 0)
+
     def _on_confirm(self) -> None:
         self._settings["concurrency"] = self._concurrency_spin.value()
+        self._settings["image_model_name"] = self._model_combo.currentText()
         self._settings["style"] = self._style_combo.currentText()
         self._settings["prefix"] = self._prefix_edit.toPlainText().strip()
         self._settings["aspect_ratio"] = self._ratio_combo.currentText()
@@ -2555,7 +2640,7 @@ class NovelComicGeneratePage(QFrame):
     def _on_gen_settings(self) -> None:
         project = self._state_service.load_project(self._project_id)
         project_name = project.name if project else ""
-        dialog = _GenerateSettingsDialog(self._gen_settings, project_name, self.window())
+        dialog = _GenerateSettingsDialog(self._gen_settings, project_name, self._settings_service, self.window())
         if dialog.exec() == QDialog.Accepted:
             self._gen_settings = dialog.result
             self._save_gen_settings()
@@ -3040,7 +3125,7 @@ class NovelComicGeneratePage(QFrame):
         key = _worker_key(self._project_id, self._episode_num, "desc")
         worker = StoryboardDescriptionWorker(
             target,
-            self._project_id, self._episode_num,
+            self._project_id, self._episode_num, self._get_chapter_text(),
             self._settings_service, self._state_service,
             chat_manager=self._get_chat_manager(),
             single_batch=False,
@@ -3159,13 +3244,7 @@ class NovelComicGeneratePage(QFrame):
             return
 
         settings = self._settings_service.load()
-        image_config = AIModelConfig(
-            model_name=settings.image_model.model_name,
-            api_key=settings.image_model.api_key,
-            base_url=settings.image_model.base_url,
-            api_type=settings.image_model.api_type,
-            api_provider=settings.image_model.api_provider,
-        )
+        image_config = self._get_image_config()
         image_text_config = AIModelConfig(
             model_name=settings.text_model.model_name,
             api_key=settings.text_model.api_key,
@@ -3317,13 +3396,7 @@ class NovelComicGeneratePage(QFrame):
 
         # 提交到生图队列
         settings = self._settings_service.load()
-        image_config = AIModelConfig(
-            model_name=settings.image_model.model_name,
-            api_key=settings.image_model.api_key,
-            base_url=settings.image_model.base_url,
-            api_type=settings.image_model.api_type,
-            api_provider=settings.image_model.api_provider,
-        )
+        image_config = self._get_image_config()
         image_text_config = AIModelConfig(
             model_name=settings.text_model.model_name,
             api_key=settings.text_model.api_key,
@@ -3395,7 +3468,7 @@ class NovelComicGeneratePage(QFrame):
 
         key = _worker_key(self._project_id, self._episode_num, f"desc_{storyboard_index}")
         worker = SingleDescWorker(
-            sb, self._storyboards, self._project_id, self._episode_num,
+            sb, self._storyboards, self._project_id, self._episode_num, self._get_chapter_text(),
             self._settings_service, self._state_service,
             chat_manager=self._get_chat_manager(),
             desc_mode=self._split_mode,
@@ -3494,13 +3567,7 @@ class NovelComicGeneratePage(QFrame):
         project = self._state_service.load_project(self._project_id)
 
         settings = self._settings_service.load()
-        image_config = AIModelConfig(
-            model_name=settings.image_model.model_name,
-            api_key=settings.image_model.api_key,
-            base_url=settings.image_model.base_url,
-            api_type=settings.image_model.api_type,
-            api_provider=settings.image_model.api_provider,
-        )
+        image_config = self._get_image_config()
         image_text_config = AIModelConfig(
             model_name=settings.text_model.model_name,
             api_key=settings.text_model.api_key,
@@ -3581,6 +3648,19 @@ class NovelComicGeneratePage(QFrame):
                 prompt_rewrite=gen_settings.get("prompt_rewrite", True),
             )
 
+    def _get_image_config(self) -> AIModelConfig:
+        """根据生图设置中选中的模型名获取 AIModelConfig"""
+        settings = self._settings_service.load()
+        model_name = self._gen_settings.get("image_model_name", "")
+        model_settings = settings.get_image_model_by_name(model_name)
+        return AIModelConfig(
+            model_name=model_settings.model_name,
+            api_key=model_settings.api_key,
+            base_url=model_settings.base_url,
+            api_type=model_settings.api_type,
+            api_provider=model_settings.api_provider,
+        )
+
     def _build_comic_prompt(
         self, sb: dict, project, gen_settings: dict, page_num: int = 0,
     ) -> tuple[str, str, list[str]]:
@@ -3640,7 +3720,7 @@ class NovelComicGeneratePage(QFrame):
             sr_refs = [p for p in sr_paths if p and Path(p).exists()]
             if sr_refs:
                 prompt = "参考图片{}的画风，生成对应画风的漫画内容".format(
-                    "，图片".join(str(i+1) for i in range(len(sr_refs)))
+                    "、".join(str(i+1) for i in range(len(sr_refs)))
                 ) + prompt
         else:
             style_prefix = _get_effective_prefix(gen_settings)
@@ -3662,7 +3742,8 @@ class NovelComicGeneratePage(QFrame):
         ratio = gen_settings.get("aspect_ratio", "3:4")
         resolution = gen_settings.get("resolution", "1K")
         size = _image_size_from_settings(ratio, resolution)
-        prompt += f"弱化背景细节，专注人物细节。smooth shading, softlighting, controlled details, minimal texture, high clarity, refined edges, smooth gradients --- no noise, grain, artifacts, high frequency detail, dirty texture, oversharpen, blotchy, chaotic details."
+        prompt += f"去除高频细节，减少头发中的高频细节，减少人物背景的高频细节，smooth shading, softlighting, controlled details, minimal texture, high clarity, refined edges, smooth gradients --- no noise, grain, artifacts, high frequency detail, dirty texture, oversharpen, blotchy, chaotic details."
+        prompt += f"更贴近真实世界的空间感构图，严禁出现人物桌子侧坐，手部变形"
 
         return prompt, size, reference_paths
 
@@ -5539,13 +5620,7 @@ class _AssetManagementDialog(QDialog):
             gen_settings = project.extra_data.get("gen_settings", {})
 
         settings = self._settings_service.load()
-        image_config = AIModelConfig(
-            model_name=settings.image_model.model_name,
-            api_key=settings.image_model.api_key,
-            base_url=settings.image_model.base_url,
-            api_type=settings.image_model.api_type,
-            api_provider=settings.image_model.api_provider,
-        )
+        image_config = self._get_image_config()
         image_text_config = AIModelConfig(
             model_name=settings.text_model.model_name,
             api_key=settings.text_model.api_key,
@@ -5739,6 +5814,21 @@ class _AssetManagementDialog(QDialog):
         pos = self._batch_asset_btn.mapToGlobal(self._batch_asset_btn.rect().bottomLeft())
         menu.exec(pos)
 
+    def _get_image_config(self) -> AIModelConfig:
+        """根据生图设置中选中的模型名获取 AIModelConfig"""
+        settings = self._settings_service.load()
+        project = self._state_service.load_project(self._project_id)
+        gen_settings = project.extra_data.get("gen_settings", {}) if project else {}
+        model_name = gen_settings.get("image_model_name", "")
+        model_settings = settings.get_image_model_by_name(model_name)
+        return AIModelConfig(
+            model_name=model_settings.model_name,
+            api_key=model_settings.api_key,
+            base_url=model_settings.base_url,
+            api_type=model_settings.api_type,
+            api_provider=model_settings.api_provider,
+        )
+
     def _run_batch_asset_gen(self, filter_type: str) -> None:
         project = self._state_service.load_project(self._project_id)
         gen_settings = {}
@@ -5746,13 +5836,7 @@ class _AssetManagementDialog(QDialog):
             gen_settings = project.extra_data.get("gen_settings", {})
 
         settings = self._settings_service.load()
-        image_config = AIModelConfig(
-            model_name=settings.image_model.model_name,
-            api_key=settings.image_model.api_key,
-            base_url=settings.image_model.base_url,
-            api_type=settings.image_model.api_type,
-            api_provider=settings.image_model.api_provider,
-        )
+        image_config = self._get_image_config()
         image_text_config = AIModelConfig(
             model_name=settings.text_model.model_name,
             api_key=settings.text_model.api_key,

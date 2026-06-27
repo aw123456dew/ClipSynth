@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 import tempfile
 import threading
@@ -416,6 +417,154 @@ class TencentAsrConfigGroup(QGroupBox):
         self._region_input.setText(settings.region)
 
 
+class _ImageModelCard(QFrame):
+    """单个图片模型的编辑卡片"""
+    remove_requested = Signal(object)
+
+    def __init__(self, named_settings: "NamedImageModelSettings", index: int, parent=None):
+        super().__init__(parent)
+        self._named = named_settings
+        self._index = index
+        self.setObjectName("imageModelCard")
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        # 第一行：名称 + 删除按钮
+        top_row = QHBoxLayout()
+        self._name_input = QLineEdit()
+        self._name_input.setObjectName("genSettingsInput")
+        self._name_input.setPlaceholderText("模型名称（如：主模型、备用模型）")
+        self._name_input.setText(self._named.name)
+        self._name_input.setFixedHeight(32)
+        top_row.addWidget(self._name_input, stretch=1)
+
+        remove_btn = QPushButton("删除")
+        remove_btn.setObjectName("dialogCancelBtn")
+        remove_btn.setFixedHeight(28)
+        remove_btn.clicked.connect(lambda: self.remove_requested.emit(self))
+        top_row.addWidget(remove_btn)
+        layout.addLayout(top_row)
+
+        # 模型参数字段
+        form_layout = QFormLayout()
+        form_layout.setSpacing(6)
+        form_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._model_input = QLineEdit()
+        self._model_input.setPlaceholderText("例如 flux-dev, dalle-3")
+        self._model_input.setText(self._named.config.model_name)
+        self._model_input.setFixedHeight(30)
+        form_layout.addRow("模型名称:", self._model_input)
+
+        self._key_input = QLineEdit()
+        self._key_input.setPlaceholderText("sk-...")
+        self._key_input.setEchoMode(QLineEdit.Password)
+        self._key_input.setText(self._named.config.api_key)
+        self._key_input.setFixedHeight(30)
+        form_layout.addRow("API 密钥:", self._key_input)
+
+        self._url_input = QLineEdit()
+        self._url_input.setPlaceholderText("https://api.example.com/v1")
+        self._url_input.setText(self._named.config.base_url)
+        self._url_input.setFixedHeight(30)
+        form_layout.addRow("接口地址:", self._url_input)
+
+        self._api_type_combo = QComboBox()
+        self._api_type_combo.addItems(["OpenAI", "Gemini"])
+        self._api_type_combo.setFixedHeight(30)
+        idx = self._api_type_combo.findText(
+            self._named.config.api_type.capitalize() if self._named.config.api_type else "OpenAI"
+        )
+        self._api_type_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        form_layout.addRow("API 类型:", self._api_type_combo)
+
+        self._api_provider_combo = QComboBox()
+        self._api_provider_combo.addItems(["NewAPI", "ToAPI", "Grasai", "ManXiaoBai"])
+        self._api_provider_combo.setFixedHeight(30)
+        display_map = {"newapi": "NewAPI", "toapi": "ToAPI", "grasai": "Grasai", "manxiaobai": "ManXiaoBai"}
+        idx2 = self._api_provider_combo.findText(display_map.get(self._named.config.api_provider, "NewAPI"))
+        self._api_provider_combo.setCurrentIndex(idx2 if idx2 >= 0 else 0)
+        form_layout.addRow("供应商:", self._api_provider_combo)
+
+        layout.addLayout(form_layout)
+
+    def collect(self) -> "NamedImageModelSettings":
+        from clip_synth.models.settings import AIModelSettings, NamedImageModelSettings
+        provider_map = {"NewAPI": "newapi", "ToAPI": "toapi", "Grasai": "grasai", "ManXiaoBai": "manxiaobai"}
+        return NamedImageModelSettings(
+            name=self._name_input.text().strip(),
+            config=AIModelSettings(
+                model_name=self._model_input.text().strip(),
+                api_key=self._key_input.text().strip(),
+                base_url=self._url_input.text().strip().rstrip("/"),
+                api_type=self._api_type_combo.currentText().lower(),
+                api_provider=provider_map.get(self._api_provider_combo.currentText(), "newapi"),
+            ),
+        )
+
+
+class ImageModelListGroup(QGroupBox):
+    """多图片模型配置管理"""
+    def __init__(self, title: str, parent=None):
+        super().__init__(title, parent)
+        self._cards: list[_ImageModelCard] = []
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(16, 24, 16, 16)
+        self._layout.setSpacing(8)
+
+        desc = QLabel("可以配置多个图片生成模型，在生图设置中选择使用哪个。名称用于识别，不能重复。")
+        desc.setObjectName("dialogFieldLabel")
+        desc.setWordWrap(True)
+        self._layout.addWidget(desc)
+
+        self._card_container = QVBoxLayout()
+        self._card_container.setSpacing(8)
+        self._layout.addLayout(self._card_container)
+
+        add_btn = QPushButton("+ 添加模型")
+        add_btn.setObjectName("addBtn")
+        add_btn.setCursor(Qt.PointingHandCursor)
+        add_btn.clicked.connect(self._on_add)
+        self._layout.addWidget(add_btn)
+
+    def _on_add(self) -> None:
+        from clip_synth.models.settings import AIModelSettings, NamedImageModelSettings
+        named = NamedImageModelSettings(name=f"模型{len(self._cards)+1}")
+        self._add_card(named)
+
+    def _add_card(self, named: "NamedImageModelSettings") -> None:
+        card = _ImageModelCard(named, len(self._cards))
+        card.remove_requested.connect(self._on_remove)
+        self._cards.append(card)
+        self._card_container.addWidget(card)
+
+    def _on_remove(self, card: _ImageModelCard) -> None:
+        if card in self._cards:
+            self._cards.remove(card)
+            self._card_container.removeWidget(card)
+            card.deleteLater()
+
+    def load_from_settings(self, image_models: list) -> None:
+        """加载已有模型列表"""
+        while self._cards:
+            card = self._cards.pop(0)
+            self._card_container.removeWidget(card)
+            card.deleteLater()
+        for named in image_models:
+            self._add_card(named)
+
+    def collect(self) -> list:
+        """收集所有模型配置"""
+        return [card.collect() for card in self._cards]
+
+
 class SettingsPage(QFrame):
     settings_changed = Signal()
 
@@ -461,15 +610,10 @@ class SettingsPage(QFrame):
         )
         scroll_layout.addWidget(self._vision_model_group)
 
-        self._image_model_group = ModelConfigGroup(
-            "图片生成模型设置",
-            self._settings.image_model,
-            show_image_test=True,
-            show_connection_test=False,
-            show_api_type=True,
-            show_api_provider=True,
+        self._image_model_list_group = ImageModelListGroup(
+            "图片生成模型设置（支持多个）",
         )
-        scroll_layout.addWidget(self._image_model_group)
+        scroll_layout.addWidget(self._image_model_list_group)
 
         self._doubao_voice_group = DoubaoVoiceConfigGroup(
             "火山引擎配置",
@@ -571,7 +715,7 @@ class SettingsPage(QFrame):
         self._settings = self._settings_service.load()
         self._text_model_group.update_settings(self._settings.text_model)
         self._vision_model_group.update_settings(self._settings.vision_model)
-        self._image_model_group.update_settings(self._settings.image_model)
+        self._image_model_list_group.load_from_settings(self._settings.image_models)
         self._doubao_voice_group.update_settings(self._settings.doubao_voice)
         self._tencent_asr_group.update_settings(self._settings.tencent_asr)
         self._draft_path_input.setText(self._settings.draft_output_dir)
@@ -581,7 +725,7 @@ class SettingsPage(QFrame):
     def _on_save_settings(self) -> None:
         self._settings.text_model = self._text_model_group.collect_settings()
         self._settings.vision_model = self._vision_model_group.collect_settings()
-        self._settings.image_model = self._image_model_group.collect_settings()
+        self._settings.image_models = self._image_model_list_group.collect()
         self._settings.doubao_voice = self._doubao_voice_group.collect_settings()
         self._settings.tencent_asr = self._tencent_asr_group.collect_settings()
         self._settings.draft_output_dir = self._draft_path_input.text().strip()

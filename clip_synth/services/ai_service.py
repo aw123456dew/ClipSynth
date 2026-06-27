@@ -508,7 +508,7 @@ class AIService:
             "prompt": prompt,
             "n": 1,
             "size": ratio,
-            "metadata": {"resolution": resolution, "moderation": "low", "quality": "medium"},
+            "metadata": {"resolution": resolution, "moderation": "low", "quality": "high"},
         }
         if ref_urls:
             gen_body["image_urls"] = [{"url": u} for u in ref_urls]
@@ -765,7 +765,7 @@ class AIService:
         }
         call_url = f"{base_url}/v1/draw/nano-banana"
         if self._config.api_type == 'openai':
-            body['quality'] = "medium"
+            body['quality'] = "high"
             body["moderation"] = "low"
             call_url = f"{base_url}/v1/draw/completions"
         else:
@@ -855,7 +855,7 @@ class AIService:
             "imageSize": resolution or "1K",
             "response_format": "url",
             "images": urls,
-            "quality": "auto"
+            "quality": "high"
         }
 
         call_url = f"{base_url}/v1/image-tasks/edits"

@@ -1,7 +1,10 @@
 from sqlalchemy.orm import Session
 
 from clip_synth.core.database import DatabaseManager
-from clip_synth.models.settings import AIModelSettings, AppSettings, DoubaoVoiceSettings, TencentAsrSettings, SettingsModel
+from clip_synth.models.settings import (
+    AIModelSettings, AppSettings, DoubaoVoiceSettings,
+    NamedImageModelSettings, TencentAsrSettings, SettingsModel,
+)
 
 
 class SettingsService:
@@ -9,11 +12,21 @@ class SettingsService:
         self._db_manager = db_manager
 
     def load(self) -> AppSettings:
+        import json as _json
         session: Session = self._db_manager.create_session()
         try:
             row = session.get(SettingsModel, 1)
             if row is None:
                 return AppSettings()
+
+            image_models: list[NamedImageModelSettings] = []
+            if row.image_models_json:
+                try:
+                    raw_list = _json.loads(row.image_models_json)
+                    image_models = [NamedImageModelSettings.from_dict(m) for m in raw_list]
+                except Exception:
+                    image_models = []
+
             return AppSettings(
                 text_model=AIModelSettings(
                     model_name=row.text_model_name,
@@ -44,6 +57,7 @@ class SettingsService:
                     api_type=row.image_api_type or "openai",
                     api_provider=row.image_api_provider or "newapi",
                 ),
+                image_models=image_models,
                 asr_provider=row.asr_provider or "volcengine",
                 tts_params=row.tts_params or "",
                 gpu_accel_enabled=bool(row.gpu_accel_enabled),
@@ -52,6 +66,7 @@ class SettingsService:
             session.close()
 
     def save(self, settings: AppSettings) -> None:
+        import json as _json
         session: Session = self._db_manager.create_session()
         try:
             row = session.get(SettingsModel, 1)
@@ -78,6 +93,10 @@ class SettingsService:
             row.image_base_url = settings.image_model.base_url
             row.image_api_type = settings.image_model.api_type
             row.image_api_provider = settings.image_model.api_provider
+            row.image_models_json = _json.dumps(
+                [m.to_dict() for m in settings.image_models],
+                ensure_ascii=False,
+            )
             row.asr_provider = settings.asr_provider
             row.tts_params = settings.tts_params
             row.gpu_accel_enabled = settings.gpu_accel_enabled

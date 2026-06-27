@@ -33,6 +33,7 @@ class SettingsModel(Base):
     image_base_url: Mapped[str] = mapped_column(String(1024), default="")
     image_api_type: Mapped[str] = mapped_column(String(32), default="openai")
     image_api_provider: Mapped[str] = mapped_column(String(32), default="newapi")
+    image_models_json: Mapped[str] = mapped_column(Text, default="")
 
 
 @dataclass
@@ -123,10 +124,27 @@ class TencentAsrSettings:
 
 
 @dataclass
+class NamedImageModelSettings:
+    name: str = ""
+    config: AIModelSettings = field(default_factory=AIModelSettings)
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "config": self.config.to_dict()}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "NamedImageModelSettings":
+        return cls(
+            name=data.get("name", ""),
+            config=AIModelSettings.from_dict(data.get("config", {})),
+        )
+
+
+@dataclass
 class AppSettings:
     text_model: AIModelSettings = field(default_factory=AIModelSettings)
     vision_model: AIModelSettings = field(default_factory=AIModelSettings)
     image_model: AIModelSettings = field(default_factory=AIModelSettings)
+    image_models: list[NamedImageModelSettings] = field(default_factory=list)
     draft_output_dir: str = ""
     doubao_voice: DoubaoVoiceSettings = field(default_factory=DoubaoVoiceSettings)
     tencent_asr: TencentAsrSettings = field(default_factory=TencentAsrSettings)
@@ -134,11 +152,21 @@ class AppSettings:
     tts_params: str = ""
     gpu_accel_enabled: bool = False
 
+    def get_image_model_by_name(self, name: str) -> AIModelSettings:
+        """按名称查找图片模型配置，找不到或名称为空时返回空配置"""
+        if not name:
+            return AIModelSettings()
+        for m in self.image_models:
+            if m.name == name:
+                return m.config
+        return AIModelSettings()
+
     def to_dict(self) -> dict:
         return {
             "text_model": self.text_model.to_dict(),
             "vision_model": self.vision_model.to_dict(),
             "image_model": self.image_model.to_dict(),
+            "image_models": [m.to_dict() for m in self.image_models],
             "draft_output_dir": self.draft_output_dir,
             "doubao_voice": self.doubao_voice.to_dict(),
             "tencent_asr": self.tencent_asr.to_dict(),
@@ -153,6 +181,7 @@ class AppSettings:
             text_model=AIModelSettings.from_dict(data.get("text_model", {})),
             vision_model=AIModelSettings.from_dict(data.get("vision_model", {})),
             image_model=AIModelSettings.from_dict(data.get("image_model", {})),
+            image_models=[NamedImageModelSettings.from_dict(m) for m in data.get("image_models", [])],
             draft_output_dir=data.get("draft_output_dir", ""),
             doubao_voice=DoubaoVoiceSettings.from_dict(data.get("doubao_voice", {})),
             tencent_asr=TencentAsrSettings.from_dict(data.get("tencent_asr", {})),
